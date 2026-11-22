@@ -195,6 +195,17 @@ pub struct LintReport {
 }
 
 impl LintReport {
+    /// Counts of error and warning findings, in that order.
+    #[must_use]
+    pub fn counts(&self) -> (usize, usize) {
+        let errors = self
+            .violations
+            .iter()
+            .filter(|v| v.severity == Severity::Error)
+            .count();
+        (errors, self.violations.len() - errors)
+    }
+
     /// True when any finding is an [`Severity::Error`], or any finding at all when `strict`.
     #[must_use]
     pub fn failed(&self, strict: bool) -> bool {
@@ -204,9 +215,146 @@ impl LintReport {
     }
 }
 
+/// How many example import sites an [`EdgeSummary`] keeps.
+pub const MAX_SITES: usize = 3;
+
+/// One declared node as the overview presents it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct NodeSummary {
+    /// The node identifier.
+    pub id: NodeId,
+    /// Human readable label, if the diagram gave one.
+    pub label: Option<String>,
+    /// Directories whose `.arch` file tags this node, sorted. The repository root is `.`.
+    pub dirs: Vec<PathBuf>,
+    /// Source files this node owns.
+    pub files: usize,
+}
+
+/// One edge as the overview presents it: declared, observed in code, or both.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct EdgeSummary {
+    /// The importing node.
+    pub from: NodeId,
+    /// The imported node.
+    pub to: NodeId,
+    /// The declared kind, or `None` when code uses the edge and the contract does not declare it.
+    pub kind: Option<EdgeKind>,
+    /// Number of import sites in code that realise the edge.
+    pub realised: usize,
+    /// The first [`MAX_SITES`] import sites, in sorted order.
+    pub sites: Vec<Location>,
+}
+
+/// The whole architecture at a glance: every node and every declared or observed edge.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+pub struct Overview {
+    /// Declared nodes, sorted by id.
+    pub nodes: Vec<NodeSummary>,
+    /// Declared and observed edges, sorted by `(from, to)`.
+    pub edges: Vec<EdgeSummary>,
+    /// Findings of error severity in the lint run behind this overview.
+    pub errors: usize,
+    /// Findings of warning severity in the lint run behind this overview.
+    pub warnings: usize,
+}
+
+/// One node with the edges that touch it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct NodeView {
+    /// The node itself.
+    pub node: NodeSummary,
+    /// Edges leaving the node, sorted by target.
+    pub outgoing: Vec<EdgeSummary>,
+    /// Edges entering the node, sorted by source.
+    pub incoming: Vec<EdgeSummary>,
+}
+
+/// What changed between two versions of the contract.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+pub struct ContractDiff {
+    /// Nodes only the new contract declares, sorted.
+    pub added_nodes: Vec<NodeId>,
+    /// Nodes only the old contract declares, sorted.
+    pub removed_nodes: Vec<NodeId>,
+    /// Edges only the new contract declares, with their kind, sorted.
+    pub added_edges: Vec<(Edge, EdgeKind)>,
+    /// Edges only the old contract declares, with their kind, sorted.
+    pub removed_edges: Vec<(Edge, EdgeKind)>,
+    /// Edges both declare with a different kind, as `(edge, old kind, new kind)`, sorted.
+    pub changed_edges: Vec<(Edge, EdgeKind, EdgeKind)>,
+}
+
+impl ContractDiff {
+    /// True when the two contracts declare the same nodes and edges with the same kinds.
+    #[must_use]
+    pub const fn is_empty(&self) -> bool {
+        self.added_nodes.is_empty()
+            && self.removed_nodes.is_empty()
+            && self.added_edges.is_empty()
+            && self.removed_edges.is_empty()
+            && self.changed_edges.is_empty()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn counts_split_errors_from_warnings() {
+        let violation = |severity| Violation {
+            kind: ViolationKind::StaleEdge,
+            severity,
+            at: None,
+            message: String::new(),
+            hint: None,
+        };
+        let report = LintReport {
+            violations: vec![
+                violation(Severity::Error),
+                violation(Severity::Warning),
+                violation(Severity::Warning),
+            ],
+        };
+        assert_eq!(report.counts(), (1, 2));
+        assert_eq!(LintReport::default().counts(), (0, 0));
+    }
+
+    #[test]
+    fn contract_diff_is_empty_only_when_nothing_changed() {
+        let id = NodeId::new("a").unwrap();
+        let edge = Edge {
+            from: id.clone(),
+            to: NodeId::new("b").unwrap(),
+        };
+        assert!(ContractDiff::default().is_empty());
+        let cases = [
+            ContractDiff {
+                added_nodes: vec![id.clone()],
+                ..ContractDiff::default()
+            },
+            ContractDiff {
+                removed_nodes: vec![id],
+                ..ContractDiff::default()
+            },
+            ContractDiff {
+                added_edges: vec![(edge.clone(), EdgeKind::Planned)],
+                ..ContractDiff::default()
+            },
+            ContractDiff {
+                removed_edges: vec![(edge.clone(), EdgeKind::Planned)],
+                ..ContractDiff::default()
+            },
+            ContractDiff {
+                changed_edges: vec![(edge, EdgeKind::Planned, EdgeKind::Implemented)],
+                ..ContractDiff::default()
+            },
+        ];
+        for diff in cases {
+            assert!(!diff.is_empty(), "{diff:?}");
+        }
+    }
 
     #[test]
     fn node_id_accepts_identifiers() {

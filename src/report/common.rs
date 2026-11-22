@@ -26,12 +26,7 @@ pub(super) const fn severity_str(severity: Severity) -> &'static str {
 
 /// Counts of error and warning findings, in that order.
 pub(super) fn counts(report: &LintReport) -> (usize, usize) {
-    let errors = report
-        .violations
-        .iter()
-        .filter(|v| v.severity == Severity::Error)
-        .count();
-    (errors, report.violations.len() - errors)
+    report.counts()
 }
 
 /// A path with `/` separators regardless of platform.
