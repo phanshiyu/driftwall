@@ -18,6 +18,8 @@ mod resolve;
 mod spec;
 
 #[cfg(test)]
+mod python_tests;
+#[cfg(test)]
 mod tests;
 
 use std::collections::{BTreeMap, BTreeSet};
