@@ -118,6 +118,20 @@ pub fn python_flags(anchor: Node<'_>, source: &str, file: &Path) -> Flags {
     )
 }
 
+/// The Swift `import` declaration around a specifier, its `@testable` attribute included.
+pub fn swift_anchor(specifier: Node<'_>) -> Node<'_> {
+    enclosing(specifier, &["import_declaration"])
+}
+
+/// The flags of the Swift import written in `file`: always runtime. Test code: a file under a
+/// directory named `Tests`, `Test`, `tests` or `test`.
+pub fn swift_flags(_anchor: Node<'_>, _source: &str, file: &Path) -> Flags {
+    Flags::new(
+        false,
+        in_directory(file, &["Tests", "Test", "tests", "test"]),
+    )
+}
+
 /// The flags of the Rust `anchor` (see [`rust_anchor`]) written in `file`.
 ///
 /// Rust has no type-only import. Test code: a file under a `tests` directory or named `*_test.rs`

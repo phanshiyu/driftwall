@@ -51,6 +51,8 @@ mod rust_syntax;
 mod spec;
 mod statement;
 mod subpath;
+mod swift;
+mod swift_package;
 mod tsconfig;
 mod workspace;
 
@@ -89,6 +91,8 @@ mod rust_tests;
 #[cfg(test)]
 mod skipped_tests;
 #[cfg(test)]
+mod swift_tests;
+#[cfg(test)]
 mod tests;
 #[cfg(test)]
 mod tsconfig_tests;
@@ -113,6 +117,8 @@ pub use python_config::python_roots;
 pub use python_layout::PythonLayout;
 pub use rust_scope::Bindings;
 pub use spec::{Grammar, LanguageSpec, Load, Loads, Region, Scan, spec};
+pub use swift::SwiftModules;
+pub use swift_package::{SwiftTarget, swift_targets};
 pub use tsconfig::{alias_configs, project_configs};
 pub use workspace::{Workspaces, discover as workspaces};
 
@@ -158,6 +164,8 @@ pub struct Environment<'a> {
     /// The Python directories, names and configured import roots of the repository. Only Python
     /// resolution reads it.
     pub python: &'a PythonLayout,
+    /// The Swift targets of the repository by module name. Only Swift resolution reads it.
+    pub swift: &'a SwiftModules,
 }
 
 /// One query match handed to a language resolver: the module reference as written and, for
@@ -269,6 +277,7 @@ pub fn collect_with_assets(
     let workspaces = workspaces(root, files);
     let projects = project_configs(root, files);
     let python = PythonLayout::new(&known, python_roots(root, files));
+    let swift = SwiftModules::new(swift_targets(root, files));
     let env = Environment {
         known: &known,
         assets,
@@ -278,6 +287,7 @@ pub fn collect_with_assets(
         workspaces: &workspaces,
         projects: &projects,
         python: &python,
+        swift: &swift,
     };
     let entries: Vec<(&PathBuf, &Language)> = files.iter().collect();
     // why: collected into an indexed Vec so the reported error never depends on thread scheduling.

@@ -35,6 +35,7 @@ fn used_at(source: &str, file: &str) -> Vec<Used> {
         workspaces: &Workspaces::default(),
         projects: &BTreeMap::new(),
         python: &PythonLayout::default(),
+        swift: &SwiftModules::default(),
     };
     let got = extract_in(source, Language::Rust, Path::new(file), &env).expect("extract succeeds");
     got.resolved

@@ -9,7 +9,8 @@ use tree_sitter::{Node, Parser, Query, QueryCursor, StreamingIterator};
 use super::spec::{Grammar, LanguageSpec, Region};
 use super::statement::Flags;
 use super::{
-    Environment, FileImports, ImportsError, PythonLayout, Reference, Resolution, Workspaces, spec,
+    Environment, FileImports, ImportsError, PythonLayout, Reference, Resolution, SwiftModules,
+    Workspaces, spec,
 };
 use crate::model::{
     ImportKind, Language, Location, ResolvedImport, SkipReason, Skipped, Symbol, UnresolvedImport,
@@ -54,6 +55,7 @@ pub fn extract(
             workspaces: &Workspaces::default(),
             projects: &BTreeMap::new(),
             python: &python,
+            swift: &SwiftModules::default(),
         },
     )
 }

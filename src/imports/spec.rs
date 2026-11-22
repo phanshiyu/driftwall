@@ -4,7 +4,7 @@ use std::path::Path;
 
 use super::{
     Bindings, Environment, Reference, Resolution, markup, python, queries, resolve, rust,
-    statement, statement::Flags,
+    statement, statement::Flags, swift,
 };
 use crate::model::Language;
 
@@ -76,6 +76,12 @@ static PYTHON_GRAMMAR: Grammar = Grammar {
     name: "python",
     language: || tree_sitter_python::LANGUAGE.into(),
     query: queries::PYTHON,
+};
+
+static SWIFT_GRAMMAR: Grammar = Grammar {
+    name: "swift",
+    language: || tree_sitter_swift::LANGUAGE.into(),
+    query: queries::SWIFT,
 };
 
 static RUST_GRAMMAR: Grammar = Grammar {
@@ -172,6 +178,16 @@ static RUST: LanguageSpec = LanguageSpec {
     loads: None,
 };
 
+static SWIFT: LanguageSpec = LanguageSpec {
+    language: Language::Swift,
+    scan: swift_scan,
+    bindings: no_bindings,
+    anchor: statement::swift_anchor,
+    flags: statement::swift_flags,
+    resolve: swift::resolve,
+    loads: None,
+};
+
 /// The table entry for `language`, or `None` when extraction is not implemented for it yet.
 #[must_use]
 pub fn spec(language: Language) -> Option<&'static LanguageSpec> {
@@ -182,7 +198,8 @@ pub fn spec(language: Language) -> Option<&'static LanguageSpec> {
         Language::Rust => Some(&RUST),
         Language::Svelte => Some(&SVELTE),
         Language::Html => Some(&HTML),
-        Language::Swift | Language::Shell => None,
+        Language::Swift => Some(&SWIFT),
+        Language::Shell => None,
     }
 }
 
@@ -223,6 +240,10 @@ fn javascript_scan(_source: &str, _file: &Path) -> Scan {
 
 fn python_scan(_source: &str, _file: &Path) -> Scan {
     whole_file(&PYTHON_GRAMMAR)
+}
+
+fn swift_scan(_source: &str, _file: &Path) -> Scan {
+    whole_file(&SWIFT_GRAMMAR)
 }
 
 fn rust_scan(_source: &str, _file: &Path) -> Scan {

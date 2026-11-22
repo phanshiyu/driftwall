@@ -16,7 +16,7 @@ pub struct Repo {
     assets: BTreeSet<PathBuf>,
 }
 
-/// Writes `files` (relative path, contents). TypeScript, JavaScript, Python and Svelte files, and HTML files
+/// Writes `files` (relative path, contents). TypeScript, JavaScript, Python, Swift, shell and Svelte files, and HTML files
 /// that hold a `<script` element, are source and every other file is an asset.
 pub fn repo(files: &[(&str, &str)]) -> Repo {
     let dir = TempDir::new().expect("tempdir");
@@ -31,6 +31,8 @@ pub fn repo(files: &[(&str, &str)]) -> Repo {
             Some("js" | "jsx" | "mjs" | "cjs") => Some(Language::JavaScript),
             Some("py") => Some(Language::Python),
             Some("svelte") => Some(Language::Svelte),
+            Some("swift") => Some(Language::Swift),
+            Some("sh" | "bash" | "zsh") => Some(Language::Shell),
             Some("html" | "htm") if crate::markup::has_script(content) => Some(Language::Html),
             _ => None,
         };

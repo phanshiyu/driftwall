@@ -51,6 +51,9 @@ pub const PYTHON: &str = r#"
   (#eq? @method "import_module"))
 "#;
 
+/// Swift: the module path of every `import` declaration, whatever attribute or keyword it carries.
+pub const SWIFT: &str = "(import_declaration (identifier) @specifier)\n";
+
 /// JavaScript and JSX.
 pub const JAVASCRIPT: &str = ecmascript_imports!();
 
