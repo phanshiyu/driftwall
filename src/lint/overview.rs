@@ -244,6 +244,7 @@ mod tests {
                 let found = DirTag {
                     tag: tag.clone(),
                     scope: *scope,
+                    peers: BTreeSet::new(),
                 };
                 (PathBuf::from(dir), found)
             })
