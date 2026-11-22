@@ -2,24 +2,11 @@
 
 /// Joins `messages` (the error first, then each cause) with `: `.
 ///
-/// A cause whose text the previous message already contains is dropped. The library errors
-/// interpolate their `source` into their own message, so printing both would repeat it.
+/// Every library error words only its own context and leaves the cause to `source()`, so the
+/// chain is printed as it is, with nothing dropped.
 #[must_use]
 pub fn join(messages: impl IntoIterator<Item = String>) -> String {
-    let mut out = String::new();
-    let mut previous: Option<String> = None;
-    for message in messages {
-        match &previous {
-            None => out.clone_from(&message),
-            Some(before) if before.contains(&message) => {}
-            Some(_) => {
-                out.push_str(": ");
-                out.push_str(&message);
-            }
-        }
-        previous = Some(message);
-    }
-    out
+    messages.into_iter().collect::<Vec<_>>().join(": ")
 }
 
 #[cfg(test)]
@@ -41,10 +28,15 @@ mod tests {
     }
 
     #[test]
-    fn a_cause_already_in_the_message_is_not_repeated() {
+    fn identical_messages_are_kept() {
+        assert_eq!(join_all(&["a", "a"]), "a: a");
+    }
+
+    #[test]
+    fn a_cause_contained_in_the_message_is_still_printed() {
         assert_eq!(
             join_all(&["cannot read x: No such file", "No such file"]),
-            "cannot read x: No such file"
+            "cannot read x: No such file: No such file"
         );
     }
 
