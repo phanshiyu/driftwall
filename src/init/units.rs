@@ -9,6 +9,7 @@ use std::path::{Component, Path, PathBuf};
 use serde::Deserialize;
 use serde::de::IgnoredAny;
 
+use crate::imports;
 use crate::model::Language;
 
 const CARGO_MANIFEST: &str = "Cargo.toml";
@@ -28,6 +29,8 @@ pub enum UnitKind {
     Package,
     /// An outermost Python package: a directory with an `__init__.py` and no package above it.
     PythonPackage,
+    /// The directory of a target a `Package.swift` declares. Never decomposed.
+    SwiftTarget,
 }
 
 /// A directory that is one code unit.
@@ -37,6 +40,8 @@ pub struct Unit {
     pub dir: PathBuf,
     /// What makes it a unit.
     pub kind: UnitKind,
+    /// The name the unit's node is named after, for a [`UnitKind::SwiftTarget`]: the target name.
+    pub name: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -59,7 +64,9 @@ struct CargoWorkspace {
 /// A `Cargo.toml` that cannot be read or parsed is skipped: a broken manifest elsewhere in the
 /// repository must not stop `init`. A directory with a `package.json`, `tsconfig.json` or
 /// `jsconfig.json` is a JavaScript unit whatever those files hold. Directories named by a
-/// workspace list but missing on disk are not units. The result is sorted.
+/// workspace list but missing on disk are not units. Every target a `Package.swift` among
+/// `files` declares is a unit too, except one whose directory is the repository root. The result is
+/// sorted.
 #[must_use]
 pub fn detect_units(root: &Path, files: &BTreeMap<PathBuf, Language>) -> Vec<Unit> {
     let dirs: BTreeSet<&Path> = files
@@ -71,6 +78,16 @@ pub fn detect_units(root: &Path, files: &BTreeMap<PathBuf, Language>) -> Vec<Uni
         found.extend(crates_at(root, dir));
         found.extend(package_at(root, dir));
     }
+    found.extend(
+        imports::swift_targets(root, files)
+            .into_iter()
+            .filter(|target| !target.dir.as_os_str().is_empty())
+            .map(|target| Unit {
+                dir: target.dir,
+                kind: UnitKind::SwiftTarget,
+                name: Some(target.name),
+            }),
+    );
     found.into_iter().collect()
 }
 
@@ -91,6 +108,7 @@ pub(super) fn python_units<'a>(files: impl Iterator<Item = &'a PathBuf>) -> Vec<
         .map(|dir| Unit {
             dir: dir.to_path_buf(),
             kind: UnitKind::PythonPackage,
+            name: None,
         })
         .collect()
 }
@@ -119,6 +137,7 @@ fn crate_unit(dir: &Path) -> Unit {
     Unit {
         dir: dir.to_path_buf(),
         kind: UnitKind::Crate,
+        name: None,
     }
 }
 
@@ -130,6 +149,7 @@ fn package_at(root: &Path, dir: &Path) -> Option<Unit> {
         .then(|| Unit {
             dir: dir.to_path_buf(),
             kind: UnitKind::Package,
+            name: None,
         })
 }
 
@@ -396,6 +416,63 @@ mod tests {
             dirs_of(&units, UnitKind::PythonPackage),
             ["a", "svc/b", "svc/c"]
         );
+    }
+
+    fn swift_files(paths: &[&str]) -> BTreeMap<PathBuf, Language> {
+        paths
+            .iter()
+            .map(|path| (PathBuf::from(path), Language::Swift))
+            .collect()
+    }
+
+    fn swift_units(units: &[Unit]) -> Vec<(String, String)> {
+        units
+            .iter()
+            .filter(|unit| unit.kind == UnitKind::SwiftTarget)
+            .map(|unit| {
+                (
+                    unit.dir.display().to_string(),
+                    unit.name.clone().unwrap_or_default(),
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn every_target_of_a_package_swift_is_a_unit() {
+        let dir = tree(&[
+            (
+                "app/Package.swift",
+                "let p = Package(name: \"x\", targets: [\n.target(name: \"Core\"),\n.executableTarget(name: \"Run\", path: \"Exec\"),\n.testTarget(name: \"CoreTests\"),\n])",
+            ),
+            ("app/Sources/Core/a.swift", ""),
+        ]);
+        let all = swift_files(&["app/Package.swift", "app/Sources/Core/a.swift"]);
+        assert_eq!(
+            swift_units(&detect_units(dir.path(), &all)),
+            [
+                ("app/Exec".to_owned(), "Run".to_owned()),
+                ("app/Sources/Core".to_owned(), "Core".to_owned()),
+                ("app/Tests/CoreTests".to_owned(), "CoreTests".to_owned()),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_swift_target_that_is_the_repository_root_is_not_a_unit() {
+        let dir = tree(&[(
+            "Package.swift",
+            "let p = Package(name: \"x\", targets: [.target(name: \"All\", path: \".\")])",
+        )]);
+        let all = swift_files(&["Package.swift", "a.swift"]);
+        assert_eq!(swift_units(&detect_units(dir.path(), &all)), []);
+    }
+
+    #[test]
+    fn a_package_swift_that_cannot_be_read_declares_no_unit() {
+        let dir = tree(&[("Other.txt", "")]);
+        let all = swift_files(&["Package.swift", "Sources/A/a.swift"]);
+        assert_eq!(swift_units(&detect_units(dir.path(), &all)), []);
     }
 
     #[test]

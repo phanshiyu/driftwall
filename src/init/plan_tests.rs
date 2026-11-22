@@ -17,6 +17,7 @@ fn unit(dir: &str, kind: UnitKind) -> Unit {
     Unit {
         dir: PathBuf::from(dir),
         kind,
+        name: None,
     }
 }
 

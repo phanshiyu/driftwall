@@ -17,6 +17,8 @@ mod plan_tests;
 #[cfg(test)]
 mod scope_tests;
 #[cfg(test)]
+mod swift_tests;
+#[cfg(test)]
 mod tests;
 
 use std::collections::{BTreeMap, BTreeSet};

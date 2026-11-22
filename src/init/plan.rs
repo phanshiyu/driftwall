@@ -74,7 +74,12 @@ pub fn plan(
         }
     }
 
-    let directory_ids = ids::assign(&draft.directories, &draft.fixed, &draft.whole_paths);
+    let directory_ids = ids::assign(
+        &draft.directories,
+        &draft.fixed,
+        &draft.whole_paths,
+        &draft.names,
+    );
     let mut owners = existing.owners.clone();
     for (file, owner) in &draft.owners {
         let id = match owner {

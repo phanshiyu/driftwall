@@ -26,6 +26,7 @@ pub(super) fn assign(
     dirs: &BTreeSet<PathBuf>,
     fixed: &BTreeSet<NodeId>,
     whole_paths: &BTreeSet<PathBuf>,
+    names: &BTreeMap<PathBuf, String>,
 ) -> BTreeMap<PathBuf, NodeId> {
     let others: BTreeSet<PathBuf> = dirs.difference(whole_paths).cloned().collect();
     let common = common_prefix(&others);
@@ -33,11 +34,16 @@ pub(super) fn assign(
     let mut taken = fixed.clone();
     let mut ids = BTreeMap::new();
     for dir in dirs {
-        let plain = if whole_paths.contains(dir) {
-            base_name(dir, Path::new(""))
-        } else {
-            base_name(dir, &common)
-        };
+        let plain = names.get(dir).map_or_else(
+            || {
+                if whole_paths.contains(dir) {
+                    base_name(dir, Path::new(""))
+                } else {
+                    base_name(dir, &common)
+                }
+            },
+            |name| sanitize(name),
+        );
         let family = if fixed.contains(&plain) {
             format!("{plain}-{DIRECTORY_SUFFIX}")
         } else {
@@ -137,10 +143,15 @@ mod tests {
     }
 
     fn ids(paths: &[&str], taken: &[&str]) -> Vec<String> {
-        assign(&dirs(paths), &fixed(taken), &BTreeSet::new())
-            .values()
-            .map(ToString::to_string)
-            .collect()
+        assign(
+            &dirs(paths),
+            &fixed(taken),
+            &BTreeSet::new(),
+            &BTreeMap::new(),
+        )
+        .values()
+        .map(ToString::to_string)
+        .collect()
     }
 
     #[test]

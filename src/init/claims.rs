@@ -21,6 +21,12 @@ pub(super) fn claim<'a>(draft: &mut Draft, fresh: &[&'a Path], units: &[Unit]) -
         let kind = kinds.entry(unit.dir.as_path()).or_insert(unit.kind);
         *kind = (*kind).min(unit.kind);
     }
+    let swift_names: BTreeMap<&Path, &str> = units
+        .iter()
+        .filter(|unit| unit.kind == UnitKind::SwiftTarget)
+        .filter_map(|unit| Some((unit.dir.as_path(), unit.name.as_deref()?)))
+        .rev()
+        .collect();
     let mut files_of: BTreeMap<&Path, Vec<&'a Path>> = BTreeMap::new();
     for file in fresh {
         let deepest = kinds
@@ -31,11 +37,16 @@ pub(super) fn claim<'a>(draft: &mut Draft, fresh: &[&'a Path], units: &[Unit]) -
             files_of.entry(dir).or_default().push(file);
         }
     }
-    let primary = primary_unit(&files_of);
+    let primary = primary_unit(&files_of, &kinds);
 
     let mut taken: BTreeSet<&Path> = BTreeSet::new();
     for (dir, files) in &files_of {
         let kind = kinds.get(dir).copied().unwrap_or(UnitKind::Package);
+        if kind == UnitKind::SwiftTarget {
+            claim_swift_target(draft, dir, swift_names.get(dir).copied(), files);
+            taken.extend(files.iter().copied());
+            continue;
+        }
         let is_primary = primary == Some(*dir);
         let prefix = if is_primary {
             Some(Prefix::default())
@@ -82,15 +93,38 @@ pub(super) fn claim<'a>(draft: &mut Draft, fresh: &[&'a Path], units: &[Unit]) -
         .collect()
 }
 
-/// The unit at the repository root, or else the only unit.
-fn primary_unit<'a>(files_of: &BTreeMap<&'a Path, Vec<&Path>>) -> Option<&'a Path> {
-    let root = files_of
+/// A Swift target is one directory node named after the target, whatever it holds: its files
+/// never import each other, so cutting it into modules would only scatter the module.
+fn claim_swift_target(draft: &mut Draft, dir: &Path, name: Option<&str>, files: &[&Path]) {
+    draft.directories.insert(dir.to_path_buf());
+    draft.whole_paths.insert(dir.to_path_buf());
+    if let Some(name) = name {
+        draft.names.insert(dir.to_path_buf(), name.to_owned());
+    }
+    for file in files {
+        draft
+            .owners
+            .insert((*file).to_path_buf(), Owner::Directory(dir.to_path_buf()));
+    }
+}
+
+/// The unit at the repository root, or else the only unit, not counting Swift targets.
+fn primary_unit<'a>(
+    files_of: &BTreeMap<&'a Path, Vec<&Path>>,
+    kinds: &BTreeMap<&Path, UnitKind>,
+) -> Option<&'a Path> {
+    let counted: Vec<&'a Path> = files_of
         .keys()
         .copied()
+        .filter(|dir| kinds.get(dir) != Some(&UnitKind::SwiftTarget))
+        .collect();
+    let root = counted
+        .iter()
+        .copied()
         .find(|dir| dir.as_os_str().is_empty());
-    match (root, files_of.len()) {
+    match (root, counted.len()) {
         (Some(root), _) => Some(root),
-        (None, 1) => files_of.keys().copied().next(),
+        (None, 1) => counted.first().copied(),
         (None, _) => None,
     }
 }
@@ -112,7 +146,7 @@ fn source_dir(dir: &Path, kind: UnitKind, files: &[&Path]) -> PathBuf {
     match kind {
         UnitKind::Crate => source,
         UnitKind::Package if files.iter().any(|file| file.starts_with(&source)) => source,
-        UnitKind::Package | UnitKind::PythonPackage => dir.to_path_buf(),
+        UnitKind::Package | UnitKind::PythonPackage | UnitKind::SwiftTarget => dir.to_path_buf(),
     }
 }
 

@@ -103,6 +103,7 @@ fn a_unit_group_is_limited_and_a_unit_prefix_is_its_directory_path() {
     let package = |dir: &str| Unit {
         dir: PathBuf::from(dir),
         kind: UnitKind::Package,
+        name: None,
     };
     let units = [package(""), package("apps/web ui")];
     let paths = [

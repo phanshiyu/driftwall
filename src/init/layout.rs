@@ -41,6 +41,9 @@ pub(super) struct Draft {
     pub module_dirs: BTreeMap<PathBuf, Prefix>,
     /// Directory nodes of units that have a prefix: their ids are made of the whole path.
     pub whole_paths: BTreeSet<PathBuf>,
+    /// Directory nodes that are named by something other than their path: a Swift target is named
+    /// after the target. The name is sanitised when the id is assigned.
+    pub names: BTreeMap<PathBuf, String>,
     /// Directory nodes that are groups (the files directly in a unit directory), which may get
     /// `scope: here`. The repository root is a group too, without being listed.
     pub groups: BTreeSet<PathBuf>,

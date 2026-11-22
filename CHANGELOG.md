@@ -46,3 +46,12 @@
   or per-kind counts, imports of a module itself list `module` in `uses:`, and `neighbors --all-sites`
   prints every site. `where` accepts `--contract`, fails with `no such file` for a missing path and
   says what a non-source file is.
+- Swift and shell sources. `.swift` files are read for `import` declarations, resolved through the
+  targets of `Package.swift` (`.target`, `.executableTarget`, `.testTarget`, `.macro`, `.plugin`,
+  default `Sources/<name>` and `Tests/<name>`) to the entry file of the module, and `init` makes one
+  node per Swift target, named after it. `.sh`, `.bash` and `.zsh` files are read for `source` and
+  `.` commands with literal paths, script-relative paths (`$(dirname "$0")`, `${BASH_SOURCE%/*}`,
+  `ROOT="$(cd ... && pwd)"` variables) and globs; any other path is skipped as
+  `dynamic-specifier`. Files with no extension whose first line is a `#!` shebang naming `sh`,
+  `bash`, `zsh`, `dash` or Python are source too. `.githooks/` and `integrations/` are ignored by
+  the repository's own `.driftwallignore`.
