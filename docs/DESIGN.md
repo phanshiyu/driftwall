@@ -85,6 +85,53 @@ asset must not be able to fail the scan. The vendored and minified rules (see "E
 to source only, so an asset below `vendor/` is still an asset. `.arch` files are not assets, and ignored
 files (`.gitignore`, `.driftwallignore`) are not walked, so they are neither assets nor resolvable.
 
+### Blind spots
+
+What driftwall cannot see must never be silent. Beside the source files it reads, the scan keeps a
+census of every file it leaves unread, and the import collection keeps every reference it cannot
+follow. The census is data, never a finding: it changes no owner, no `unmapped-file`, no edge and no
+exit code. It lives on `Ownership` next to `excluded`:
+
+- **Not read**, `Ownership::unread`: a map from a key to the sorted set of walked files of that key.
+  The key is the file extension (no dot, case-sensitive) when it is in the fixed table of common code
+  extensions `sh bash zsh swift c h cc cpp hpp m mm go java kt kts rb php cs lua dart scala ex exs
+  erl hs ml clj vue astro pl r sql ps1 mc zig nim svelte html htm`, minus every extension the language
+  table supports (so adding a language removes its extensions from `unread` by itself: `ts` is never
+  here). A file with no extension at all whose first two bytes are `#!` has the key `shebang`. The
+  files are the walked ones: ignored files (`.gitignore`, `.driftwallignore`) are not walked and are
+  not counted here. An unread file is also an asset and resolves as one, as before.
+- **Ignored**, `Ownership::ignored`: the files with a source extension that only `.driftwallignore`
+  hides. The scan finds them by walking a second time with the `.driftwallignore` files disabled
+  (`.gitignore` stays on: a file git ignores is not part of the repository, so it is never counted),
+  and keeping the files of the second walk that the first did not see. The second walk only happens
+  when the first one met a `.driftwallignore`. A hidden file in a language without support is not
+  counted: nothing would have read it anyway.
+- **Excluded**, `Ownership::excluded`, as described above.
+- **Skipped references** and **unresolved imports**, the `skipped` and `unresolved` lists of
+  `FileImports` (see "Skipped references").
+
+Every census file is attributed to the node that owns its path by the tag rules of source files (the
+nearest `.arch`, `scope: here` and `node: *` included, see `owner_in`), or to no node when no tag
+covers it, which reports call `unmapped`. A reference is attributed to the node that owns the file it
+is written in. Unread, excluded and ignored files never produce `unmapped-file`.
+
+`lint::observe` builds the whole picture as one `BlindSpots` value (`Observation::blind_spots`): each
+unread file with its owner and its number of lines (newline bytes, plus one for a last line without a
+newline; a file that cannot be read has 0), each excluded and ignored file with its owner, each
+skipped reference with its reason and each unresolved import with its owner. All of it is sorted, and
+`init` builds the same value without owners and lines.
+
+Reports: see "CLI surface". The note line that `lint` and `init` print has the form
+
+```
+note: 50 files not read (swift 40, sh 10), 3 skipped references; see driftwall brief
+```
+
+Its parts, each present only when non-zero and in this order, are `N files not read (ext n, ..)`
+(extensions by file count, descending, then by name, at most 6 then `+N more`), `N files excluded
+(reason n, ..)`, `N files ignored by .driftwallignore`, `N skipped references` and `N unresolved
+imports`, joined by `, `, then `; see driftwall brief`. With nothing to say there is no note line.
+
 ### Module nodes (`node: *`)
 
 A `.arch` file may contain `node: *` instead of an id. Then every module directly in that
@@ -494,6 +541,13 @@ callers can decide what a type-only or test import is worth.
 - Python: files named `test_*.py`, `*_test.py` or `conftest.py`, or under a `tests` or `test`
   directory at any depth.
 
+`brief` and `neighbors` show the kinds. An edge whose sites are all `type-only`, `embed` or `asset`, or
+all `test_only`, is annotated after its import count, `a --> b (3 imports) (type-only)`, one
+annotation per such property (order `type-only`, `embed`, `asset`, `test-only`). When a property
+holds for some sites only, the count is followed by one count per property that occurs, in the same
+order: `a --> b (12 imports, 3 type-only, 2 test-only)`. An edge whose sites are all plain runtime
+imports shows only `(N imports)`. In JSON every site carries `kind` and `test_only`.
+
 Duplicates merge on (location, target) only when their kind and `test_only` agree. Imports that
 reach the same file from the same location with different kinds (`import type { A } from './a';
 import { b } from './a';` on one line) stay two entries, so a type-only use is never recorded as
@@ -595,6 +649,12 @@ name; a node that loses its whole surface shows only `-` lines and is unrestrict
 `brief` and `neighbors` list the symbols each edge uses (`uses: Client, fetch`, the first six then
 `+N more`) and mark a declared surface (`exports: ...`); JSON carries `symbols` on every edge and
 `exports` on a node that has a surface.
+
+An import that uses no symbol is a use of the module itself (`use crate::gitlab;`, `from x import
+sub`, `import a.b`, a side-effect `import './x'`): it is displayed as `module`, listed first in
+`uses:` (`uses: module, Client`), and an edge with such a site has `"module": true` in JSON. It is
+never displayed as `*`, which stays a glob or namespace import. An embed or an asset import uses no
+module and no symbol and adds nothing to `uses:`.
 
 ## Rules (violation kinds)
 
@@ -766,28 +826,82 @@ A failing lint is not an error, so `anyhow` is used only at the entry point and 
 ## CLI surface
 
 ```
-driftwall lint [PATH] [--format text|json|sarif] [--strict]
+driftwall lint [PATH] [--contract FILE] [--format text|json|sarif] [--strict]
 driftwall init [PATH] [--depth N] [--contract FILE] [--no-tags] [--force]
-driftwall where <FILE>          # owning node of a path, with the .arch file that decided it
+driftwall where <FILE> [--root DIR] [--contract FILE] [--format text|json]
 driftwall brief [PATH] [--contract FILE] [--format text|json]
-driftwall neighbors <NODE> [PATH] [--contract FILE] [--format text|json]
+driftwall neighbors <NODE> [PATH] [--contract FILE] [--format text|json] [--files] [--all-sites]
 driftwall diff --base <REF> [PATH] [--contract FILE] [--format text|json] [--exit-code]
 ```
 
 `--format json` is the agent interface. Every violation carries `kind`, `severity`, `at`
 (`file`, `line`), `message`, `hint`.
 
+`where <FILE>` says what a path is and who owns it. The path must exist (inside `--root`, default
+`.`): a missing one is a tool error, exit `2`, `no such file: <path>`. `--contract` is accepted like
+everywhere else and must name a readable, valid contract when given; `where` reads nothing else from
+it. The text is `<file>: <answer>`, one of
+
+| What the file is | Answer | Exit |
+| --- | --- | --- |
+| source file with an owner | `<node> (via <arch file>)` | `0` |
+| source file no tag covers | `unmapped` | `1` |
+| asset | `asset of node <node> (via <arch file>)`, or `asset, unmapped` | `0` |
+| unread code file (see "Blind spots") | `not read (<key>) in node <node> (via <arch file>)`, or `not read (<key>), unmapped` | `0` |
+| excluded source file | `excluded (<reason>)` | `0` |
+| source file `.driftwallignore` hides | `ignored by .driftwallignore` | `0` |
+
+A directory is answered like a source file, by the tag that covers it. The JSON has `file`, `node`,
+`arch_file` and `kind` (`source`, `asset`, `unread`, `excluded`, `ignored` or `directory`), plus
+`detail` for the unread key and the exclusion reason (absent otherwise). `node` and `arch_file` are
+`null` for an excluded or ignored file, and for anything no tag covers.
+
 `brief`, `neighbors` and `diff` are read-only maps for agents and reviewers:
 
 - `brief` prints every node (directories, file count) and every edge, declared or observed, with
-  the number of import sites that realise it. An edge code uses and the contract lacks is marked
+  the number of import sites that realise it and how they are used (kinds, symbols, see "Import
+  kind" and "Symbols and public surfaces"). An edge code uses and the contract lacks is marked
   `UNDECLARED`. It is informational: exit `0` unless the tool fails (`2`).
+  It ends with the blind spots block, and a node line ends with ` blind: 3 not read, 1 excluded,
+  2 ignored, 4 skipped, 1 unresolved` (only the non-zero parts; absent when all are zero):
+
+  ```
+  blind spots:
+    not read: swift 40 files (1200 lines), sh 10 files (300 lines)
+    excluded: vendored 3, generated 2
+    ignored by .driftwallignore: 4
+    skipped references: undeclared-package 5, dynamic-specifier 1
+    unresolved imports: 2
+    unmapped: 7
+  ```
+
+  A line is present only when its count is not zero (`unmapped` counts the items attributed to no
+  node, over all categories). Unread extensions are ordered by file count, then name. Excluded
+  reasons and skip reasons are in the order of this document. When every count is zero the block is
+  the single line `blind spots: none`. In JSON, `blind_spots` has `unread` (key to `{count, lines}`),
+  `excluded` (reason to count), `ignored`, `skipped` (reason to count), `unresolved` and `unmapped`
+  (a tally, see below), and every node has `blind_spots`, a tally with `unread`, `excluded`,
+  `ignored`, `skipped` and `unresolved` file or reference counts.
 - `neighbors <NODE>` prints one node's incoming and outgoing edges with up to 3 `file:line`
-  example sites each. An unknown node is a tool error that lists the declared ids.
+  example sites each (`--all-sites` prints every site; JSON always has every site, with no cap
+  anywhere). `--files` lists the node's source files under its `files:` line, two spaces indented
+  (JSON always has `files`, the sorted list). It also lists, always, everything the node is blind to
+  in a `blind spots:` block, one item per line (`blind spots: none` when it has none):
+  `  not read: <file> (<key>, <n> lines)`, `  excluded: <file> (<reason>)`,
+  `  ignored: <file>`, `  skipped: <file>:<line> <specifier> (<reason>)` (followed by ` - <message>`
+  when the skip has one) and `  unresolved: <file>:<line> <specifier>`. JSON has the same items under
+  `blind_spots` (`unread` per key with `count`, `lines` and `files`, `excluded` per reason, `ignored`,
+  `skipped` per reason, `unresolved`; every item has its `node`, and `lines` for unread files). An
+  unknown node is a tool error that lists the declared ids.
 - `diff --base <REF>` compares the contract at a git ref with the working tree (nodes and edge
   kinds; labels and boundaries are ignored). The old text comes from `git show REF:./<contract>`;
   a contract absent at that ref counts as empty, any other git failure is exit `2`. Exit `0`
   normally; with `--exit-code`, `1` when anything changed, so CI can require approval.
+
+`lint` text output ends with the note line of "Blind spots" when any blind spot exists, after the
+summary line, and its JSON gains a `blind_spots` object (the summary of `brief`, without `unmapped`)
+as its last key. Exit codes are those the findings decide, whatever the blind spots; SARIF is
+unchanged. `init` prints the same note line after the line that says what it wrote.
 
 ## Module map
 
