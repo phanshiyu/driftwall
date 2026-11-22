@@ -7,7 +7,9 @@
 //! `paths` and `baseUrl` of the governing `tsconfig.json` or `jsconfig.json` (see `tsconfig`, and
 //! `project` for solution configs that `references` other configs), workspace packages imported by
 //! name and package `imports` (see `workspace`). Bundler query suffixes are dropped first and
-//! declaration files are probed like source. A specifier that none of these maps to a repository
+//! declaration files are probed like source. A specifier that names an existing non-source file (an
+//! asset, supplied to [`collect_with_assets`]) resolves to it as an import of kind `asset`, and a
+//! relative one that names nothing is unresolved whatever its extension. A specifier that none of these maps to a repository
 //! file is a package: ignored when it is a Node builtin or declared by a `package.json` at or above
 //! the file (see `package`), and otherwise recorded in `FileImports::skipped`, like every reference
 //! that cannot be followed (a computed `require(x)` or `importlib.import_module(x)`, an
@@ -50,6 +52,8 @@ mod workspace;
 mod alias_resolve_tests;
 #[cfg(test)]
 mod alias_tests;
+#[cfg(test)]
+mod asset_tests;
 #[cfg(test)]
 mod ecmascript_symbols_tests;
 #[cfg(test)]
@@ -116,6 +120,9 @@ pub struct FileImports {
 pub struct Environment<'a> {
     /// Repository-relative paths of every repository file.
     pub known: &'a BTreeSet<PathBuf>,
+    /// Repository-relative paths of every asset: a walked file that is not source. Only
+    /// TypeScript and JavaScript resolution reads it, so that an import of one resolves.
+    pub assets: &'a BTreeSet<PathBuf>,
     /// Library crate name, as imported, to the repository-relative directory holding its `lib.rs`.
     /// Only Rust resolution reads it.
     pub crates: &'a BTreeMap<String, PathBuf>,
@@ -170,7 +177,13 @@ pub enum Resolution {
         /// The repository-relative file.
         target: PathBuf,
     },
-    /// Not a repository import: a declared third party package, a builtin, or a non-source asset.
+    /// The specifier names this repository asset, a file that is not source, and uses no item of
+    /// it.
+    Asset {
+        /// The repository-relative file.
+        target: PathBuf,
+    },
+    /// Not a repository import: a declared third party package or a builtin.
     Ignored,
     /// A reference that could not be followed, and is reported as such.
     Skipped(SkipReason),
@@ -197,9 +210,22 @@ impl Resolution {
     }
 }
 
+/// [`collect_with_assets`] when no asset is known, so an import of a non-source file is unresolved.
+///
+/// # Errors
+/// The same as [`collect_with_assets`].
+pub fn collect(
+    root: &Path,
+    files: &BTreeMap<PathBuf, Language>,
+) -> Result<BTreeMap<PathBuf, FileImports>, ImportsError> {
+    collect_with_assets(root, files, &BTreeSet::new())
+}
+
 /// Reads and extracts every file in `files`, relative to `root`.
 ///
-/// The key set of `files` is the set of known repository files used for resolution. Library
+/// The key set of `files` is the set of known repository files used for resolution, and `assets`
+/// the set of repository files that are not source, which a TypeScript or JavaScript import can
+/// also resolve to. Library
 /// crates are discovered once from the `Cargo.toml` files next to the known `lib.rs` files, and
 /// import aliases once from the `tsconfig.json` and `jsconfig.json` files at or above the
 /// TypeScript and JavaScript files, and declared packages from the `package.json` files there.
@@ -208,9 +234,10 @@ impl Resolution {
 /// # Errors
 /// Returns [`ImportsError::Io`] for a file that cannot be read or is not UTF-8, and the grammar
 /// and query errors of [`extract`].
-pub fn collect(
+pub fn collect_with_assets(
     root: &Path,
     files: &BTreeMap<PathBuf, Language>,
+    assets: &BTreeSet<PathBuf>,
 ) -> Result<BTreeMap<PathBuf, FileImports>, ImportsError> {
     let known: BTreeSet<PathBuf> = files.keys().cloned().collect();
     let crates = library_crates(root, &known);
@@ -220,6 +247,7 @@ pub fn collect(
     let projects = project_configs(root, files);
     let env = Environment {
         known: &known,
+        assets,
         crates: &crates,
         aliases: &aliases,
         packages: &packages,

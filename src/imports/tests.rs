@@ -351,11 +351,22 @@ fn escaping_the_repository_root_is_unresolved() {
 }
 
 #[test]
-fn assets_are_skipped() {
+fn a_missing_relative_file_is_unresolved_whatever_its_extension() {
     let source = "import a from './data.json';\nimport './style.css';\nimport b from './logo.svg';\n\
                   import c from './pic.png';\nimport d from './addon.node';\n";
     let got = ts(source, &[]);
-    assert_eq!(got, FileImports::default());
+    assert_eq!(targets(&got), Vec::<String>::new());
+    assert_eq!(
+        unresolved_specifiers(&got),
+        [
+            "./data.json",
+            "./style.css",
+            "./logo.svg",
+            "./pic.png",
+            "./addon.node"
+        ]
+    );
+    assert_eq!(got.skipped, Vec::new());
 }
 
 #[test]

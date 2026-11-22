@@ -28,6 +28,7 @@ fn used_at(source: &str, file: &str) -> Vec<Used> {
     let crates = BTreeMap::from([("driftwall".to_owned(), PathBuf::from("src"))]);
     let env = Environment {
         known: &known,
+        assets: &BTreeSet::new(),
         crates: &crates,
         aliases: &BTreeMap::new(),
         packages: &BTreeMap::new(),

@@ -43,6 +43,7 @@ pub fn extract(
         file,
         &Environment {
             known,
+            assets: &BTreeSet::new(),
             crates: &crates,
             aliases: &aliases,
             packages: &BTreeMap::new(),
@@ -132,6 +133,10 @@ pub fn extract_in(
                 }
                 Resolution::Embedded { target } => {
                     let merge = (at.clone(), target, ImportKind::Embed, flags.test_only);
+                    resolved.entry(merge).or_default();
+                }
+                Resolution::Asset { target } => {
+                    let merge = (at.clone(), target, ImportKind::Asset, flags.test_only);
                     resolved.entry(merge).or_default();
                 }
                 Resolution::Skipped(reason) => {

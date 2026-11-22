@@ -43,7 +43,7 @@ pub fn ecmascript(
     }
     let specifier = strip_suffix(reference.specifier);
     let resolution = if is_relative(specifier) {
-        resolve(specifier, importer, env.known)
+        resolve(specifier, importer, env)
     } else {
         resolve_bare(specifier, importer, env)
     };
@@ -60,25 +60,47 @@ fn strip_suffix(specifier: &str) -> &str {
     specifier.get(..end).unwrap_or(specifier)
 }
 
-/// Resolves the relative `specifier`, written in `importer`, to a file in `known`. A specifier
-/// that is not relative is ignored here; see [`resolve_aliased`].
-pub fn resolve(specifier: &str, importer: &Path, known: &BTreeSet<PathBuf>) -> Resolution {
+/// Resolves the relative `specifier`, written in `importer`, to a source file or an asset. A
+/// specifier that is not relative is ignored here; see [`resolve_bare`]. Whatever its extension, a
+/// relative specifier that names no file is unresolved.
+pub fn resolve(specifier: &str, importer: &Path, env: &Environment<'_>) -> Resolution {
     if !is_relative(specifier) {
         return Resolution::Ignored;
     }
-    let is_asset = has_non_source_extension(Path::new(specifier));
-    let Some(base) = join_normalised(importer.parent(), specifier) else {
-        return if is_asset {
-            Resolution::Ignored
-        } else {
-            Resolution::Unresolved
-        };
-    };
-    match probe(&base, specifier.ends_with('/'), known) {
-        Some(target) => Resolution::resolved(target),
-        None if is_asset => Resolution::Ignored,
-        None => Resolution::Unresolved,
+    join_normalised(importer.parent(), specifier)
+        .and_then(|base| locate(&base, specifier.ends_with('/'), env))
+        .map_or(Resolution::Unresolved, Found::resolution)
+}
+
+/// A repository file a candidate path names.
+enum Found {
+    /// A source file.
+    Source(PathBuf),
+    /// A file that is not source.
+    Asset(PathBuf),
+}
+
+impl Found {
+    fn resolution(self) -> Resolution {
+        match self {
+            Self::Source(target) => Resolution::resolved(target),
+            Self::Asset(target) => Resolution::Asset { target },
+        }
     }
+}
+
+/// Looks `base` up as a relative import would: the file itself, source before asset, then the
+/// probes of [`probe`]. A path written with a trailing `/` names a directory only.
+fn locate(base: &Path, directory_only: bool, env: &Environment<'_>) -> Option<Found> {
+    if !directory_only {
+        if env.known.contains(base) {
+            return Some(Found::Source(base.to_path_buf()));
+        }
+        if env.assets.contains(base) {
+            return Some(Found::Asset(base.to_path_buf()));
+        }
+    }
+    probe(base, directory_only, env.known).map(Found::Source)
 }
 
 /// Resolves a non-relative `specifier` written in `importer`.
@@ -92,9 +114,8 @@ pub fn resolve(specifier: &str, importer: &Path, known: &BTreeSet<PathBuf>) -> R
 /// Node builtin or declared by a `package.json` at or above the importer, skipped otherwise.
 fn resolve_bare(specifier: &str, importer: &Path, env: &Environment<'_>) -> Resolution {
     let config = governing(env, importer);
-    if let Some(target) = config.and_then(|config| first_known(&config.candidates(specifier), env))
-    {
-        return Resolution::resolved(target);
+    if let Some(found) = config.and_then(|config| first_found(&config.candidates(specifier), env)) {
+        return found.resolution();
     }
     let linked = if specifier.starts_with('#') {
         env.workspaces.imports_candidates(specifier, importer)
@@ -102,7 +123,7 @@ fn resolve_bare(specifier: &str, importer: &Path, env: &Environment<'_>) -> Reso
         env.workspaces.candidates(specifier)
     };
     if let Some(candidates) = linked {
-        return first_known(&candidates, env).map_or(Resolution::Ignored, Resolution::resolved);
+        return first_found(&candidates, env).map_or(Resolution::Ignored, Found::resolution);
     }
     if config.is_some_and(|config| config.matches(specifier)) {
         return Resolution::Ignored;
@@ -135,11 +156,11 @@ fn governing<'a>(env: &Environment<'a>, importer: &Path) -> Option<&'a AliasConf
     })
 }
 
-/// The first of `candidates`, in order, that probes to a known file.
-fn first_known(candidates: &[Candidate], env: &Environment<'_>) -> Option<PathBuf> {
+/// The first of `candidates`, in order, that names a repository file.
+fn first_found(candidates: &[Candidate], env: &Environment<'_>) -> Option<Found> {
     candidates
         .iter()
-        .find_map(|candidate| probe(&candidate.path, candidate.directory_only, env.known))
+        .find_map(|candidate| locate(&candidate.path, candidate.directory_only, env))
 }
 
 fn is_relative(specifier: &str) -> bool {
@@ -147,12 +168,6 @@ fn is_relative(specifier: &str) -> bool {
         || specifier == ".."
         || specifier.starts_with("./")
         || specifier.starts_with("../")
-}
-
-fn has_non_source_extension(path: &Path) -> bool {
-    path.extension()
-        .and_then(|extension| extension.to_str())
-        .is_some_and(|extension| !SOURCE_EXTENSIONS.contains(&extension))
 }
 
 /// Joins `specifier` onto `dir` and folds `.` and `..` lexically. `None` means the path leaves the

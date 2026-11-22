@@ -14,6 +14,8 @@ mod rules;
 #[cfg(test)]
 mod fixtures;
 #[cfg(test)]
+mod resolution_tests;
+#[cfg(test)]
 mod tests;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -138,7 +140,13 @@ pub fn observe(root: &Path, options: &LintOptions) -> Result<Observation, LintEr
         .chain(&ownership.unmapped)
         .filter_map(|path| Some((path.clone(), ownership::language_of(path)?)))
         .collect();
-    let imports = imports::collect(root, &files)?;
+    let assets: BTreeSet<PathBuf> = ownership
+        .asset_owners
+        .keys()
+        .chain(&ownership.asset_unmapped)
+        .cloned()
+        .collect();
+    let imports = imports::collect_with_assets(root, &files, &assets)?;
 
     let report = reconcile(&contract, &ownership, &imports, &options.contract);
     let observed = observed_edges(&contract, &ownership, &imports);

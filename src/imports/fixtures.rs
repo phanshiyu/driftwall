@@ -1,6 +1,6 @@
 //! Repositories written to a temporary directory, for tests that go through [`collect`].
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -13,12 +13,15 @@ use crate::model::Language;
 pub struct Repo {
     dir: TempDir,
     files: BTreeMap<PathBuf, Language>,
+    assets: BTreeSet<PathBuf>,
 }
 
-/// Writes `files` (relative path, contents). TypeScript and JavaScript files are source.
+/// Writes `files` (relative path, contents). TypeScript and JavaScript files are source and every
+/// other file is an asset.
 pub fn repo(files: &[(&str, &str)]) -> Repo {
     let dir = TempDir::new().expect("tempdir");
     let mut known = BTreeMap::new();
+    let mut assets = BTreeSet::new();
     for (path, content) in files {
         let full = dir.path().join(path);
         fs::create_dir_all(full.parent().expect("parent")).expect("mkdir");
@@ -28,17 +31,31 @@ pub fn repo(files: &[(&str, &str)]) -> Repo {
             Some("js" | "jsx" | "mjs" | "cjs") => Some(Language::JavaScript),
             _ => None,
         };
-        if let Some(language) = language {
-            known.insert(PathBuf::from(path), language);
+        match language {
+            Some(language) => {
+                known.insert(PathBuf::from(path), language);
+            }
+            None => {
+                assets.insert(PathBuf::from(path));
+            }
         }
     }
-    Repo { dir, files: known }
+    Repo {
+        dir,
+        files: known,
+        assets,
+    }
 }
 
 impl Repo {
+    /// The root directory the repository was written to.
+    pub fn root(&self) -> &Path {
+        self.dir.path()
+    }
+
     /// The imports of every source file.
     pub fn collect(&self) -> BTreeMap<PathBuf, FileImports> {
-        collect(self.dir.path(), &self.files).expect("collect succeeds")
+        collect_with_assets(self.dir.path(), &self.files, &self.assets).expect("collect succeeds")
     }
 
     /// The imports of `file`.

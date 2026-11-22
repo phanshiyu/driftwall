@@ -66,6 +66,7 @@ fn a_binary_reaches_lint_through_the_library_name_read_from_cargo_toml() {
     assert_eq!(crates.get("driftwall"), Some(&PathBuf::from("src")));
     let env = Environment {
         known: &known,
+        assets: &BTreeSet::new(),
         crates: &crates,
         aliases: &BTreeMap::new(),
         packages: &BTreeMap::new(),

@@ -39,6 +39,7 @@ fn rs_in(
     let known = known(repo);
     let env = Environment {
         known: &known,
+        assets: &BTreeSet::new(),
         crates: library,
         aliases: &BTreeMap::new(),
         packages: &BTreeMap::new(),

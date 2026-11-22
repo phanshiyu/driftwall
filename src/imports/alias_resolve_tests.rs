@@ -29,6 +29,7 @@ fn run(source: &str, repo: &[&str], config: AliasConfig) -> FileImports {
     let aliases = BTreeMap::from([(PathBuf::new(), config)]);
     let env = Environment {
         known: &known,
+        assets: &BTreeSet::new(),
         crates: &crates,
         aliases: &aliases,
         packages: &BTreeMap::new(),
@@ -202,6 +203,7 @@ fn files_without_a_governing_config_see_no_aliases_and_the_specifier_is_a_packag
     )]);
     let env = Environment {
         known: &known,
+        assets: &BTreeSet::new(),
         crates: &crates,
         aliases: &aliases,
         packages: &BTreeMap::new(),

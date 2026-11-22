@@ -350,6 +350,7 @@ fn rs_with(source: &str, file: &str, repo: &[&str]) -> FileImports {
     let aliases = BTreeMap::new();
     let env = Environment {
         known: &known,
+        assets: &BTreeSet::new(),
         crates: &library,
         aliases: &aliases,
         packages: &BTreeMap::new(),

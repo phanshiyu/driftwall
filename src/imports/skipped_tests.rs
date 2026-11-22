@@ -47,6 +47,7 @@ fn run(
     let aliases = BTreeMap::new();
     let env = Environment {
         known: &known,
+        assets: &BTreeSet::new(),
         crates: &crates,
         aliases: &aliases,
         packages,
@@ -194,6 +195,7 @@ fn an_aliased_specifier_is_never_skipped_even_when_nothing_backs_it() {
     let packages = BTreeMap::new();
     let env = Environment {
         known: &known,
+        assets: &BTreeSet::new(),
         crates: &crates,
         aliases: &aliases,
         packages: &packages,
@@ -414,6 +416,7 @@ fn rs_at(source: &str, file: &str) -> FileImports {
     let packages = BTreeMap::new();
     let env = Environment {
         known: &known,
+        assets: &BTreeSet::new(),
         crates: &crates,
         aliases: &aliases,
         packages: &packages,

@@ -11,7 +11,8 @@ use crate::model::{Contract, Edge, Location, NodeId, Ownership, ResolvedImport, 
 ///
 /// An import counts only when both files have an owner, the owners differ, and both owners are
 /// declared in the contract. Anything else (an unmapped file, an owner that names an unknown
-/// node, an import within one node) is not a crossing. The order follows `imports`.
+/// node, an import within one node) is not a crossing. An asset has an owner like a source file, so
+/// an import of an asset owned by another node is a crossing. The order follows `imports`.
 pub(super) fn crossings<'a>(
     contract: &Contract,
     ownership: &Ownership,
@@ -76,7 +77,8 @@ pub fn observed_symbols(
     used
 }
 
-/// The owner of `file`, only when that owner is a node the contract declares.
+/// The owner of `file`, a source file or an asset, only when that owner is a node the contract
+/// declares.
 fn declared_owner<'a>(
     contract: &Contract,
     ownership: &'a Ownership,
@@ -85,6 +87,7 @@ fn declared_owner<'a>(
     ownership
         .owners
         .get(file)
+        .or_else(|| ownership.asset_owners.get(file))
         .filter(|owner| contract.nodes.contains_key(*owner))
 }
 
