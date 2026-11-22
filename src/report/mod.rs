@@ -18,7 +18,8 @@ pub use diff::{render_diff_json, render_diff_text};
 pub use error::ReportError;
 pub use json::render_json;
 pub use overview::{
-    render_node_view_json, render_node_view_text, render_overview_json, render_overview_text,
+    NodeViewOptions, render_node_view_json, render_node_view_text, render_overview_json,
+    render_overview_text,
 };
 pub use sarif::render_sarif;
 pub use text::render_text;

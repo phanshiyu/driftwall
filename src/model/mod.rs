@@ -508,8 +508,54 @@ impl LintReport {
     }
 }
 
-/// How many example import sites an [`EdgeSummary`] keeps.
+/// How many example import sites a text report shows per edge unless it is asked for all of them.
+/// The model keeps every site.
 pub const MAX_SITES: usize = 3;
+
+/// One import statement behind an observed edge.
+///
+/// Serialized flat: `file`, `line`, `kind`, `test_only`. Sites sort by location, then kind, then
+/// test flag, so an edge lists its sites in the same order on every run.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+pub struct Site {
+    /// Where the import statement starts.
+    #[serde(flatten)]
+    pub at: Location,
+    /// What the import is for.
+    pub kind: ImportKind,
+    /// Whether the import is written in test code.
+    pub test_only: bool,
+    /// Whether the import uses the target module itself: it uses no symbol and is neither an embed
+    /// nor an asset. Not serialized: the edge says whether any of its sites does.
+    #[serde(skip)]
+    pub module: bool,
+}
+
+impl Site {
+    /// A plain runtime import at `at` that is not test code and uses a named symbol.
+    #[must_use]
+    pub const fn plain(at: Location) -> Self {
+        Self {
+            at,
+            kind: ImportKind::Runtime,
+            test_only: false,
+            module: false,
+        }
+    }
+
+    /// The site of `import`.
+    #[must_use]
+    pub fn of(import: &ResolvedImport) -> Self {
+        let names_nothing = import.symbols.is_empty();
+        Self {
+            at: import.at.clone(),
+            kind: import.kind,
+            test_only: import.test_only,
+            module: names_nothing
+                && matches!(import.kind, ImportKind::Runtime | ImportKind::TypeOnly),
+        }
+    }
+}
 
 /// One declared node as the overview presents it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -539,11 +585,14 @@ pub struct EdgeSummary {
     pub kind: Option<EdgeKind>,
     /// Number of import sites in code that realise the edge.
     pub realised: usize,
-    /// The first [`MAX_SITES`] import sites, in sorted order.
-    pub sites: Vec<Location>,
+    /// Every import site that realises the edge, in sorted order.
+    pub sites: Vec<Site>,
     /// Every symbol the imports behind the edge use, over all sites, sorted with `*` last. Empty
     /// when nothing uses the edge or every import is a side-effect import.
     pub symbols: BTreeSet<Symbol>,
+    /// Whether some import behind the edge uses the target module itself rather than a named
+    /// symbol (`use crate::gitlab;`, `from x import sub`, `import './x'`).
+    pub module: bool,
 }
 
 /// The whole architecture at a glance: every node and every declared or observed edge.

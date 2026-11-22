@@ -28,7 +28,7 @@ use thiserror::Error;
 use crate::diagram::{self, DiagramError};
 use crate::imports::{self, ImportsError};
 use crate::model::{
-    Contract, DEFAULT_CONTRACT, Edge, Language, LintReport, Location, Ownership, Symbol,
+    Contract, DEFAULT_CONTRACT, Edge, Language, LintReport, Ownership, Site, Symbol,
 };
 use crate::ownership::{self, OwnershipError};
 
@@ -101,7 +101,7 @@ pub struct Observation {
     /// Who owns which file.
     pub ownership: Ownership,
     /// Edges code realises with their import sites, declared or not.
-    pub observed: BTreeMap<Edge, Vec<Location>>,
+    pub observed: BTreeMap<Edge, Vec<Site>>,
     /// The symbols the imports behind each observed edge use.
     pub symbols: BTreeMap<Edge, BTreeSet<Symbol>>,
     /// The lint result for the same scan.

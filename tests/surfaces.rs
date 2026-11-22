@@ -216,12 +216,12 @@ fn neighbors_json_carries_symbols_and_exports() {
 }
 
 #[test]
-fn a_side_effect_import_lists_no_symbols() {
+fn a_side_effect_import_is_a_module_use_and_lists_no_symbols() {
     let dir = repo(&ts_files(SURFACE_CONTRACT, "import '../b/lib';\n"));
     let output = driftwall(&["brief"], dir.path());
     assert_eq!(code(&output), 0);
     assert!(
-        stdout(&output).contains("  a --> b (1 import)\n"),
+        stdout(&output).contains("  a --> b (1 import) uses: module\n"),
         "{}",
         stdout(&output)
     );

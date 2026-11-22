@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use crate::imports::FileImports;
-use crate::model::{Contract, Edge, Location, NodeId, Ownership, ResolvedImport, Symbol};
+use crate::model::{Contract, Edge, NodeId, Ownership, ResolvedImport, Site, Symbol};
 
 /// Every resolved import that crosses from one declared owner to another, with its edge.
 ///
@@ -40,16 +40,18 @@ pub(super) fn crossings<'a>(
 /// The edges code realises, each with the import sites that realise it.
 ///
 /// Whether the contract declares an edge does not matter: this is what the code does. Sites are
-/// sorted and free of duplicates. Pure: the result does not depend on the order of the inputs.
+/// sorted and free of duplicates, and each carries its kind and test flag: two imports at one
+/// location with different kinds are two sites. Pure: the result does not depend on the order of
+/// the inputs.
 #[must_use]
 pub fn observed_edges(
     contract: &Contract,
     ownership: &Ownership,
     imports: &BTreeMap<PathBuf, FileImports>,
-) -> BTreeMap<Edge, Vec<Location>> {
-    let mut observed: BTreeMap<Edge, Vec<Location>> = BTreeMap::new();
+) -> BTreeMap<Edge, Vec<Site>> {
+    let mut observed: BTreeMap<Edge, Vec<Site>> = BTreeMap::new();
     for (edge, import) in crossings(contract, ownership, imports) {
-        observed.entry(edge).or_default().push(import.at.clone());
+        observed.entry(edge).or_default().push(Site::of(import));
     }
     for sites in observed.values_mut() {
         sites.sort();
@@ -95,7 +97,11 @@ fn declared_owner<'a>(
 mod tests {
     use super::*;
     use crate::lint::fixtures::{at, contract, edge, imports, imports_using, node, ownership};
-    use crate::model::EdgeKind;
+    use crate::model::{EdgeKind, Location};
+
+    fn places(sites: &[Site]) -> Vec<Location> {
+        sites.iter().map(|site| site.at.clone()).collect()
+    }
 
     fn owners() -> Ownership {
         ownership(
@@ -124,10 +130,10 @@ mod tests {
         );
         assert_eq!(found.len(), 2);
         assert_eq!(
-            found[&edge("a", "b")],
+            places(&found[&edge("a", "b")]),
             vec![at("a/x.ts", 2), at("a/x.ts", 9), at("a/z.ts", 4)]
         );
-        assert_eq!(found[&edge("b", "c")], vec![at("b/y.ts", 1)]);
+        assert_eq!(places(&found[&edge("b", "c")]), vec![at("b/y.ts", 1)]);
     }
 
     #[test]

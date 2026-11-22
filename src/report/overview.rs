@@ -5,7 +5,9 @@ use std::path::PathBuf;
 
 use serde::Serialize;
 
-use crate::model::{EdgeKind, EdgeSummary, NodeSummary, NodeView, Overview};
+use crate::model::{
+    EdgeKind, EdgeSummary, ImportKind, MAX_SITES, NodeSummary, NodeView, Overview, Site, Symbol,
+};
 
 use super::ReportError;
 use super::common::{arrow, capped, plural, site_str, slash_path};
@@ -60,12 +62,21 @@ pub fn render_overview_text(overview: &Overview) -> String {
     out
 }
 
+/// What `neighbors` text shows beyond the default.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct NodeViewOptions {
+    /// List every import site of every edge instead of the first
+    /// [`MAX_SITES`](crate::model::MAX_SITES).
+    pub all_sites: bool,
+}
+
 /// Renders `view` as uncoloured text: the node, then its outgoing and incoming edges.
 ///
-/// Each edge has up to [`MAX_SITES`](crate::model::MAX_SITES) example import sites. A declared
-/// surface is listed in full as `exports: ...` after the file count.
+/// Each edge has up to [`MAX_SITES`](crate::model::MAX_SITES) example import sites, or all of
+/// them with `options.all_sites`. A declared surface is listed in full as `exports: ...` after the
+/// file count.
 #[must_use]
-pub fn render_node_view_text(view: &NodeView) -> String {
+pub fn render_node_view_text(view: &NodeView, options: NodeViewOptions) -> String {
     let NodeView {
         node,
         outgoing,
@@ -89,11 +100,16 @@ pub fn render_node_view_text(view: &NodeView) -> String {
         }
         for edge in edges {
             let _ = writeln!(out, "  {}", edge_line(edge));
-            for site in &edge.sites {
-                let _ = writeln!(out, "    {}", site_str(site));
+            let shown = if options.all_sites {
+                edge.sites.len()
+            } else {
+                MAX_SITES
+            };
+            for site in edge.sites.iter().take(shown) {
+                let _ = writeln!(out, "    {}", site_str(&site.at));
             }
-            if edge.realised > edge.sites.len() {
-                let _ = writeln!(out, "    ... {} more", edge.realised - edge.sites.len());
+            if edge.sites.len() > shown {
+                let _ = writeln!(out, "    ... {} more", edge.sites.len() - shown);
             }
         }
     }
@@ -156,29 +172,72 @@ fn to_json(document: &impl Serialize) -> Result<String, ReportError> {
     Ok(out)
 }
 
-/// `a --> b (2 imports)`, with ` UNDECLARED` appended when the contract has no such edge and
-/// ` uses: x, y` when the imports use symbols.
+/// The word an edge shows for a use of the target module itself, see "Symbols" in the design.
+const MODULE_USE: &str = "module";
+
+/// `a --> b (2 imports)`, then the kinds of the imports (see [`usage`]), ` UNDECLARED` when the
+/// contract has no such edge and ` uses: module, x, y` when the imports use the module or symbols.
 fn edge_line(edge: &EdgeSummary) -> String {
     let undeclared = if edge.kind.is_none() {
         " UNDECLARED"
     } else {
         ""
     };
-    let uses = if edge.symbols.is_empty() {
+    let names: Vec<&str> = edge
+        .module
+        .then_some(MODULE_USE)
+        .into_iter()
+        .chain(edge.symbols.iter().map(Symbol::as_str))
+        .collect();
+    let listed = if names.is_empty() {
         String::new()
     } else {
-        format!(
-            " uses: {}",
-            capped(edge.symbols.iter().map(crate::model::Symbol::as_str))
-        )
+        format!(" uses: {}", capped(names.into_iter()))
     };
     format!(
-        "{} {} {} ({}){undeclared}{uses}",
+        "{} {} {} {}{undeclared}{listed}",
         edge.from,
         arrow(edge.kind),
         edge.to,
-        plural(edge.realised, "import"),
+        usage(edge),
     )
+}
+
+/// How many sites of `edge` hold each property worth showing, in display order.
+fn properties(edge: &EdgeSummary) -> [(&'static str, usize); 4] {
+    let count = |holds: fn(&Site) -> bool| edge.sites.iter().filter(|site| holds(site)).count();
+    [
+        ("type-only", count(|s| s.kind == ImportKind::TypeOnly)),
+        ("embed", count(|s| s.kind == ImportKind::Embed)),
+        ("asset", count(|s| s.kind == ImportKind::Asset)),
+        ("test-only", count(|s| s.test_only)),
+    ]
+}
+
+/// `(2 imports)`. When every site holds a property that is not plain runtime code, one annotation
+/// per such property follows, `(3 imports) (type-only)`. When a property holds for some sites
+/// only, the counts replace the annotations: `(12 imports, 3 type-only, 2 test-only)`.
+fn usage(edge: &EdgeSummary) -> String {
+    let imports = plural(edge.realised, "import");
+    let present: Vec<(&str, usize)> = properties(edge)
+        .into_iter()
+        .filter(|&(_, count)| count > 0)
+        .collect();
+    if present.is_empty() {
+        return format!("({imports})");
+    }
+    if present.iter().all(|&(_, count)| count == edge.realised) {
+        let notes: Vec<String> = present
+            .iter()
+            .map(|(name, _)| format!(" ({name})"))
+            .collect();
+        return format!("({imports}){}", notes.concat());
+    }
+    let counts: Vec<String> = present
+        .iter()
+        .map(|(name, count)| format!(", {count} {name}"))
+        .collect();
+    format!("({imports}{})", counts.concat())
 }
 
 /// The directories joined by `, `, or `-` for a node no `.arch` file names.
@@ -195,7 +254,7 @@ fn dirs_str(dirs: &[PathBuf]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{Location, MAX_SITES, NodeId, Symbol};
+    use crate::model::{Location, NodeId};
     use serde_json::{Value, json};
     use std::collections::BTreeSet;
 
@@ -203,11 +262,11 @@ mod tests {
         NodeId::new(raw).unwrap()
     }
 
-    fn site(file: &str, line: u32) -> Location {
-        Location {
+    fn site(file: &str, line: u32) -> Site {
+        Site::plain(Location {
             file: PathBuf::from(file),
             line,
-        }
+        })
     }
 
     fn node(raw: &str, dirs: &[&str], files: usize) -> NodeSummary {
@@ -242,12 +301,9 @@ mod tests {
             to: id(to),
             kind,
             realised: lines.len(),
-            sites: lines
-                .iter()
-                .take(MAX_SITES)
-                .map(|&line| site("src/x.ts", line))
-                .collect(),
+            sites: lines.iter().map(|&line| site("src/x.ts", line)).collect(),
             symbols: BTreeSet::new(),
+            module: false,
         }
     }
 
@@ -322,7 +378,10 @@ outgoing:
 incoming:
   (none)
 ";
-        assert_eq!(render_node_view_text(&view), expected);
+        assert_eq!(
+            render_node_view_text(&view, NodeViewOptions::default()),
+            expected
+        );
     }
 
     #[test]
@@ -343,7 +402,10 @@ outgoing:
 incoming:
   (none)
 ";
-        assert_eq!(render_node_view_text(&view), expected);
+        assert_eq!(
+            render_node_view_text(&view, NodeViewOptions::default()),
+            expected
+        );
     }
 
     #[test]
@@ -445,7 +507,10 @@ incoming:
   a --> b (1 import) uses: a, h
     src/x.ts:4
 ";
-        assert_eq!(render_node_view_text(&view), expected);
+        assert_eq!(
+            render_node_view_text(&view, NodeViewOptions::default()),
+            expected
+        );
     }
 
     #[test]
@@ -487,6 +552,116 @@ incoming:
         );
     }
 
+    /// An edge of `n` runtime sites at lines 1.. with the given sites replaced by `mark`.
+    fn marked(n: u32, mark: &[(u32, ImportKind, bool)]) -> EdgeSummary {
+        let lines: Vec<u32> = (1..=n).collect();
+        let mut summary = edge("a", "b", Some(EdgeKind::Implemented), &lines);
+        for &(line, kind, test_only) in mark {
+            let index = usize::try_from(line - 1).unwrap();
+            summary.sites[index].kind = kind;
+            summary.sites[index].test_only = test_only;
+        }
+        summary
+    }
+
+    fn line_of(summary: &EdgeSummary) -> String {
+        edge_line(summary)
+    }
+
+    #[test]
+    fn an_edge_whose_sites_all_hold_a_property_is_annotated_with_it() {
+        let all = |kind, test_only| {
+            let marks: Vec<_> = (1..=3).map(|line| (line, kind, test_only)).collect();
+            line_of(&marked(3, &marks))
+        };
+        assert_eq!(
+            all(ImportKind::TypeOnly, false),
+            "a --> b (3 imports) (type-only)"
+        );
+        assert_eq!(all(ImportKind::Embed, false), "a --> b (3 imports) (embed)");
+        assert_eq!(all(ImportKind::Asset, false), "a --> b (3 imports) (asset)");
+        assert_eq!(
+            all(ImportKind::Runtime, true),
+            "a --> b (3 imports) (test-only)"
+        );
+        assert_eq!(
+            all(ImportKind::TypeOnly, true),
+            "a --> b (3 imports) (type-only) (test-only)"
+        );
+    }
+
+    #[test]
+    fn an_edge_with_mixed_sites_shows_a_count_per_property() {
+        let mixed = marked(
+            12,
+            &[
+                (1, ImportKind::TypeOnly, false),
+                (2, ImportKind::TypeOnly, false),
+                (3, ImportKind::TypeOnly, true),
+                (4, ImportKind::Runtime, true),
+            ],
+        );
+        assert_eq!(
+            line_of(&mixed),
+            "a --> b (12 imports, 3 type-only, 2 test-only)"
+        );
+    }
+
+    #[test]
+    fn a_property_that_holds_everywhere_beside_one_that_does_not_still_gets_counts() {
+        let some = marked(
+            2,
+            &[
+                (1, ImportKind::TypeOnly, false),
+                (2, ImportKind::TypeOnly, true),
+            ],
+        );
+        assert_eq!(
+            line_of(&some),
+            "a --> b (2 imports, 2 type-only, 1 test-only)"
+        );
+    }
+
+    #[test]
+    fn plain_runtime_edges_and_empty_edges_show_only_the_count() {
+        assert_eq!(line_of(&marked(2, &[])), "a --> b (2 imports)");
+        assert_eq!(line_of(&marked(0, &[])), "a --> b (0 imports)");
+    }
+
+    #[test]
+    fn a_module_use_is_listed_first_as_module_and_never_as_a_star() {
+        let mut module_only = marked(1, &[]);
+        module_only.module = true;
+        assert_eq!(line_of(&module_only), "a --> b (1 import) uses: module");
+        let mut both = using(marked(2, &[]), &["Client", "*"]);
+        both.module = true;
+        assert_eq!(
+            line_of(&both),
+            "a --> b (2 imports) uses: module, Client, *"
+        );
+        assert_eq!(
+            line_of(&using(marked(1, &[]), &["Client"])),
+            "a --> b (1 import) uses: Client"
+        );
+    }
+
+    #[test]
+    fn all_sites_lists_every_site_and_the_default_stops_at_three() {
+        let view = NodeView {
+            node: node("a", &[], 0),
+            outgoing: vec![marked(5, &[])],
+            incoming: vec![],
+        };
+        let capped = render_node_view_text(&view, NodeViewOptions::default());
+        assert!(
+            capped.contains("    src/x.ts:3\n    ... 2 more\n"),
+            "{capped}"
+        );
+        let every = render_node_view_text(&view, NodeViewOptions { all_sites: true });
+        assert!(every.contains("    src/x.ts:5\n"), "{every}");
+        assert!(!every.contains("more"), "{every}");
+    }
+
     fn parse(text: &str) -> Value {
         serde_json::from_str(text).unwrap()
     }
@@ -513,11 +688,13 @@ incoming:
                 "kind": "implemented",
                 "realised": 4,
                 "sites": [
-                    { "file": "src/x.ts", "line": 4 },
-                    { "file": "src/x.ts", "line": 9 },
-                    { "file": "src/x.ts", "line": 12 },
+                    { "file": "src/x.ts", "line": 4, "kind": "runtime", "test_only": false },
+                    { "file": "src/x.ts", "line": 9, "kind": "runtime", "test_only": false },
+                    { "file": "src/x.ts", "line": 12, "kind": "runtime", "test_only": false },
+                    { "file": "src/x.ts", "line": 20, "kind": "runtime", "test_only": false },
                 ],
                 "symbols": [],
+                "module": false,
             })
         );
         assert_eq!(value["edges"][1]["kind"], json!("planned"));

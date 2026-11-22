@@ -219,8 +219,9 @@ fn brief_json_parses_and_matches_the_text() {
             "to": "b",
             "kind": "implemented",
             "realised": 1,
-            "sites": [{ "file": "a/main.ts", "line": 1 }],
+            "sites": [{ "file": "a/main.ts", "line": 1, "kind": "runtime", "test_only": false }],
             "symbols": ["b"],
+            "module": false,
         }])
     );
 }
@@ -354,7 +355,7 @@ fn neighbors_json_parses() {
     assert_eq!(value["outgoing"][0]["kind"], json!("implemented"));
     assert_eq!(
         value["incoming"][0]["sites"],
-        json!([{ "file": "a/main.ts", "line": 1 }])
+        json!([{ "file": "a/main.ts", "line": 1, "kind": "runtime", "test_only": false }])
     );
 }
 

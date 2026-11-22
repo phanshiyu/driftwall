@@ -266,10 +266,15 @@ fn observe_returns_what_run_reports_plus_what_it_read() {
         .map(|e| (e.from.as_str(), e.to.as_str()))
         .collect();
     assert_eq!(edges, [("a", "b"), ("b", "a")]);
-    assert_eq!(
-        observation.observed.values().next().unwrap(),
-        &vec![at("a/main.ts", 1)]
-    );
+    let first: Vec<_> = observation
+        .observed
+        .values()
+        .next()
+        .unwrap()
+        .iter()
+        .map(|site| site.at.clone())
+        .collect();
+    assert_eq!(first, vec![at("a/main.ts", 1)]);
     let used: Vec<_> = observation
         .symbols
         .values()

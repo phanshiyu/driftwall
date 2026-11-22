@@ -119,7 +119,13 @@ fn observe_reports_asset_owners_without_counting_assets_as_files() {
     let edges: Vec<_> = observation
         .observed
         .iter()
-        .map(|(edge, sites)| (edge.from.as_str(), edge.to.as_str(), sites.clone()))
+        .map(|(edge, sites)| {
+            (
+                edge.from.as_str(),
+                edge.to.as_str(),
+                sites.iter().map(|site| site.at.clone()).collect::<Vec<_>>(),
+            )
+        })
         .collect();
     assert_eq!(
         edges,

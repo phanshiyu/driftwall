@@ -42,7 +42,12 @@ pub fn neighbors(args: &NeighborsArgs) -> Result<Run> {
         );
     };
     let stdout = match args.format {
-        ViewFormat::Text => report::render_node_view_text(&view),
+        ViewFormat::Text => {
+            let options = report::NodeViewOptions {
+                all_sites: args.all_sites,
+            };
+            report::render_node_view_text(&view, options)
+        }
         ViewFormat::Json => report::render_node_view_json(&view)?,
     };
     Ok(Run {

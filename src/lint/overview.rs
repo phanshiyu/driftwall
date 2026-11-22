@@ -4,8 +4,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use crate::model::{
-    Contract, Edge, EdgeSummary, LintReport, Location, MAX_SITES, NodeSummary, NodeView, Overview,
-    Ownership, Symbol,
+    Contract, Edge, EdgeSummary, LintReport, NodeSummary, NodeView, Overview, Ownership, Site,
+    Symbol,
 };
 
 /// Combines the contract, ownership, observed edges, the symbols they use and the lint report
@@ -15,12 +15,12 @@ use crate::model::{
 /// observed edges, sorted by `(from, to)`: a declared edge nothing uses has `realised == 0`, and
 /// an observed edge the contract lacks has no kind. A node's directories are those holding a
 /// `.arch` file that names it; its files are the source files it owns; its exports are its
-/// declared surface. An edge's symbols are the union over all its sites, not just the kept ones.
+/// declared surface. An edge keeps every site, with its kind and test flag.
 #[must_use]
 pub fn overview(
     contract: &Contract,
     ownership: &Ownership,
-    observed: &BTreeMap<Edge, Vec<Location>>,
+    observed: &BTreeMap<Edge, Vec<Site>>,
     symbols: &BTreeMap<Edge, BTreeSet<Symbol>>,
     report: &LintReport,
 ) -> Overview {
@@ -58,8 +58,9 @@ pub fn overview(
                 to: edge.to.clone(),
                 kind: contract.edges.get(edge).copied(),
                 realised: sites.len(),
-                sites: sites.iter().take(MAX_SITES).cloned().collect(),
+                sites: sites.to_vec(),
                 symbols: symbols.get(edge).cloned().unwrap_or_default(),
+                module: sites.iter().any(|site| site.module),
             }
         })
         .collect();
@@ -107,8 +108,11 @@ mod tests {
     use crate::lint::fixtures::{at, contract, edge, ownership, with_surface};
     use crate::model::{EdgeKind, Severity, Violation, ViolationKind};
 
-    fn sites(file: &str, lines: &[u32]) -> Vec<Location> {
-        lines.iter().map(|&line| at(file, line)).collect()
+    fn sites(file: &str, lines: &[u32]) -> Vec<Site> {
+        lines
+            .iter()
+            .map(|&line| Site::plain(at(file, line)))
+            .collect()
     }
 
     fn report(severities: &[Severity]) -> LintReport {
@@ -218,10 +222,10 @@ mod tests {
     }
 
     #[test]
-    fn sites_are_capped_at_three_but_the_count_is_not() {
+    fn every_site_is_kept_and_counted() {
         let view = sample();
         assert_eq!(view.edges[0].realised, 5);
-        assert_eq!(view.edges[0].sites, sites("a/x.ts", &[1, 2, 3]));
+        assert_eq!(view.edges[0].sites, sites("a/x.ts", &[1, 2, 3, 4, 5]));
         assert_eq!(view.edges[1].sites, Vec::new());
     }
 
@@ -249,7 +253,7 @@ mod tests {
             &symbols,
             &LintReport::default(),
         );
-        assert_eq!(view.edges[0].sites.len(), 3);
+        assert_eq!(view.edges[0].sites.len(), 5);
         assert_eq!(view.edges[0].symbols, used(&["a", "z", "*"]));
         let listed: Vec<&str> = view.edges[0].symbols.iter().map(Symbol::as_str).collect();
         assert_eq!(listed, ["a", "z", "*"]);
