@@ -4,5 +4,7 @@
 //! outside it is a hard [`DiagramError`] carrying a line number.
 
 mod error;
+mod parse;
 
 pub use error::DiagramError;
+pub use parse::parse;
