@@ -236,8 +236,10 @@ fn invalid_contract_exits_2_with_the_line_on_stderr() {
     assert_eq!(stdout(&output), "");
     let err = stderr(&output);
     assert!(err.starts_with("driftwall: error: "), "{err}");
-    assert!(err.contains("architecture.mmd"), "{err}");
-    assert!(err.contains('3'), "{err}");
+    assert!(
+        err.starts_with("driftwall: error: architecture.mmd: line 3: "),
+        "{err}"
+    );
     assert!(!err.contains("Backtrace"), "{err}");
     assert!(!err.contains("Error {"), "{err}");
     assert_eq!(err.lines().count(), 1, "{err}");
