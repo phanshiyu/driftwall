@@ -16,7 +16,7 @@ pub enum FileKind {
     Source,
     /// Any other file, such as `data.json`.
     Asset,
-    /// A code file in a language driftwall cannot read, with its census key (`swift`, `shebang`).
+    /// A code file in a language driftwall cannot read, with its census key (`go`, `shebang`).
     Unread(String),
     /// A source file the scan leaves out as vendored, minified or generated.
     Excluded(Exclusion),
@@ -156,7 +156,7 @@ mod tests {
             ("a/.arch", "node: a\n"),
             ("a/main.ts", ""),
             ("a/data.json", "{}"),
-            ("a/View.swift", ""),
+            ("a/view.go", ""),
             ("a/vendor/lib.js", ""),
             ("a/hidden.ts", ""),
             ("a/secret.ts", ""),
@@ -176,8 +176,8 @@ mod tests {
             (FileKind::Asset, Some("a".to_owned()))
         );
         assert_eq!(
-            named("a/View.swift"),
-            (FileKind::Unread("swift".to_owned()), Some("a".to_owned()))
+            named("a/view.go"),
+            (FileKind::Unread("go".to_owned()), Some("a".to_owned()))
         );
         assert_eq!(
             named("a/vendor/lib.js"),

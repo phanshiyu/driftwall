@@ -79,9 +79,9 @@ mod tests {
 
     #[test]
     fn code_extensions_without_a_language_are_keyed_by_extension() {
-        let dir = tree(&[("a.swift", ""), ("b.sh", ""), ("c.json", ""), ("d.TS", "")]);
-        assert_eq!(key(&dir, "a.swift").as_deref(), Some("swift"));
-        assert_eq!(key(&dir, "b.sh").as_deref(), Some("sh"));
+        let dir = tree(&[("a.go", ""), ("b.pl", ""), ("c.json", ""), ("d.TS", "")]);
+        assert_eq!(key(&dir, "a.go").as_deref(), Some("go"));
+        assert_eq!(key(&dir, "b.pl").as_deref(), Some("pl"));
         assert_eq!(key(&dir, "c.json"), None);
         assert_eq!(key(&dir, "d.TS"), None);
     }

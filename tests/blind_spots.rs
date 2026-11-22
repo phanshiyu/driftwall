@@ -63,12 +63,12 @@ fn where_files() -> Vec<(&'static str, &'static str)> {
         ("a/.arch", "node: a\n"),
         ("a/main.ts", "export const a = 1;\n"),
         ("a/data.json", "{}\n"),
-        ("a/View.swift", "import UIKit\n"),
+        ("a/view.go", "package a\n"),
         ("a/vendor/lib.js", "export const v = 1;\n"),
         ("a/hidden.ts", "export const h = 1;\n"),
         ("loose/free.ts", "export const c = 1;\n"),
         ("loose/free.json", "{}\n"),
-        ("loose/run.sh", "echo\n"),
+        ("loose/run.pl", "print 1;\n"),
     ]
 }
 
@@ -83,8 +83,8 @@ fn where_says_what_every_kind_of_file_is() {
             0,
         ),
         (
-            "a/View.swift",
-            "a/View.swift: not read (swift) in node a (via a/.arch)\n",
+            "a/view.go",
+            "a/view.go: not read (go) in node a (via a/.arch)\n",
             0,
         ),
         (
@@ -99,7 +99,7 @@ fn where_says_what_every_kind_of_file_is() {
         ),
         ("loose/free.ts", "loose/free.ts: unmapped\n", 1),
         ("loose/free.json", "loose/free.json: asset, unmapped\n", 0),
-        ("loose/run.sh", "loose/run.sh: not read (sh), unmapped\n", 0),
+        ("loose/run.pl", "loose/run.pl: not read (pl), unmapped\n", 0),
     ] {
         let output = locate(&dir, file, &[]);
         assert_eq!(stdout(&output), expected, "{file}");
@@ -116,9 +116,9 @@ fn where_json_carries_the_kind_and_its_detail() {
         serde_json::from_str(&stdout(&output)).unwrap()
     };
     assert_eq!(
-        json_of("a/View.swift"),
-        json!({"file": "a/View.swift", "node": "a", "arch_file": "a/.arch",
-               "kind": "unread", "detail": "swift"})
+        json_of("a/view.go"),
+        json!({"file": "a/view.go", "node": "a", "arch_file": "a/.arch",
+               "kind": "unread", "detail": "go"})
     );
     assert_eq!(
         json_of("a/vendor/lib.js"),

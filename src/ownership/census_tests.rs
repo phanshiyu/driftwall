@@ -26,9 +26,9 @@ fn set(paths: &[&str]) -> BTreeSet<PathBuf> {
 fn code_files_without_a_language_are_unread_by_extension() {
     let dir = tree(&[
         (".arch", "node: root\n"),
-        ("App.swift", "import UIKit\n"),
-        ("ios/View.swift", ""),
-        ("build.sh", "echo\n"),
+        ("App.go", "package main\n"),
+        ("ios/view.go", ""),
+        ("build.pl", "print 1;\n"),
         ("lib/x.c", ""),
         ("lib/x.h", ""),
         ("page.html", ""),
@@ -45,18 +45,18 @@ fn code_files_without_a_language_are_unread_by_extension() {
         keys,
         vec![
             ("c", set(&["lib/x.c"])),
+            ("go", set(&["App.go", "ios/view.go"])),
             ("h", set(&["lib/x.h"])),
-            ("sh", set(&["build.sh"])),
-            ("swift", set(&["App.swift", "ios/View.swift"])),
+            ("pl", set(&["build.pl"])),
         ]
     );
 }
 
 #[test]
 fn a_supported_extension_is_removed_from_the_table_so_ts_is_source_not_unread() {
-    let dir = tree(&[(".arch", "node: root\n"), ("a.ts", ""), ("b.swift", "")]);
+    let dir = tree(&[(".arch", "node: root\n"), ("a.ts", ""), ("b.go", "")]);
     let owned = scan(dir.path()).unwrap();
-    assert_eq!(owned.unread.keys().collect::<Vec<_>>(), ["swift"]);
+    assert_eq!(owned.unread.keys().collect::<Vec<_>>(), ["go"]);
     assert_eq!(
         owned.owners.keys().collect::<Vec<_>>(),
         [&PathBuf::from("a.ts")]
@@ -67,33 +67,34 @@ fn a_supported_extension_is_removed_from_the_table_so_ts_is_source_not_unread() 
 fn extensionless_scripts_with_a_shebang_are_keyed_shebang() {
     let dir = tree(&[
         (".arch", "node: root\n"),
-        ("bin/deploy", "#!/usr/bin/env bash\n"),
+        ("bin/deploy", "#!/usr/bin/env ruby\n"),
+        ("bin/build", "#!/usr/bin/env bash\n"),
         ("Makefile", "all:\n"),
         ("LICENSE", "MIT\n"),
     ]);
     let owned = scan(dir.path()).unwrap();
     assert_eq!(owned.unread.len(), 1);
     assert_eq!(owned.unread["shebang"], set(&["bin/deploy"]));
+    assert!(
+        owned.owners.contains_key(&PathBuf::from("bin/build")),
+        "a shell shebang script is source, not unread"
+    );
 }
 
 #[test]
 fn unread_files_are_never_unmapped_and_stay_assets() {
-    let dir = tree(&[("loose.swift", ""), ("src/x.ts", "")]);
+    let dir = tree(&[("loose.go", ""), ("src/x.ts", "")]);
     let owned = scan(dir.path()).unwrap();
     assert_eq!(owned.unmapped, set(&["src/x.ts"]));
-    assert_eq!(owned.unread["swift"], set(&["loose.swift"]));
-    assert!(owned.asset_unmapped.contains(&PathBuf::from("loose.swift")));
+    assert_eq!(owned.unread["go"], set(&["loose.go"]));
+    assert!(owned.asset_unmapped.contains(&PathBuf::from("loose.go")));
 }
 
 #[test]
 fn gitignored_code_files_are_not_unread() {
-    let dir = tree(&[
-        (".gitignore", "Pods/\n"),
-        ("Pods/x.swift", ""),
-        ("a.swift", ""),
-    ]);
+    let dir = tree(&[(".gitignore", "Pods/\n"), ("Pods/x.go", ""), ("a.go", "")]);
     let owned = scan(dir.path()).unwrap();
-    assert_eq!(owned.unread["swift"], set(&["a.swift"]));
+    assert_eq!(owned.unread["go"], set(&["a.go"]));
 }
 
 #[test]
@@ -102,7 +103,7 @@ fn source_files_only_driftwallignore_hides_are_ignored_but_gitignored_ones_are_n
         (".gitignore", "git-hidden.ts\n"),
         (
             ".driftwallignore",
-            "legacy/\nold.py\ngit-hidden.ts\nnotes.swift\n",
+            "legacy/\nold.py\ngit-hidden.ts\nnotes.go\n",
         ),
         (".arch", "node: root\n"),
         ("app.ts", ""),
@@ -110,7 +111,7 @@ fn source_files_only_driftwallignore_hides_are_ignored_but_gitignored_ones_are_n
         ("legacy/b/c.rs", ""),
         ("old.py", ""),
         ("git-hidden.ts", ""),
-        ("notes.swift", ""),
+        ("notes.go", ""),
     ]);
     let owned = scan(dir.path()).unwrap();
     assert_eq!(

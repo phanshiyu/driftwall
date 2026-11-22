@@ -59,7 +59,7 @@ const TWO_NODES: &str = "flowchart LR\n  a[\"a\"]\n  b[\"b\"]\n  a --> b\n";
 fn blind_files() -> Vec<(&'static str, &'static str)> {
     vec![
         ("architecture.mmd", TWO_NODES),
-        (".gitignore", "a/secret.ts\na/Secret.swift\n"),
+        (".gitignore", "a/secret.ts\na/Secret.go\n"),
         (".driftwallignore", "a/hidden.ts\n"),
         ("a/.arch", "node: a\n"),
         ("b/.arch", "node: b\n"),
@@ -67,16 +67,16 @@ fn blind_files() -> Vec<(&'static str, &'static str)> {
             "a/main.ts",
             "import { b } from '../b/lib';\nimport 'left-pad';\nimport './gone';\nvoid import(modName);\n",
         ),
-        ("a/View.swift", "import UIKit\nlet x = 1\n"),
-        ("a/App.swift", "x\n"),
-        ("a/Secret.swift", "gitignored\n"),
+        ("a/View.go", "import UIKit\nlet x = 1\n"),
+        ("a/App.go", "x\n"),
+        ("a/Secret.go", "gitignored\n"),
         ("a/secret.ts", "export const s = 1;\n"),
-        ("a/run.sh", "#!/bin/sh\necho\n"),
+        ("a/run.pl", "#!/bin/sh\necho\n"),
         ("a/vendor/lib.js", "export const v = 1;\n"),
         ("a/hidden.ts", "export const h = 1;\n"),
         ("b/lib.ts", "export const b = 1;\n"),
-        ("b/util.swift", "a\nb\nc"),
-        ("loose/tool.sh", "echo\n"),
+        ("b/util.go", "a\nb\nc"),
+        ("loose/tool.pl", "echo\n"),
         ("loose/app.min.js", "x\n"),
     ]
 }
@@ -113,7 +113,7 @@ nodes:
 edges:
   a --> b (1 import) uses: b
 blind spots:
-  not read: swift 3 files (6 lines), sh 2 files (3 lines)
+  not read: go 3 files (6 lines), pl 2 files (3 lines)
   excluded: vendored 1, minified 1
   ignored by .driftwallignore: 1
   skipped references: undeclared-package 1, dynamic-specifier 1
@@ -152,7 +152,7 @@ fn brief_json_has_the_summary_the_unmapped_tally_and_a_tally_per_node() {
     assert_eq!(
         value["blind_spots"],
         json!({
-            "unread": {"sh": {"count": 2, "lines": 3}, "swift": {"count": 3, "lines": 6}},
+            "unread": {"pl": {"count": 2, "lines": 3}, "go": {"count": 3, "lines": 6}},
             "excluded": {"vendored": 1, "minified": 1},
             "ignored": 1,
             "skipped": {"undeclared-package": 1, "dynamic-specifier": 1},
@@ -187,7 +187,7 @@ fn brief_json_of_a_clean_repo_has_empty_blind_spots() {
 fn gitignored_files_are_counted_nowhere() {
     let dir = repo(&blind_files());
     let all = stdout(&driftwall(&dir, &["neighbors", "a", "--files"]));
-    assert!(!all.contains("Secret.swift"), "{all}");
+    assert!(!all.contains("Secret.go"), "{all}");
     assert!(!all.contains("secret.ts"), "{all}");
 }
 
@@ -198,9 +198,9 @@ fn neighbors_lists_every_blind_item_of_the_node_and_files_only_on_request() {
     assert_eq!(code(&plain), 0);
     let blind = "\
 blind spots:
-  not read: a/run.sh (sh, 2 lines)
-  not read: a/App.swift (swift, 1 line)
-  not read: a/View.swift (swift, 2 lines)
+  not read: a/App.go (go, 1 line)
+  not read: a/View.go (go, 2 lines)
+  not read: a/run.pl (pl, 2 lines)
   excluded: a/vendor/lib.js (vendored)
   ignored: a/hidden.ts
   skipped: a/main.ts:2 left-pad (undeclared-package)
@@ -260,19 +260,19 @@ fn neighbors_json_always_has_the_files_and_every_blind_item_with_its_node() {
     assert_eq!(value["files"], json!(["a/main.ts"]));
     let blind = &value["blind_spots"];
     assert_eq!(
-        blind["unread"]["swift"],
+        blind["unread"]["go"],
         json!({
             "count": 2,
             "lines": 3,
             "files": [
-                {"file": "a/App.swift", "node": "a", "lines": 1},
-                {"file": "a/View.swift", "node": "a", "lines": 2},
+                {"file": "a/App.go", "node": "a", "lines": 1},
+                {"file": "a/View.go", "node": "a", "lines": 2},
             ],
         })
     );
     assert_eq!(
-        blind["unread"]["sh"]["files"],
-        json!([{"file": "a/run.sh", "node": "a", "lines": 2}])
+        blind["unread"]["pl"]["files"],
+        json!([{"file": "a/run.pl", "node": "a", "lines": 2}])
     );
     assert_eq!(
         blind["excluded"],
@@ -321,7 +321,7 @@ fn lint_appends_one_note_line_and_changes_no_exit_code() {
 a/main.ts:3: warning[unresolved-import]: import `./gone` resolves to no file
   hint: fix the import path or add the missing file
 driftwall: 0 errors, 1 warning
-note: 5 files not read (swift 3, sh 2), 2 files excluded (vendored 1, minified 1), 1 file ignored by .driftwallignore, 2 skipped references, 1 unresolved import; see driftwall brief
+note: 5 files not read (go 3, pl 2), 2 files excluded (vendored 1, minified 1), 1 file ignored by .driftwallignore, 2 skipped references, 1 unresolved import; see driftwall brief
 "
     );
     // why: the census files in no node (`loose/`) must never turn into unmapped-file errors.
@@ -354,11 +354,11 @@ fn lint_of_a_clean_repo_prints_no_note() {
 #[test]
 fn a_lone_unread_extension_is_singular_in_the_note() {
     let mut files = clean_files();
-    files.push(("a/View.swift", "x\n"));
+    files.push(("a/View.go", "x\n"));
     let dir = repo(&files);
     assert_eq!(
         stdout(&driftwall(&dir, &["lint"])),
-        "driftwall: clean\nnote: 1 file not read (swift 1); see driftwall brief\n"
+        "driftwall: clean\nnote: 1 file not read (go 1); see driftwall brief\n"
     );
 }
 
@@ -373,7 +373,7 @@ fn lint_json_ends_with_the_blind_spots_summary() {
     assert_eq!(
         value["blind_spots"],
         json!({
-            "unread": {"sh": {"count": 2, "lines": 3}, "swift": {"count": 3, "lines": 6}},
+            "unread": {"pl": {"count": 2, "lines": 3}, "go": {"count": 3, "lines": 6}},
             "excluded": {"vendored": 1, "minified": 1},
             "ignored": 1,
             "skipped": {"undeclared-package": 1, "dynamic-specifier": 1},
@@ -396,9 +396,9 @@ fn lint_sarif_is_unchanged_by_blind_spots() {
 #[test]
 fn init_prints_the_same_note_after_what_it_wrote() {
     let mut files = untagged();
-    files.push(("ios/View.swift", "x\n"));
-    files.push(("tools/run.sh", "#!/bin/sh\n"));
-    files.push(("tools/more.sh", "echo\n"));
+    files.push(("ios/View.go", "x\n"));
+    files.push(("tools/run.pl", "#!/bin/sh\n"));
+    files.push(("tools/more.pl", "echo\n"));
     let dir = repo(&files);
     let output = driftwall(&dir, &["init"]);
     assert_eq!(code(&output), 0);
@@ -413,12 +413,12 @@ fn init_prints_the_same_note_after_what_it_wrote() {
     );
     assert_eq!(
         lines.next(),
-        Some("note: 3 files not read (sh 2, swift 1); see driftwall brief")
+        Some("note: 3 files not read (pl 2, go 1); see driftwall brief")
     );
     assert_eq!(lines.next(), None);
     // why: the init note and the lint note come from the same census.
     let lint = stdout(&driftwall(&dir, &["lint"]));
-    assert!(lint.ends_with("note: 3 files not read (sh 2, swift 1); see driftwall brief\n"));
+    assert!(lint.ends_with("note: 3 files not read (pl 2, go 1); see driftwall brief\n"));
 }
 
 #[test]

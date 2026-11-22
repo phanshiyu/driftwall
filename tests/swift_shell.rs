@@ -167,7 +167,10 @@ fn init_makes_one_node_per_swift_target_and_lints_clean() {
     let lint = run_on("lint", dir.path(), &["--strict"]);
     assert_eq!(
         (lint.status.code(), text(&lint.stdout)),
-        (Some(0), "driftwall: clean\n".to_owned()),
+        (
+            Some(0),
+            "driftwall: clean\nnote: 1 file not read (shebang 1); see driftwall brief\n".to_owned()
+        ),
         "{}",
         read(dir.path(), "architecture.mmd")
     );
@@ -304,8 +307,8 @@ fn an_extensionless_python_script_imports_like_a_py_file_and_a_bash_one_sources(
             sites.iter().map(move |site| {
                 format!(
                     "{}:{} {}->{}",
-                    site.file.display(),
-                    site.line,
+                    site.at.file.display(),
+                    site.at.line,
                     edge.from,
                     edge.to
                 )
