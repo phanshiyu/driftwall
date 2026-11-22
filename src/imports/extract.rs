@@ -148,7 +148,7 @@ fn specifier_text<'s>(node: Node<'_>, source: &'s str) -> Option<&'s str> {
 
 /// The text of a string literal made of a single fragment, so escapes and templates never produce
 /// a half-read specifier.
-fn plain_string<'s>(node: Node<'_>, source: &'s str) -> Option<&'s str> {
+pub(super) fn plain_string<'s>(node: Node<'_>, source: &'s str) -> Option<&'s str> {
     if node.kind() != "string" || node.named_child_count() != 1 {
         return None;
     }

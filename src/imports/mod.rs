@@ -14,6 +14,7 @@
 //! local module name are not followed.
 
 mod alias;
+mod ecmascript_symbols;
 mod error;
 mod extract;
 mod manifest;
@@ -30,6 +31,8 @@ mod tsconfig;
 mod alias_resolve_tests;
 #[cfg(test)]
 mod alias_tests;
+#[cfg(test)]
+mod ecmascript_symbols_tests;
 #[cfg(test)]
 mod python_tests;
 #[cfg(test)]

@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 use std::ffi::OsString;
 use std::path::{Component, Path, PathBuf};
 
-use super::{Environment, Reference, Resolution, nearest};
+use super::{Environment, Reference, Resolution, ecmascript_symbols, nearest};
 
 /// Extensions tried, in order, for extension probing and directory index files.
 const SOURCE_EXTENSIONS: [&str; 8] = ["ts", "tsx", "mts", "cts", "js", "jsx", "mjs", "cjs"];
@@ -18,18 +18,20 @@ const JS_TO_TS: [(&str, &[&str]); 4] = [
     ("cjs", &["cts"]),
 ];
 
-/// The table entry: an ECMAScript match carries one specifier and no names.
+/// The table entry: an ECMAScript match carries one specifier and no names. The symbols it uses
+/// are read from the statement around the specifier, see [`ecmascript_symbols`].
 pub fn ecmascript(
     reference: &Reference<'_>,
     importer: &Path,
     env: &Environment<'_>,
 ) -> Vec<Resolution> {
     let specifier = reference.specifier;
-    vec![if is_relative(specifier) {
+    let resolution = if is_relative(specifier) {
         resolve(specifier, importer, env.known)
     } else {
         resolve_aliased(specifier, importer, env)
-    }]
+    };
+    vec![resolution.using(ecmascript_symbols::used(reference.node, reference.source))]
 }
 
 /// Resolves the relative `specifier`, written in `importer`, to a file in `known`. A specifier
