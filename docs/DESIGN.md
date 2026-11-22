@@ -55,6 +55,20 @@ root (`!vendor/mine/`, `!static/app.min.js`): a file whose path that file whitel
 again. Only the root `.driftwallignore` is consulted for opt-in; negations in nested
 `.driftwallignore` files still work for ignoring (the walker applies them) but do not opt back in.
 
+### Asset files
+
+Every other file the walk reaches (`.json`, `.css`, `.svg`, `package.json`, a README, ..) is an asset.
+Assets get an owner by the tag rules of source files: the nearest `.arch` decides, and under `node: *`
+the module rule names the node by the file name up to its first `.` (so `a.css` joins `a.ts`).
+`Ownership::asset_owners` maps each owned asset to its node and `Ownership::asset_unmapped` lists the
+ones no `.arch` covers. Assets are never reported as `unmapped-file` and never create `.arch` tags to
+validate, and they change nothing about `owners`, `unmapped`, `excluded` or any file count: a node's
+file count is its source files. An asset whose derived module name is not a valid node id
+(`.eslintrc.json` under `node: *`) is listed in `asset_unmapped` and is never an error, because an
+asset must not be able to fail the scan. The vendored and minified rules (see "Excluded files") apply
+to source only, so an asset below `vendor/` is still an asset. `.arch` files are not assets, and ignored
+files (`.gitignore`, `.driftwallignore`) are not walked, so they are neither assets nor resolvable.
+
 ### Module nodes (`node: *`)
 
 A `.arch` file may contain `node: *` instead of an id. Then every module directly in that
@@ -77,19 +91,140 @@ declare at the `node: *` line of its `.arch` file.
 
 ## Import semantics
 
-- An import is an edge only when it resolves to a repository file owned by a different node.
+- An import is an edge only when it resolves to a repository file owned by a different node. The
+  file is a source file or, for TypeScript and JavaScript, an asset (see "Asset files").
 - Imports inside one node are ignored. Third party and standard library imports are ignored.
 - A relative import that resolves to nothing is an `unresolved-import` warning, never silently
-  dropped.
+  dropped, whatever extension the specifier has (`./missing.json` included).
 - Files with no owner never produce edge findings (no cascade from `unmapped-file`).
-- Resolution per language: TypeScript and JavaScript handle relative specifiers, directory
-  `index.*`, extension probing (`.ts .tsx .js .jsx .mjs .cjs`), and `tsconfig`/`jsconfig` `paths` and
-  `baseUrl` with relative `extends` chains. Project `references` are not followed.
-  Python handles relative imports, `__init__.py`, and absolute imports rooted at the repo root or
-  at `src/`. Rust handles `use crate::`, `use super::`, and `mod` declarations are containment,
-  not edges.
+- Resolution per language: TypeScript and JavaScript are described under "TypeScript and JavaScript
+  resolution" below. Python handles relative imports, `__init__.py`, and absolute imports rooted at
+  the repo root or at `src/`. Rust handles `use crate::`, `use super::`, and `mod` declarations are
+  containment, not edges.
 - Extraction is tree-sitter based and driven by a per-language table (extensions, grammar, query),
   not a trait hierarchy. Adding a language means adding a table entry and a query.
+
+### TypeScript and JavaScript resolution
+
+A specifier is resolved in this order, the first step that applies deciding.
+
+1. **Suffix.** A bundler query or fragment is not part of the file name: everything from the first
+   `?`, or from the first `#` that is not the first character, is removed before resolution
+   (`./a.svg?raw`, `./w.ts?worker`, `./a.css?inline`, `./x.png?url&v=2`, `./a#frag`). Messages
+   (`unresolved-import`, skipped references) keep the specifier as written. A specifier that starts
+   with `#` is a package `imports` key.
+2. **Relative** (`.`, `..`, `./x`, `../x`): the path is joined onto the directory of the importer and
+   probed, see "Probing". A relative specifier that probing does not satisfy is an
+   `unresolved-import`, whatever its extension.
+3. **Aliases.** The `paths` and `baseUrl` of the governing config (see "Governing config") yield
+   candidate paths that are probed like a relative path.
+4. **Workspace packages**, see below.
+5. **Package `imports`**, for a specifier that starts with `#`, see below.
+6. **Package check.** A Node builtin or a declared dependency is ignored, anything else is skipped as
+   `undeclared-package`.
+
+The first of steps 3 to 5 that finds a file wins. A `paths` pattern that matches the specifier and
+finds no file is an alias: it ends the resolution silently unless a workspace package or `imports` key
+resolves the specifier.
+
+#### Probing
+
+A candidate path (a relative path, an alias target, a package entry) is looked up against the files
+the scan knows. The first that exists wins, in this order:
+
+1. the path itself as a source file, then the path itself as an asset (see "Asset files"). A candidate
+   written with a trailing `/` is a directory and skips this step and the next two;
+2. the path with an extension appended, in this order: `ts`, `tsx`, `d.ts`, `mts`, `cts`, `d.mts`,
+   `d.cts`, `js`, `jsx`, `mjs`, `cjs`. The extension is appended, so `user.service` finds
+   `user.service.ts`;
+3. when the path is written with a JavaScript extension, the TypeScript files that compile to it:
+   `.js` finds `.ts`, `.tsx`, `.d.ts`; `.jsx` finds `.tsx`; `.mjs` finds `.mts`, `.d.mts`; `.cjs` finds
+   `.cts`, `.d.cts`;
+4. `index.<ext>` in that directory, with the extensions of step 2.
+
+A declaration file (`decl.d.ts`) is a source file like any other, so
+`import type { D } from '../types/decl'` resolves to it. A probe never adds an asset extension: `./data`
+does not find `data.json`.
+
+An import whose probe ends on an asset is a resolved import of kind `asset` that uses no symbol. This
+holds for relative specifiers, alias targets and package entries alike.
+
+#### Governing config
+
+A file is governed by the `tsconfig.json` (else `jsconfig.json`) in its own directory or, failing that,
+in the nearest ancestor directory. A solution-style config (`"files": []` and non-empty
+`references`) that defines neither `paths` nor `baseUrl` after `extends` has no aliases of its own.
+
+When the nearest config is solution-style, its `references` are candidates, in the order written. Each
+`path` is a directory (its `tsconfig.json`, else `jsconfig.json`) or a config file, relative to the
+solution config. A reference that is missing, malformed, or leaves the repository is skipped, and a
+referenced config that is itself solution-style is not followed further. The file is governed by the
+first referenced config that includes it, and that config's `paths` and `baseUrl` (after its own
+`extends`) apply. When no reference includes the file, the solution config is as if it were absent: the
+nearest config above it applies, as it did before references were read.
+
+A referenced config includes a file when
+
+- the file is listed in its `files` (a path relative to the config), or
+- the file matches a pattern of `include` and no pattern of `exclude`. A config with neither `files`
+  nor `include` has the `include` `**/*`, every file below its directory.
+
+`include`, `exclude` and `files` are read from the config or, when it does not set one, from the
+nearest config of its `extends` chain that does, relative to the directory of the file that sets it.
+Patterns are relative to that directory: `*` matches any characters inside one path segment, `?` one
+character, `**` any number of directories (also none). A pattern also matches everything below it, so
+`src` includes `src/a/b.ts`. A leading `./` is ignored and a pattern that leaves its directory matches
+nothing. `exclude` does not apply to `files`. `compilerOptions` such as `rootDir` and the file
+extensions TypeScript would compile do not decide inclusion.
+
+#### Workspace packages
+
+A `package.json` with `workspaces` (an array of patterns, or an object whose `packages` is such an
+array) declares workspace members. Every such `package.json` counts, at the repository root or nested.
+A pattern is relative to the directory of its `package.json`, uses `*`, `?` and `**` as above, and a
+pattern that starts with `!` removes directories the earlier patterns matched. A pattern is matched
+against the directories that hold, or lie above, a TypeScript or JavaScript source file, so ignored
+trees are never consulted. A matched directory is a member when its `package.json` is readable and has
+a non-empty string `name`. When two members share a name the first in path order wins. pnpm and lerna
+workspace files are not read.
+
+A bare specifier whose package name (`@x/b` for `@x/b/util`, `pkg` for `pkg/sub`) is a member
+resolves into that member, before the package check and whether or not the importer lists it as a
+dependency. Resolution takes the subpath of the specifier, `.` for none and `./util` for `@x/b/util`:
+
+1. When the member has `exports`, the subpath is looked up in it. `exports` is a subpath map when it
+   is an object with a key that starts with `.` (keys that do not are ignored); any other value (a
+   string, an array, an object of conditions) is the target of `.`. An exact key wins; otherwise among
+   the keys with one `*` that match, the longest prefix wins, then the longest key. The `*` stands for
+   the matched text, replaced at every `*` of the target. A target is a string starting with `./`, a
+   conditions object, or an array of targets tried in order; `null` and any other value yield nothing.
+   A conditions object is searched in the fixed order `types`, `import`, `default`, `require` (never
+   in the order the keys are written), other conditions are ignored, and the search descends into
+   nested objects with the same order. Every target the search yields, in that order, is probed
+   against the member directory and the first that names a file wins. So a `types` target that is not
+   in the repository (a build output) falls through to the next condition.
+2. When the subpath is `.` and `exports` found no file, the fields `module`, `main` and `types` are
+   probed in that order against the member directory, then the directory itself (its `index.*`).
+3. When the subpath is longer and `exports` found no file, the rest of the specifier (`util`) is
+   probed against the member directory like a relative path.
+4. Otherwise the specifier is ignored: the package is a repository member whose entry is not a known
+   file (a build output), which is not an error.
+
+#### Package `imports`
+
+A specifier that starts with `#` is looked up in the `imports` field of the nearest `package.json` at
+or above the importer that has an `imports` object. Its keys start with `#`; the matching rules, the
+`*` patterns, conditions and the probing of targets are those of `exports` above, and targets are
+relative to the directory of that `package.json`. A target that does not start with `./` names a
+package, not a repository file, and yields nothing. A key that matches and finds no file ignores the
+specifier. A specifier that no key matches, or one with no `imports` field to look in, goes on to the
+package check.
+
+#### Packages
+
+A declared dependency is a name listed in `dependencies`, `devDependencies`, `peerDependencies` or
+`optionalDependencies` of any `package.json` at or above the file, up to the repository root, because
+Node searches every ancestor `node_modules`. A name declared in any one of them is declared.
 
 ### Import location
 
@@ -104,12 +239,12 @@ call start, and a Rust embed at the start of its macro invocation.
 
 ### Import kind
 
-Every resolved import carries a `kind` (`Runtime`, `TypeOnly` or `Embed`, serialized as the
-lower-case strings `runtime`, `typeonly`, `embed`) and a `test_only` flag. Neither changes which
+Every resolved import carries a `kind` (`Runtime`, `TypeOnly`, `Embed` or `Asset`, serialized as the
+kebab-case strings `runtime`, `type-only`, `embed`, `asset`) and a `test_only` flag. Neither changes which
 edges exist: the linter treats every kind and test import like any other. They are recorded so that
 callers can decide what a type-only or test import is worth.
 
-`typeonly`:
+`type-only`:
 
 - TypeScript and JavaScript: `import type ...`, `export type ... from`, an import or re-export where
   every specifier is written `type X` (`import { type A, type B } from`), and every import in a
@@ -139,6 +274,12 @@ reach the same file from the same location with different kinds (`import type { 
 import { b } from './a';` on one line) stay two entries, so a type-only use is never recorded as
 runtime or the other way round. Entries are sorted by location, target, symbols, kind, `test_only`.
 
+`asset`: a TypeScript or JavaScript import that resolves to an existing non-source repository file
+(`./data.json`, `./style.css`, `../x.svg`, see "Asset files"). It uses no symbol, so it is never
+`private-symbol`, it is a dependency on the node that owns the asset, and it is `asset` even inside a
+declaration file. As for every import, an asset owned by nobody or by the importer's own node is no
+edge.
+
 ### Embeds
 
 A Rust `include_str!("..")`, `include_bytes!("..")` or `include!("..")` (also written `std::..`) with
@@ -156,7 +297,7 @@ a location, the specifier as written and a typed reason (kebab-case in serializa
 
 | Reason | When |
 | --- | --- |
-| `undeclared-package` | TypeScript or JavaScript specifier that is not relative, matches no `tsconfig` or `jsconfig` `paths` alias, is not a Node builtin and is not a declared dependency |
+| `undeclared-package` | TypeScript or JavaScript specifier that is not relative, matches no `tsconfig` or `jsconfig` `paths` alias, is not a workspace package, is not a Node builtin and is not a declared dependency |
 | `dynamic-specifier` | `import(expr)` or `require(expr)` whose argument is not a string literal or a template without substitutions; Python `importlib.import_module(..)` and `__import__(..)` |
 | `embed-non-source` | a Rust embed whose target is not a known source file |
 
@@ -165,10 +306,10 @@ even when no file backs it (that stays silent, as before). `baseUrl` alone is no
 specifier it cannot resolve falls through to the package check. A builtin is a `node:` specifier or
 one whose first path segment is a Node builtin module name (`fs`, `path`, `fs/promises`, ..). A
 declared dependency is a name listed in `dependencies`, `devDependencies`, `peerDependencies` or
-`optionalDependencies` of the nearest `package.json` at or above the file (only that one, never an
-ancestor's); `@a/b/sub` is the package `@a/b` and `pkg/sub` is `pkg`. A file with no readable
-`package.json` above it declares nothing. A malformed `package.json` is skipped silently, as a
-malformed `tsconfig` is, so the next ancestor applies. Declared third party packages stay silently
+`optionalDependencies` of any `package.json` at or above the file (see "Packages"); `@a/b/sub` is the
+package `@a/b` and `pkg/sub` is `pkg`. A file with no readable `package.json` above it declares nothing.
+A malformed `package.json` is skipped silently, as a malformed `tsconfig` is, and the others still
+count. Declared third party packages stay silently
 ignored: they are not repository imports and nothing is wrong. `skipped` is not a lint finding.
 For a Python call the specifier is the text of its first argument.
 
@@ -232,7 +373,7 @@ name; a node that loses its whole surface shows only `-` lines and is unrestrict
 | `undeclared-edge` | error | code imports across nodes and the diagram has no such edge |
 | `stale-edge` | warning | solid edge with no import backing it |
 | `planned-realized` | warning | dotted edge now backed by code, promote it to solid |
-| `unresolved-import` | warning | relative import resolves to nothing |
+| `unresolved-import` | warning | relative import resolves to nothing, whatever its extension |
 | `private-symbol` | error | an import uses a symbol outside the target node's declared surface |
 
 A dotted edge permits the import. `--strict` turns every warning into a failure.

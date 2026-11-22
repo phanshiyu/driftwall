@@ -19,3 +19,10 @@
   symbol, and surfaces do not restrict them.
 - Skipped references: undeclared packages, computed specifiers and embeds of non-source files are
   listed in `FileImports.skipped` instead of being dropped. A malformed `package.json` is ignored.
+- TypeScript and JavaScript resolution: workspace packages imported by name (`exports`, `module`,
+  `main`, `types`), tsconfig `references`, package `imports` (`#internal/*`), `.d.ts` probing,
+  bundler query suffixes (`?raw`, `?url`), and every ancestor `package.json` for declared packages.
+- Asset imports: a relative import of an existing non-source file (`./data.json`, `./style.css`) is a
+  dependency on the node that owns it, with the new import kind `asset`. A relative import of a
+  missing file of any extension is now `unresolved-import`. The import kind `typeonly` is now
+  serialized as `type-only`.
