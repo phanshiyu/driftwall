@@ -26,7 +26,7 @@ pub fn apply(
         baseline
             .tags
             .iter()
-            .map(|(dir, id)| (dir.join(ARCH_FILE), format!("node: {id}\n")))
+            .map(|(dir, tag)| (dir.join(ARCH_FILE), format!("node: {tag}\n")))
             .collect()
     } else {
         Vec::new()

@@ -8,6 +8,7 @@ use tempfile::TempDir;
 use super::*;
 use crate::imports::FileImports;
 use crate::model::{Edge, EdgeKind, Location, NodeId, ResolvedImport};
+use crate::ownership::Tag;
 
 fn files(paths: &[&str]) -> BTreeMap<PathBuf, Language> {
     paths
@@ -40,7 +41,15 @@ fn plan_of(paths: &[&str], depth: Option<usize>) -> InitPlan {
 fn tags(plan: &InitPlan) -> Vec<(String, String)> {
     plan.tags
         .iter()
-        .map(|(dir, id)| (dir.display().to_string(), id.to_string()))
+        .map(|(dir, tag)| (dir.display().to_string(), tag.to_string()))
+        .collect()
+}
+
+fn node_ids(plan: &InitPlan) -> Vec<String> {
+    plan.contract
+        .nodes
+        .keys()
+        .map(ToString::to_string)
         .collect()
 }
 
@@ -91,11 +100,110 @@ fn root_files_form_the_root_node_next_to_directories() {
 }
 
 #[test]
-fn everything_in_one_directory_is_one_node() {
-    let p = plan_of(&["src/a.ts", "src/b.ts"], None);
+fn one_module_in_a_directory_is_one_node() {
+    let p = plan_of(&["src/a.ts", "src/a.test.ts"], None);
     assert_eq!(tags(&p), pairs(&[("src", "src")]));
-    let flat = plan_of(&["a.ts", "b.ts"], None);
+    let flat = plan_of(&["a.ts"], None);
     assert_eq!(tags(&flat), pairs(&[("", "root")]));
+}
+
+#[test]
+fn two_modules_in_the_source_root_become_module_nodes() {
+    let p = plan_of(&["src/a.ts", "src/b.ts"], None);
+    assert_eq!(tags(&p), pairs(&[("src", "*")]));
+    assert_eq!(node_ids(&p), ["a", "b"]);
+    let flat = plan_of(&["a.ts", "b.ts"], None);
+    assert_eq!(tags(&flat), pairs(&[("", "*")]));
+    assert_eq!(node_ids(&flat), ["a", "b"]);
+}
+
+#[test]
+fn module_nodes_are_the_ids_ownership_derives() {
+    let paths = [
+        "src/main.rs",
+        "src/gitlab.rs",
+        "src/gitlab/client.rs",
+        "src/routes/a.rs",
+        "src/ui/mod.rs",
+        "src/ui/b.test.rs",
+    ];
+    let p = plan_of(&paths, None);
+    assert_eq!(tags(&p), pairs(&[("src", "*")]));
+    assert_eq!(node_ids(&p), ["gitlab", "main", "routes", "ui"]);
+    assert_eq!(
+        p.contract.nodes[&NodeId::new("routes").unwrap()]
+            .label
+            .as_deref(),
+        Some("src/routes")
+    );
+}
+
+#[test]
+fn module_nodes_get_edges_between_modules_and_directories() {
+    let all = files(&["src/main.ts", "src/store.ts", "src/ui/b.ts", "src/ui/c.ts"]);
+    let imports: BTreeMap<PathBuf, FileImports> = [
+        import("src/main.ts", "src/ui/b.ts"),
+        import("src/store.ts", "src/main.ts"),
+        import("src/ui/b.ts", "src/ui/c.ts"),
+        import("src/ui/c.ts", "src/store.ts"),
+    ]
+    .into_iter()
+    .collect();
+    let p = plan(&all, &imports, &InitOptions::default());
+    let edges: Vec<String> = p
+        .contract
+        .edges
+        .keys()
+        .map(|edge| format!("{} {}", edge.from, edge.to))
+        .collect();
+    assert_eq!(edges, ["main ui", "store main", "ui store"]);
+}
+
+#[test]
+fn one_module_next_to_directories_keeps_directory_nodes() {
+    let p = plan_of(&["src/main.ts", "src/auth/a.ts", "src/billing/b.ts"], None);
+    assert_eq!(
+        tags(&p),
+        pairs(&[
+            ("src", "src"),
+            ("src/auth", "auth"),
+            ("src/billing", "billing")
+        ])
+    );
+}
+
+#[test]
+fn an_explicit_depth_never_makes_module_nodes() {
+    let paths = ["src/a.ts", "src/b.ts", "src/c/x.ts"];
+    for depth in 0..=3 {
+        let p = plan_of(&paths, Some(depth));
+        assert!(
+            p.tags.values().all(|tag| *tag != Tag::Modules),
+            "depth {depth}"
+        );
+    }
+    assert_eq!(
+        tags(&plan_of(&paths, Some(2))),
+        pairs(&[("src", "src"), ("src/c", "c")])
+    );
+}
+
+#[test]
+fn a_name_the_contract_cannot_hold_falls_back_to_directory_nodes() {
+    for bad in [
+        "src/_private.py",
+        "src/.eslintrc.js",
+        "src/end.rs",
+        "src/9a.ts",
+    ] {
+        let p = plan_of(&["src/a.ts", "src/b.ts", bad], None);
+        assert_eq!(tags(&p), pairs(&[("src", "src")]), "{bad}");
+    }
+    let bad_directory = plan_of(&["src/a.ts", "src/b.ts", "src/__tests__/t.ts"], None);
+    assert_eq!(
+        tags(&bad_directory),
+        pairs(&[("src", "src"), ("src/__tests__", "n-__tests__")])
+    );
 }
 
 #[test]
@@ -183,7 +291,14 @@ fn plan_is_deterministic() {
 #[test]
 fn every_planned_node_is_tagged_exactly_once() {
     let p = plan_of(&["a/x.ts", "b/y.ts", "main.ts"], None);
-    let tagged: BTreeSet<&NodeId> = p.tags.values().collect();
+    let tagged: BTreeSet<&NodeId> = p
+        .tags
+        .values()
+        .filter_map(|tag| match tag {
+            Tag::Node(id) => Some(id),
+            Tag::Modules => None,
+        })
+        .collect();
     let declared: BTreeSet<&NodeId> = p.contract.nodes.keys().collect();
     assert_eq!(tagged, declared);
 }

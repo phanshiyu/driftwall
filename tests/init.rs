@@ -1,6 +1,8 @@
 //! End-to-end tests of `driftwall init`: the baseline it writes must lint clean.
 
-use std::process::Output;
+use std::fs;
+use std::path::Path;
+use std::process::{Command, Output};
 
 use tempfile::TempDir;
 
@@ -80,6 +82,30 @@ mod support {
             .collect()
     }
 
+    /// Copies the source tree of this repository, without any `.arch` file.
+    pub fn copy_sources(from: &Path, to: &Path) {
+        fs::create_dir_all(to).unwrap();
+        for entry in fs::read_dir(from).unwrap() {
+            let path = entry.unwrap().path();
+            let target = to.join(path.file_name().unwrap());
+            if path.is_dir() {
+                copy_sources(&path, &target);
+            } else if path.file_name().is_some_and(|name| name != ".arch") {
+                fs::copy(&path, &target).unwrap();
+            }
+        }
+    }
+
+    /// The edges of the written `architecture.mmd`, as `from to` pairs.
+    pub fn edge_pairs(dir: &TempDir) -> Vec<String> {
+        let contract = driftwall::diagram::parse(&read(dir, "architecture.mmd")).unwrap();
+        contract
+            .edges
+            .keys()
+            .map(|edge| format!("{} {}", edge.from, edge.to))
+            .collect()
+    }
+
     /// The node ids of the written `architecture.mmd`.
     pub fn node_ids(dir: &TempDir) -> Vec<String> {
         let contract = driftwall::diagram::parse(&read(dir, "architecture.mmd")).unwrap();
@@ -87,7 +113,10 @@ mod support {
     }
 }
 
-use support::{arch_files, code, node_ids, read, repo, run_on, snapshot, stderr, stdout};
+use support::{
+    arch_files, code, copy_sources, edge_pairs, node_ids, read, repo, run_on, snapshot, stderr,
+    stdout,
+};
 
 type Files = Vec<(&'static str, &'static str)>;
 
@@ -108,16 +137,12 @@ fn ts_src_root() -> Files {
     ]
 }
 
-/// Root-level files next to directories.
+/// One root-level file next to directories.
 fn ts_flat() -> Files {
     vec![
         (
             "main.ts",
             "import { util } from './lib/util';\nimport { helper } from './lib/helpers/h';\nexport const m = [util, helper];\n",
-        ),
-        (
-            "utils.ts",
-            "import { util } from './lib/util';\nexport const u = util;\n",
         ),
         ("lib/util.ts", "export const util = 1;\n"),
         ("lib/helpers/h.ts", "export const helper = 1;\n"),
@@ -204,6 +229,85 @@ fn py_flat() -> Files {
     ]
 }
 
+/// A flat Rust binary crate: three modules and two directories, with `use crate::` edges.
+fn rust_flat() -> Files {
+    vec![
+        (
+            "Cargo.toml",
+            "[package]\nname = \"shop\"\nversion = \"0.1.0\"\n",
+        ),
+        (
+            "src/main.rs",
+            "mod gitlab;\nmod store;\nmod routes;\nmod ui;\n\nuse crate::gitlab::fetch;\nuse crate::store::save;\nuse crate::ui::b::render;\n\nfn main() {\n    save(fetch());\n    render();\n}\n",
+        ),
+        (
+            "src/gitlab.rs",
+            "use crate::store::Cache;\n\npub fn fetch() -> Cache {\n    Cache\n}\n",
+        ),
+        (
+            "src/store.rs",
+            "pub struct Cache;\n\npub fn save(_c: Cache) {}\n",
+        ),
+        (
+            "src/routes/a.rs",
+            "use crate::gitlab::fetch;\n\npub fn handle() {\n    fetch();\n}\n",
+        ),
+        (
+            "src/ui/b.rs",
+            "use crate::routes::a::handle;\n\npub fn render() {\n    handle();\n}\n",
+        ),
+    ]
+}
+
+/// A flat TypeScript `src/` with a test file beside its module and one directory.
+fn ts_modules() -> Files {
+    vec![
+        (
+            "src/app.ts",
+            "import { store } from './store';\nimport { view } from './ui/view';\nexport const app = [store, view];\n",
+        ),
+        ("src/store.ts", "export const store = 1;\n"),
+        (
+            "src/store.test.ts",
+            "import { store } from './store';\nexport const t = store;\n",
+        ),
+        ("src/util.ts", "export const util = 1;\n"),
+        (
+            "src/ui/view.ts",
+            "import { util } from '../util';\nexport const view = util;\n",
+        ),
+    ]
+}
+
+/// A flat Python package under the repository root, with a subpackage.
+fn py_package() -> Files {
+    vec![
+        ("pkg/__init__.py", ""),
+        (
+            "pkg/api.py",
+            "from .models import USER\nfrom pkg.util import HELP\n\nAPI = [USER, HELP]\n",
+        ),
+        ("pkg/models.py", "from .util import HELP\n\nUSER = HELP\n"),
+        ("pkg/util.py", "HELP = 1\n"),
+        ("pkg/sub/c.py", "from pkg.api import API\n\nC = API\n"),
+    ]
+}
+
+/// One module next to several directories: the source root keeps directory nodes.
+fn ts_one_module() -> Files {
+    vec![
+        (
+            "src/index.ts",
+            "import { login } from './auth/login';\nexport const main = login;\n",
+        ),
+        (
+            "src/auth/login.ts",
+            "import { connect } from '../db/conn';\nexport const login = connect;\n",
+        ),
+        ("src/db/conn.ts", "export const connect = 1;\n"),
+    ]
+}
+
 fn fixtures() -> Vec<(&'static str, Files)> {
     vec![
         ("ts src root", ts_src_root()),
@@ -213,6 +317,10 @@ fn fixtures() -> Vec<(&'static str, Files)> {
         ("ts cyclic", ts_cyclic()),
         ("py src root", py_src_root()),
         ("py flat", py_flat()),
+        ("rust flat", rust_flat()),
+        ("ts modules", ts_modules()),
+        ("py package", py_package()),
+        ("ts one module", ts_one_module()),
     ]
 }
 
@@ -425,4 +533,162 @@ fn output_is_byte_identical_across_fresh_copies() {
         init(&second, &[]);
         assert_eq!(snapshot(first.path()), snapshot(second.path()), "{name}");
     }
+}
+
+#[test]
+fn a_flat_rust_crate_gets_one_node_per_module_and_directory() {
+    let dir = repo(&rust_flat());
+    let output = init(&dir, &[]);
+    assert_eq!(code(&output), 0, "{}", stderr(&output));
+    assert_eq!(arch_files(&dir), ["src/.arch"]);
+    assert_eq!(read(&dir, "src/.arch"), "node: *\n");
+    assert_eq!(node_ids(&dir), ["gitlab", "main", "routes", "store", "ui"]);
+    assert_eq!(
+        edge_pairs(&dir),
+        [
+            "gitlab store",
+            "main gitlab",
+            "main store",
+            "main ui",
+            "routes gitlab",
+            "ui routes"
+        ]
+    );
+    let lint = run_on("lint", dir.path(), &["--strict"]);
+    assert_eq!(
+        (code(&lint), stdout(&lint)),
+        (0, "driftwall: clean\n".to_owned())
+    );
+}
+
+#[test]
+fn a_flat_typescript_src_joins_test_files_to_their_module() {
+    let dir = repo(&ts_modules());
+    init(&dir, &[]);
+    assert_eq!(read(&dir, "src/.arch"), "node: *\n");
+    assert_eq!(node_ids(&dir), ["app", "store", "ui", "util"]);
+    assert_eq!(edge_pairs(&dir), ["app store", "app ui", "ui util"]);
+}
+
+#[test]
+fn a_flat_python_package_names_its_init_after_the_package() {
+    let dir = repo(&py_package());
+    init(&dir, &[]);
+    assert_eq!(arch_files(&dir), ["pkg/.arch"]);
+    assert_eq!(read(&dir, "pkg/.arch"), "node: *\n");
+    assert_eq!(node_ids(&dir), ["api", "models", "pkg", "sub", "util"]);
+    assert_eq!(
+        edge_pairs(&dir),
+        ["api models", "api util", "models util", "sub api"]
+    );
+}
+
+#[test]
+fn one_module_next_to_directories_keeps_directory_nodes() {
+    let dir = repo(&ts_one_module());
+    init(&dir, &[]);
+    assert_eq!(
+        arch_files(&dir),
+        ["src/.arch", "src/auth/.arch", "src/db/.arch"]
+    );
+    assert_eq!(read(&dir, "src/.arch"), "node: src\n");
+    assert_eq!(node_ids(&dir), ["auth", "db", "src"]);
+}
+
+#[test]
+fn an_explicit_depth_keeps_directory_nodes_on_a_flat_crate() {
+    let dir = repo(&rust_flat());
+    init(&dir, &["--depth", "2"]);
+    assert_eq!(read(&dir, "src/.arch"), "node: src\n");
+    assert_eq!(node_ids(&dir), ["routes", "src", "ui"]);
+}
+
+#[test]
+fn a_source_file_with_an_unusable_module_name_falls_back_to_directory_nodes() {
+    let mut files = rust_flat();
+    files.push(("src/_hidden.rs", "pub fn h() {}\n"));
+    let dir = repo(&files);
+    init(&dir, &[]);
+    assert_eq!(read(&dir, "src/.arch"), "node: src\n");
+    let lint = run_on("lint", dir.path(), &["--strict"]);
+    assert_eq!(stdout(&lint), "driftwall: clean\n");
+}
+
+#[test]
+fn lint_reports_a_new_module_the_contract_does_not_declare() {
+    let dir = repo(&rust_flat());
+    init(&dir, &[]);
+    fs::write(dir.path().join("src/extra.rs"), "pub fn e() {}\n").unwrap();
+    let lint = run_on("lint", dir.path(), &[]);
+    assert_eq!(code(&lint), 1);
+    let out = stdout(&lint);
+    assert!(out.contains("unknown-node"), "{out}");
+    assert!(out.contains("src/.arch:1"), "{out}");
+    assert!(out.contains("extra"), "{out}");
+}
+
+#[test]
+fn lint_reports_an_invalid_derived_name_as_a_tool_error() {
+    let dir = repo(&rust_flat());
+    init(&dir, &[]);
+    fs::write(dir.path().join("src/_x.rs"), "pub fn e() {}\n").unwrap();
+    let lint = run_on("lint", dir.path(), &[]);
+    assert_eq!(code(&lint), 2);
+    assert!(stderr(&lint).contains("src/.arch:1"), "{}", stderr(&lint));
+}
+
+#[test]
+fn where_reports_the_derived_node_and_its_arch_file() {
+    let dir = repo(&rust_flat());
+    init(&dir, &[]);
+    for (file, expected) in [
+        ("src/gitlab.rs", "src/gitlab.rs: gitlab (via src/.arch)\n"),
+        (
+            "src/routes/a.rs",
+            "src/routes/a.rs: routes (via src/.arch)\n",
+        ),
+        (
+            "src/gitlab/new.rs",
+            "src/gitlab/new.rs: gitlab (via src/.arch)\n",
+        ),
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_driftwall"))
+            .args(["where", file, "--root"])
+            .arg(dir.path())
+            .output()
+            .unwrap();
+        assert_eq!(stdout(&output), expected);
+    }
+}
+
+#[test]
+fn this_repository_baselines_clean_without_its_contract() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let dir = TempDir::new().unwrap();
+    copy_sources(&root.join("src"), &dir.path().join("src"));
+    fs::copy(root.join("Cargo.toml"), dir.path().join("Cargo.toml")).unwrap();
+
+    let output = init(&dir, &[]);
+    assert_eq!(code(&output), 0, "{}", stderr(&output));
+    let lint = run_on("lint", dir.path(), &["--strict"]);
+    assert_eq!(
+        (code(&lint), stdout(&lint)),
+        (0, "driftwall: clean\n".to_owned()),
+        "{}",
+        read(&dir, "architecture.mmd")
+    );
+    assert_eq!(
+        node_ids(&dir),
+        [
+            "cli",
+            "diagram",
+            "imports",
+            "init",
+            "lint",
+            "model",
+            "ownership",
+            "report",
+            "src"
+        ]
+    );
 }

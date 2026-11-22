@@ -6,6 +6,7 @@ use std::path::{Component, Path, PathBuf};
 
 use crate::imports::FileImports;
 use crate::model::{Contract, Edge, EdgeKind, Language, NodeId, NodeInfo};
+use crate::ownership::{Tag, module_name};
 
 /// Words the contract format rejects as node ids.
 const RESERVED: [&str; 3] = ["end", "flowchart", "subgraph"];
@@ -17,60 +18,63 @@ const ROOT_LABEL: &str = ".";
 /// Settings for [`plan`].
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct InitOptions {
-    /// Directory depth, counted from the repository root, at which nodes are cut. `None` picks it
-    /// automatically (see `docs/DESIGN.md`, section "init").
+    /// Directory depth, counted from the repository root, at which directory nodes are cut. `None`
+    /// picks it automatically, and may then choose module nodes (see `docs/DESIGN.md`, "init").
     pub depth: Option<usize>,
 }
 
 /// What `init` intends to write.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct InitPlan {
-    /// The baseline contract: one node per owning directory, a solid edge per observed import.
+    /// The baseline contract: one node per owning directory (or per module under `node: *`), a
+    /// solid edge per observed import.
     pub contract: Contract,
-    /// Repository-relative directory (empty for the root) to the node its `.arch` tags it with.
-    pub tags: BTreeMap<PathBuf, NodeId>,
+    /// Repository-relative directory (empty for the root) to the tag its `.arch` gets: a node id,
+    /// or `node: *` when the nodes are derived from module names.
+    pub tags: BTreeMap<PathBuf, Tag>,
+}
+
+/// How the files are cut into nodes: what the tags say and which node each file ends up in.
+struct Layout {
+    tags: BTreeMap<PathBuf, Tag>,
+    labels: BTreeMap<NodeId, String>,
+    owners: BTreeMap<PathBuf, NodeId>,
 }
 
 /// Builds the baseline for `files` and the `imports` found in them.
 ///
-/// Every source file is owned by its ancestor directory at the chosen depth, or by its own
-/// directory when that is shallower. Imports of or from files outside `files` are ignored.
+/// With an explicit depth, every source file is owned by its ancestor directory at that depth, or
+/// by its own directory when that is shallower. Without one, the depth is chosen from the layout
+/// and, when the directory it descends to directly holds two or more modules, that directory is
+/// tagged `node: *` and each module and subdirectory becomes a node instead. Imports of or from
+/// files outside `files` are ignored.
 #[must_use]
 pub fn plan(
     files: &BTreeMap<PathBuf, Language>,
     imports: &BTreeMap<PathBuf, FileImports>,
     options: &InitOptions,
 ) -> InitPlan {
-    let source_dirs: BTreeSet<PathBuf> = files.keys().map(|file| parent_of(file)).collect();
-    let depth = options
+    let layout = options
         .depth
-        .unwrap_or_else(|| automatic_depth(&source_dirs));
-
-    let owner_dir: BTreeMap<&PathBuf, PathBuf> = files
-        .keys()
-        .map(|file| (file, truncate(&parent_of(file), depth)))
-        .collect();
-    let node_dirs: BTreeSet<&PathBuf> = owner_dir.values().collect();
-    let ids = node_ids(&node_dirs);
+        .map_or_else(|| automatic(files), |depth| by_directory(files, depth));
 
     let mut contract = Contract::default();
-    for (dir, id) in &ids {
+    for (id, label) in layout.labels {
         contract.nodes.insert(
-            id.clone(),
+            id,
             NodeInfo {
-                label: Some(label_of(dir)),
+                label: Some(label),
                 boundary: None,
             },
         );
     }
 
-    let owner_of = |file: &PathBuf| owner_dir.get(file).and_then(|dir| ids.get(dir));
     for (file, file_imports) in imports {
-        let Some(from) = owner_of(file) else {
+        let Some(from) = layout.owners.get(file) else {
             continue;
         };
         for import in &file_imports.resolved {
-            let Some(to) = owner_of(&import.target) else {
+            let Some(to) = layout.owners.get(&import.target) else {
                 continue;
             };
             if from != to {
@@ -87,8 +91,73 @@ pub fn plan(
 
     InitPlan {
         contract,
-        tags: ids,
+        tags: layout.tags,
     }
+}
+
+/// The layout chosen from the files alone: module nodes at the fork when it directly holds two or
+/// more modules, otherwise directory nodes just below the fork.
+fn automatic(files: &BTreeMap<PathBuf, Language>) -> Layout {
+    let source_dirs: BTreeSet<PathBuf> = files.keys().map(|file| parent_of(file)).collect();
+    let fork = automatic_fork(&source_dirs);
+    by_modules(files, &fork).unwrap_or_else(|| by_directory(files, component_count(&fork) + 1))
+}
+
+/// One node per owning directory: the ancestor of each file at `depth`, or its own directory.
+fn by_directory(files: &BTreeMap<PathBuf, Language>, depth: usize) -> Layout {
+    let owner_dir: BTreeMap<&PathBuf, PathBuf> = files
+        .keys()
+        .map(|file| (file, truncate(&parent_of(file), depth)))
+        .collect();
+    let node_dirs: BTreeSet<&PathBuf> = owner_dir.values().collect();
+    let ids = node_ids(&node_dirs);
+    Layout {
+        labels: ids
+            .iter()
+            .map(|(dir, id)| (id.clone(), label_of(dir)))
+            .collect(),
+        owners: owner_dir
+            .into_iter()
+            .filter_map(|(file, dir)| Some((file.clone(), ids.get(&dir)?.clone())))
+            .collect(),
+        tags: ids
+            .into_iter()
+            .map(|(dir, id)| (dir, Tag::Node(id)))
+            .collect(),
+    }
+}
+
+/// One node per module of `fork`, which is tagged `node: *`, so the ids are exactly the ones the
+/// linter derives. `None` when that is not worth it or not possible: fewer than two modules sit
+/// directly in `fork`, or some file would derive an id the contract cannot declare, in which case
+/// the caller falls back to directory nodes rather than write a baseline that does not lint.
+fn by_modules(files: &BTreeMap<PathBuf, Language>, fork: &Path) -> Option<Layout> {
+    let mut owners = BTreeMap::new();
+    let mut direct: BTreeSet<&NodeId> = BTreeSet::new();
+    for file in files.keys() {
+        let name = module_name(fork, file)?;
+        let id = NodeId::new(&name)
+            .ok()
+            .filter(|id| !RESERVED.contains(&id.as_str()))?;
+        owners.insert(file.clone(), id);
+    }
+    for (file, id) in &owners {
+        if file.parent() == Some(fork) {
+            direct.insert(id);
+        }
+    }
+    if direct.len() < 2 {
+        return None;
+    }
+    let labels = owners
+        .values()
+        .map(|id| (id.clone(), label_of(&fork.join(id.as_str()))))
+        .collect();
+    Some(Layout {
+        tags: BTreeMap::from([(fork.to_path_buf(), Tag::Modules)]),
+        labels,
+        owners,
+    })
 }
 
 fn parent_of(file: &Path) -> PathBuf {
@@ -104,12 +173,12 @@ fn component_count(dir: &Path) -> usize {
     dir.components().count()
 }
 
-/// Chooses the depth that cuts nodes just below the first directory that is not a pure corridor.
+/// Finds the directory where the layout forks, descending from the root through pure corridors.
 ///
 /// From the root, descend while the current directory holds no source file itself and exactly one
 /// of its child directories holds sources. The stopping directory has own files or two or more
-/// source-bearing branches; nodes are its children, and its own files belong to it.
-fn automatic_depth(source_dirs: &BTreeSet<PathBuf>) -> usize {
+/// source-bearing branches; nodes are cut just below it, and its own files belong to it.
+fn automatic_fork(source_dirs: &BTreeSet<PathBuf>) -> PathBuf {
     let mut prefix = PathBuf::new();
     loop {
         let children: BTreeSet<OsString> = source_dirs
@@ -122,7 +191,7 @@ fn automatic_depth(source_dirs: &BTreeSet<PathBuf>) -> usize {
         let mut branches = children.into_iter();
         match (has_own_files, branches.next(), branches.next()) {
             (false, Some(only), None) => prefix.push(only),
-            _ => return component_count(&prefix) + 1,
+            _ => return prefix,
         }
     }
 }

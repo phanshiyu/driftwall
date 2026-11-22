@@ -54,6 +54,9 @@ directory is its own node, named by a fixed rule, with no further tagging:
 
 `init` writes `node: *` into the source root it descends to when that directory directly holds two
 or more modules, so a flat crate like `src/{gitlab,store,auth}.rs` yields one node per module.
+An entry file directly in the repository root (`index.ts`, `__init__.py`) is named `root`, since the
+root directory has no name of its own. `unknown-node` reports a derived node the contract does not
+declare at the `node: *` line of its `.arch` file.
 
 ## Import semantics
 
@@ -128,8 +131,15 @@ without tags would leave every file unmapped); `--no-tags` writes the contract o
   while the directory holds no source file itself and exactly one child directory holds sources.
   The directory where that stops (own source files, or two or more source-bearing children) is
   the fork; N is its depth plus one. So code under `src/` alone yields `src/auth` and
-  `src/billing`, not one `src` node, while a repo with root files plus `lib/` yields `root`
-  and `lib`, and one directory holding everything yields a single node.
+  `src/billing`, not one `src` node, while a repo with one root module plus `lib/` yields `root`
+  and `lib`, and one directory holding one module yields a single node.
+- Without `--depth`, when the fork directly holds two or more modules (distinct derived names,
+  `a.ts` and `a.test.ts` are one), it gets `node: *` and every module and subdirectory is a node
+  named by the module rule, so contract ids are exactly the ids the linter derives, labelled
+  `<fork>/<id>`. A fork holding one module keeps directory nodes. When any file under the fork
+  would derive an id the contract cannot declare (`_private.py`, `.eslintrc.js`, `end.rs`,
+  `__tests__/`), `init` falls back to directory nodes instead of writing a baseline that cannot lint.
+  An explicit `--depth` always means directory nodes, so both layouts stay reachable without a flag.
 - Ids come from the directory path below the longest prefix all node directories share, segments
   joined with `-`, other characters replaced by `-` (repeats collapsed, ends trimmed, `n-` prepended
   to a non-letter start). A directory that is the shared prefix itself is named by its last
