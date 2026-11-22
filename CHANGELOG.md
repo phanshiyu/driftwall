@@ -31,3 +31,9 @@
   dependency on the node that owns it, with the new import kind `asset`. A relative import of a
   missing file of any extension is now `unresolved-import`. The import kind `typeonly` is now
   serialized as `type-only`.
+- Svelte and HTML sources: `.svelte` files are read through their `<script>` elements (TypeScript
+  with `lang="ts"`, else JavaScript) with the lines of the component. An `.html` or `.htm` file is
+  source only when it holds a `<script` element; its inline scripts, `<script src>` and
+  `<link rel="modulepreload">` are imports, root-absolute paths resolve against the Vite root and
+  remote URLs are ignored. An existing `.svelte` file wins over `x.svelte.ts`, and an
+  extensionless specifier finds a component after every TypeScript and JavaScript extension.
