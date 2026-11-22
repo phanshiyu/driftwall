@@ -11,7 +11,7 @@ use super::common::{counts, kind_str, severity_str, slash_path};
 pub fn render_text(report: &LintReport) -> String {
     let mut out = String::new();
     for v in &report.violations {
-        // Writing to a String cannot fail.
+        // why: fmt::Write into a String is infallible, so the discarded Result carries no error.
         if let Some(at) = &v.at {
             let _ = write!(out, "{}:{}: ", slash_path(&at.file), at.line);
         }
