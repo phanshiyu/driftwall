@@ -109,30 +109,30 @@ fn use_glob_records_all() {
 }
 
 #[test]
-fn self_in_a_group_records_the_module_itself_as_all() {
+fn self_in_a_group_binds_the_module_and_records_no_symbol_for_it() {
     assert_eq!(
         used("use crate::model::{self, Edge};"),
-        [entry(1, "src/model/mod.rs", &["Edge", "*"])]
+        [entry(1, "src/model/mod.rs", &["Edge"])]
     );
     assert_eq!(
         used("use crate::util::{self};"),
-        [entry(1, "src/util.rs", &["*"])]
+        [entry(1, "src/util.rs", &[])]
     );
     assert_eq!(
         used("use crate::model::{self as m};"),
-        [entry(1, "src/model/mod.rs", &["*"])]
+        [entry(1, "src/model/mod.rs", &[])]
     );
 }
 
 #[test]
-fn a_use_of_a_module_records_all() {
+fn a_use_of_a_module_binds_it_and_records_no_symbol() {
     assert_eq!(
         used("use crate::model;"),
-        [entry(1, "src/model/mod.rs", &["*"])]
+        [entry(1, "src/model/mod.rs", &[])]
     );
     assert_eq!(
         used("use crate::model as m;"),
-        [entry(1, "src/model/mod.rs", &["*"])]
+        [entry(1, "src/model/mod.rs", &[])]
     );
 }
 
@@ -179,10 +179,10 @@ fn a_qualified_path_ending_at_a_module_file_names_an_item_of_the_parent() {
 }
 
 #[test]
-fn a_use_leaf_that_ends_at_a_module_file_is_the_module() {
+fn a_use_leaf_that_ends_at_a_module_file_binds_the_module() {
     assert_eq!(
         used("use crate::diagram::parse;"),
-        [entry(1, "src/diagram/parse.rs", &["*"])]
+        [entry(1, "src/diagram/parse.rs", &[])]
     );
 }
 
@@ -257,7 +257,7 @@ fn different_lines_stay_separate_entries() {
 #[test]
 fn symbols_are_sorted_with_all_last() {
     assert_eq!(
-        used("use crate::model::{self, Zed, Alpha};"),
+        used("use crate::model::{Zed, Alpha}; use crate::model::*;"),
         [entry(1, "src/model/mod.rs", &["Alpha", "Zed", "*"])]
     );
 }
@@ -276,7 +276,7 @@ const GITLAB: &str = "src/gitlab.rs";
 fn a_used_module_name_resolves_the_path_that_starts_with_it() {
     assert_eq!(
         used("use crate::gitlab;\nfn f() { gitlab::Client::new(); }"),
-        [entry(1, GITLAB, &["*"]), entry(2, GITLAB, &["Client"])]
+        [entry(1, GITLAB, &[]), entry(2, GITLAB, &["Client"])]
     );
 }
 
@@ -284,11 +284,11 @@ fn a_used_module_name_resolves_the_path_that_starts_with_it() {
 fn an_aliased_module_name_resolves_to_the_original_module() {
     assert_eq!(
         used("use crate::gitlab as gl;\nfn f(c: gl::Client) {}"),
-        [entry(1, GITLAB, &["*"]), entry(2, GITLAB, &["Client"])]
+        [entry(1, GITLAB, &[]), entry(2, GITLAB, &["Client"])]
     );
     assert_eq!(
         used("use crate::{gitlab::{self as g}};\nfn f() { g::fetch(); }"),
-        [entry(1, GITLAB, &["*"]), entry(2, GITLAB, &["fetch"])]
+        [entry(1, GITLAB, &[]), entry(2, GITLAB, &["fetch"])]
     );
 }
 
@@ -297,7 +297,7 @@ fn an_aliased_nested_module_resolves_to_its_own_file() {
     assert_eq!(
         used("use crate::gitlab::api as a;\nfn f() { a::get(); }"),
         [
-            entry(1, "src/gitlab/api.rs", &["*"]),
+            entry(1, "src/gitlab/api.rs", &[]),
             entry(2, "src/gitlab/api.rs", &["get"])
         ]
     );
@@ -307,7 +307,7 @@ fn an_aliased_nested_module_resolves_to_its_own_file() {
 fn a_use_leaf_that_starts_with_a_module_name_resolves_through_it() {
     assert_eq!(
         used("use crate::gitlab;\nuse gitlab::Client;"),
-        [entry(1, GITLAB, &["*"]), entry(2, GITLAB, &["Client"])]
+        [entry(1, GITLAB, &[]), entry(2, GITLAB, &["Client"])]
     );
 }
 
@@ -355,10 +355,7 @@ fn std_and_unknown_names_are_not_followed() {
 fn a_name_bound_to_two_different_paths_is_not_followed() {
     assert_eq!(
         used("use crate::gitlab as x;\nuse crate::model as x;\nfn f() { x::A; }"),
-        [
-            entry(1, GITLAB, &["*"]),
-            entry(2, "src/model/mod.rs", &["*"])
-        ]
+        [entry(1, GITLAB, &[]), entry(2, "src/model/mod.rs", &[])]
     );
 }
 
@@ -366,15 +363,15 @@ fn a_name_bound_to_two_different_paths_is_not_followed() {
 fn bindings_are_scoped_to_their_module_block() {
     assert_eq!(
         used("use crate::gitlab;\nmod inner { fn f() { gitlab::Client::new(); } }"),
-        [entry(1, GITLAB, &["*"])]
+        [entry(1, GITLAB, &[])]
     );
     assert_eq!(
         used("mod inner {\n    use crate::gitlab;\n    fn f() { gitlab::Client::new(); }\n}"),
-        [entry(2, GITLAB, &["*"]), entry(3, GITLAB, &["Client"])]
+        [entry(2, GITLAB, &[]), entry(3, GITLAB, &["Client"])]
     );
     assert_eq!(
         used("mod inner {\n    use crate::gitlab;\n}\nfn f() { gitlab::Client::new(); }"),
-        [entry(2, GITLAB, &["*"])]
+        [entry(2, GITLAB, &[])]
     );
 }
 
@@ -382,7 +379,7 @@ fn bindings_are_scoped_to_their_module_block() {
 fn a_use_inside_a_function_binds_for_its_module() {
     assert_eq!(
         used("fn f() {\n    use crate::gitlab;\n    gitlab::fetch();\n}"),
-        [entry(2, GITLAB, &["*"]), entry(3, GITLAB, &["fetch"])]
+        [entry(2, GITLAB, &[]), entry(3, GITLAB, &["fetch"])]
     );
 }
 
@@ -390,7 +387,7 @@ fn a_use_inside_a_function_binds_for_its_module() {
 fn a_module_name_in_a_macro_argument_resolves_through_its_binding() {
     assert_eq!(
         used("use crate::gitlab as gl;\nfn f() { println!(\"{}\", gl::fetch()); }"),
-        [entry(1, GITLAB, &["*"]), entry(2, GITLAB, &["fetch"])]
+        [entry(1, GITLAB, &[]), entry(2, GITLAB, &["fetch"])]
     );
 }
 
@@ -401,6 +398,6 @@ fn an_inline_test_module_with_a_super_glob_still_makes_no_edge() {
             "use crate::gitlab;\nmod tests { use super::*; fn t() { gitlab::fetch(); } }",
             "src/lint/mod.rs"
         ),
-        [entry(1, GITLAB, &["*"])]
+        [entry(1, GITLAB, &[])]
     );
 }

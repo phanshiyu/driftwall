@@ -184,7 +184,8 @@ pub struct Ownership {
 pub enum Symbol {
     /// One named item: a function, type, constant or module inside the target, or `default`.
     Name(String),
-    /// The whole target: a glob, a namespace import, or a module used as a module.
+    /// The whole target: a glob, a namespace import, or a Python module imported as a whole. A
+    /// Rust module name that is only bound (`use crate::gitlab;`) is not this: it uses nothing.
     All,
 }
 

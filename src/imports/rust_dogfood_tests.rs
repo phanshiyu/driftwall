@@ -143,7 +143,7 @@ fn lint_uses_the_diagram_parser_by_name() {
         &dogfood(),
         "src/lint/mod.rs",
         "src/diagram/mod.rs",
-        &["DiagramError", "parse", "*"],
+        &["DiagramError", "parse"],
     );
 }
 
@@ -154,16 +154,29 @@ fn the_binary_uses_lint_run_through_the_bound_module_name() {
         &dogfood(),
         "src/cli/commands.rs",
         "src/lint/mod.rs",
-        &["LintOptions", "run", "*"],
+        &["LintOptions", "run"],
     );
 }
 
 #[test]
-fn a_module_import_group_records_each_module_as_all() {
-    // why: `use crate::{diff, locate, views};` imports three sibling modules as modules.
+fn a_module_import_group_is_a_dependency_that_uses_no_symbol() {
+    // why: `use crate::{diff, locate, views};` binds three sibling modules and names no item of them.
     let all = dogfood();
     for target in ["src/cli/diff.rs", "src/cli/locate.rs", "src/cli/views.rs"] {
-        assert_uses(&all, "src/cli/commands.rs", target, &["*"]);
+        let imports: Vec<&crate::model::ResolvedImport> = all
+            .get(Path::new("src/cli/commands.rs"))
+            .expect("file was collected")
+            .resolved
+            .iter()
+            .filter(|import| import.target == Path::new(target))
+            .collect();
+        assert!(!imports.is_empty(), "no import of {target}");
+        assert!(
+            imports
+                .iter()
+                .all(|import| !import.symbols.contains(&crate::model::Symbol::All)),
+            "{target}: {imports:?}"
+        );
     }
 }
 

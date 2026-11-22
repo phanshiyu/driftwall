@@ -3,7 +3,8 @@
 //! A path is a dependency when it starts with `crate`, `self`, `super` or the name of a library
 //! crate in the repository, and the file that holds the item it names is another repository file.
 //! Each resolution also records the symbol it uses: the first item segment after the module file,
-//! or all of the module when the path ends there. `mod foo;` is containment and is not itself an
+//! or all of the module when the path is a glob that ends there. A `use` that only binds the module
+//! name (`use crate::gitlab;`, `as gl`, `self` in a group) records no symbol. `mod foo;` is containment and is not itself an
 //! edge.
 //!
 //! A path may also start with a module name the same file brought into scope: `use crate::gitlab;`
@@ -42,13 +43,24 @@ pub fn resolve(
     }
     let inline = rust_syntax::enclosing_modules(reference.node, reference.source);
     let site = Site::of(importer, &inline, env.known);
-    paths
-        .iter()
-        .map(|path| through_bindings(path, reference, &inline, site.as_ref(), env))
-        .filter_map(|path| path.target(site.as_ref(), env))
-        .filter(|(target, _)| target != importer)
-        .map(|(target, symbol)| Resolution::resolved(target).using(BTreeSet::from([symbol])))
-        .collect()
+    let mut resolutions = Vec::new();
+    for path in &paths {
+        let path = through_bindings(path, reference, &inline, site.as_ref(), env);
+        let Some((target, symbol)) = path.target(site.as_ref(), env) else {
+            continue;
+        };
+        if target == importer {
+            continue;
+        }
+        // why: `use crate::gitlab;` binds a module name. Its items are recorded where they are used.
+        let used = if symbol == Symbol::All && path.binds_module() {
+            BTreeSet::new()
+        } else {
+            BTreeSet::from([symbol])
+        };
+        resolutions.push(Resolution::resolved(target).using(used));
+    }
+    resolutions
 }
 
 /// `path` with its first segment replaced by the module path the file bound that name to, when

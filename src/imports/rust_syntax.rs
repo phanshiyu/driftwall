@@ -178,10 +178,10 @@ fn expand_use<'s>(
                 Some(path) => expand_use(path, source, prefix, None, &mut inner),
                 None => inner.push(leaf(prefix.to_vec(), None)),
             }
-            // why: a glob binds no name, whatever its path ends in.
+            // why: a glob binds no name, whatever its path ends in, and uses every item of it.
             out.extend(inner.into_iter().map(|found| UseLeaf {
+                path: found.path.into_glob(),
                 binding: None,
-                ..found
             }));
         }
         // why: `self` inside a group names the group's own path, as in `use a::b::{self, c}`.

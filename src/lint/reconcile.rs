@@ -5,10 +5,9 @@ use std::path::{Path, PathBuf};
 
 use crate::imports::FileImports;
 use crate::model::{
-    Contract, Edge, EdgeKind, Language, LintReport, Location, Ownership, ResolvedImport, Symbol,
-    Violation, ViolationKind,
+    Contract, Edge, EdgeKind, LintReport, Location, Ownership, ResolvedImport, Symbol, Violation,
+    ViolationKind,
 };
-use crate::ownership::language_of;
 
 use super::observe::crossings;
 use super::rules::violation;
@@ -26,9 +25,9 @@ use super::rules::violation;
 /// whatever its declared kind.
 ///
 /// An import that crosses into a node with a declared surface (`Contract::surfaces`) is also
-/// checked against it: every symbol it uses must be listed, and `*` is private too, with one
-/// exception for Rust, see `is_module_binding`. The same crossing rules apply, so an unmapped or
-/// unknown owner and an import within one node never produce a `private-symbol` finding.
+/// checked against it: every symbol it uses must be listed, and `*` is private too. The same
+/// crossing rules apply, so an unmapped or unknown owner and an import within one node never
+/// produce a `private-symbol` finding.
 #[must_use]
 pub fn reconcile(
     contract: &Contract,
@@ -77,13 +76,7 @@ pub fn reconcile(
                 ),
             ));
         }
-        violations.extend(private_symbols(
-            contract,
-            imports,
-            edge,
-            import,
-            contract_file,
-        ));
+        violations.extend(private_symbols(contract, edge, import, contract_file));
     }
     let realised: BTreeSet<&Edge> = crossings.iter().map(|(edge, _)| edge).collect();
 
@@ -126,10 +119,10 @@ pub fn reconcile(
 }
 
 /// One finding per symbol `import` uses that the surface of the node it enters does not list.
-/// Nothing when that node declares no surface. An import that uses no symbol is never private.
+/// Nothing when that node declares no surface. An import that uses no symbol is never private,
+/// and `*` is always private: the importer reaches names that are never seen.
 fn private_symbols(
     contract: &Contract,
-    imports: &BTreeMap<PathBuf, FileImports>,
     edge: &Edge,
     import: &ResolvedImport,
     contract_file: &Path,
@@ -143,7 +136,7 @@ fn private_symbols(
         .iter()
         .filter(|symbol| match symbol {
             Symbol::Name(name) => !surface.contains(name),
-            Symbol::All => !is_module_binding(imports, import),
+            Symbol::All => true,
         })
         .map(|symbol| {
             violation(
@@ -160,26 +153,6 @@ fn private_symbols(
             )
         })
         .collect()
-}
-
-/// Whether the `*` that `import` records is a Rust module name rather than a glob.
-///
-/// `use crate::gitlab;` records `*` on the module file, and every later `gitlab::Client` records
-/// `Client` as an import of its own, so each name used through the module is checked against the
-/// surface at its own line. The `*` adds nothing there and is not private. A glob
-/// (`use crate::gitlab::*;`) records the same `*` but brings in names that are never seen, so it
-/// must stay private. Syntax alone cannot tell the two apart; the evidence is whether the same
-/// file also names an item of the same target through another import. A `*` with no such item,
-/// and any `*` outside Rust, is private.
-fn is_module_binding(imports: &BTreeMap<PathBuf, FileImports>, import: &ResolvedImport) -> bool {
-    language_of(&import.at.file) == Some(Language::Rust)
-        && imports.get(&import.at.file).is_some_and(|file_imports| {
-            file_imports.resolved.iter().any(|other| {
-                other.target == import.target
-                    && other.at != import.at
-                    && other.symbols.iter().any(|s| matches!(s, Symbol::Name(_)))
-            })
-        })
 }
 
 /// True when `name` is a node declared in the contract.
@@ -638,11 +611,12 @@ mod tests {
         }
 
         #[test]
-        fn star_is_private_in_typescript_python_and_javascript() {
+        fn star_is_private_in_every_language() {
             for (file, target) in [
                 ("a/x.ts", "b/y.ts"),
                 ("a/x.py", "b/y.py"),
                 ("a/x.js", "b/y.js"),
+                ("a/x.rs", "b/y.rs"),
             ] {
                 let own = ownership(&[(file, "a"), (target, "b")], &[]);
                 let c = with_surface(ab(), "b", &["Client"]);
@@ -659,41 +633,31 @@ mod tests {
         }
 
         #[test]
-        fn star_stays_private_outside_rust_even_when_names_follow() {
+        fn star_stays_private_even_when_names_from_the_same_target_follow() {
             let c = with_surface(ab(), "b", &["Client"]);
-            let used = imports_using(&[(MAIN, 1, LIB, &["*"]), (MAIN, 2, LIB, &["Client"])]);
-            assert_eq!(private(&lint(&c, &owners(), &used)).len(), 1);
-        }
-
-        const RS_MAIN: &str = "a/x.rs";
-        const RS_LIB: &str = "b/y.rs";
-
-        fn rust_owners() -> Ownership {
-            ownership(&[(RS_MAIN, "a"), (RS_LIB, "b")], &[])
-        }
-
-        #[test]
-        fn a_rust_star_with_no_item_named_through_it_is_private() {
-            let c = with_surface(ab(), "b", &["Client"]);
-            let used = imports_using(&[(RS_MAIN, 1, RS_LIB, &["*"])]);
-            let found = lint(&c, &rust_owners(), &used);
-            assert_eq!(private(&found).len(), 1, "{found:?}");
+            for (file, target) in [("a/x.ts", "b/y.ts"), ("a/x.rs", "b/y.rs")] {
+                let own = ownership(&[(file, "a"), (target, "b")], &[]);
+                let used =
+                    imports_using(&[(file, 1, target, &["*"]), (file, 2, target, &["Client"])]);
+                let found = lint(&c, &own, &used);
+                assert_eq!(private(&found).len(), 1, "{file}: {found:?}");
+                assert_eq!(found[0].at, Some(at(file, 1)));
+            }
         }
 
         #[test]
-        fn a_rust_module_name_is_allowed_when_items_are_named_through_it_and_those_are_checked() {
+        fn a_module_binding_uses_no_symbol_and_each_item_through_it_is_checked_on_its_own() {
+            const RS_MAIN: &str = "a/x.rs";
+            const RS_LIB: &str = "b/y.rs";
+            let own = ownership(&[(RS_MAIN, "a"), (RS_LIB, "b")], &[]);
             let c = with_surface(ab(), "b", &["Client"]);
-            let clean = imports_using(&[
-                (RS_MAIN, 1, RS_LIB, &["*"]),
-                (RS_MAIN, 5, RS_LIB, &["Client"]),
-            ]);
-            assert_eq!(lint(&c, &rust_owners(), &clean), Vec::new());
+            let clean =
+                imports_using(&[(RS_MAIN, 1, RS_LIB, &[]), (RS_MAIN, 5, RS_LIB, &["Client"])]);
+            assert_eq!(lint(&c, &own, &clean), Vec::new());
 
-            let leaky = imports_using(&[
-                (RS_MAIN, 1, RS_LIB, &["*"]),
-                (RS_MAIN, 5, RS_LIB, &["secret"]),
-            ]);
-            let found = lint(&c, &rust_owners(), &leaky);
+            let leaky =
+                imports_using(&[(RS_MAIN, 1, RS_LIB, &[]), (RS_MAIN, 5, RS_LIB, &["secret"])]);
+            let found = lint(&c, &own, &leaky);
             assert_eq!(found.len(), 1, "{found:?}");
             assert_eq!(found[0].at, Some(at(RS_MAIN, 5)));
             assert!(
@@ -701,36 +665,6 @@ mod tests {
                 "{}",
                 found[0].message
             );
-        }
-
-        #[test]
-        fn items_named_in_another_file_or_for_another_target_do_not_excuse_a_rust_star() {
-            let own = ownership(
-                &[
-                    (RS_MAIN, "a"),
-                    ("a/other.rs", "a"),
-                    (RS_LIB, "b"),
-                    ("b/two.rs", "b"),
-                ],
-                &[],
-            );
-            let c = with_surface(ab(), "b", &["Client"]);
-            let used = imports_using(&[
-                (RS_MAIN, 1, RS_LIB, &["*"]),
-                ("a/other.rs", 2, RS_LIB, &["Client"]),
-                (RS_MAIN, 3, "b/two.rs", &["Client"]),
-            ]);
-            let found = lint(&c, &own, &used);
-            assert_eq!(found.len(), 1, "{found:?}");
-            assert_eq!(found[0].at, Some(at(RS_MAIN, 1)));
-        }
-
-        #[test]
-        fn a_rust_star_on_the_same_line_as_names_still_needs_an_item_elsewhere() {
-            let c = with_surface(ab(), "b", &["Client"]);
-            let used = imports_using(&[(RS_MAIN, 1, RS_LIB, &["Client", "*"])]);
-            let found = lint(&c, &rust_owners(), &used);
-            assert_eq!(private(&found).len(), 1, "{found:?}");
         }
 
         #[test]

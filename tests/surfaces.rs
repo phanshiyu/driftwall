@@ -487,6 +487,26 @@ fn rust_module_name_use_is_allowed_and_the_items_used_through_it_are_checked() {
 }
 
 #[test]
+fn rust_aliased_and_self_module_bindings_are_not_private_but_their_items_are_checked() {
+    let dir = repo(&rust_files(
+        "use crate::gitlab as gl;\nuse crate::gitlab::{self};\npub fn f() {\n    gl::fetch();\n    gl::secret();\n}\n",
+    ));
+    let (exit, violations) = lint_json(dir.path());
+    assert_eq!(exit, 1);
+    assert_eq!(violations.len(), 1, "{violations:?}");
+    assert_eq!(
+        violations[0]["at"],
+        json!({ "file": "src/app.rs", "line": 5 })
+    );
+    assert!(
+        violations[0]["message"]
+            .as_str()
+            .unwrap()
+            .contains("`secret`")
+    );
+}
+
+#[test]
 fn rust_glob_import_is_private() {
     let dir = repo(&rust_files("use crate::gitlab::*;\n"));
     let (exit, violations) = lint_json(dir.path());

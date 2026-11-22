@@ -30,6 +30,8 @@ pub struct WrittenPath<'s> {
     /// Whether the path may name a module as a whole: true for a `use` leaf and a `mod`
     /// declaration, false for a path in an expression, a type or a macro argument.
     names_module: bool,
+    /// Whether the path is the prefix of a glob, `use a::b::*`.
+    glob: bool,
 }
 
 /// A module's name chain from its crate root. The crate root itself is the empty path.
@@ -59,6 +61,7 @@ impl<'s> WrittenPath<'s> {
         Self {
             segments,
             names_module: false,
+            glob: false,
         }
     }
 
@@ -68,7 +71,19 @@ impl<'s> WrittenPath<'s> {
         Self {
             segments,
             names_module: true,
+            glob: false,
         }
+    }
+
+    /// This path as the prefix of a glob: `use a::b::*` names every item of `a::b`, not the module.
+    pub fn into_glob(self) -> Self {
+        Self { glob: true, ..self }
+    }
+
+    /// Whether the path, when it ends at a module file, only binds that module's name: written in
+    /// a `use` or `mod` declaration and not a glob. Such a path uses no item of the module.
+    pub const fn binds_module(&self) -> bool {
+        self.names_module && !self.glob
     }
 
     /// The name the path ends in, or `None` when it ends in `crate`, `self` or `super` or is empty.
@@ -94,6 +109,7 @@ impl<'s> WrittenPath<'s> {
         Self {
             segments: prefix.segments.iter().copied().chain(tail).collect(),
             names_module: self.names_module,
+            glob: self.glob,
         }
     }
 
