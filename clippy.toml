@@ -3,3 +3,8 @@ allow-expect-in-tests = true
 allow-panic-in-tests = true
 allow-indexing-slicing-in-tests = true
 allow-print-in-tests = true
+
+disallowed-types = [
+  { path = "std::collections::HashMap", reason = "unordered iteration breaks deterministic output, use BTreeMap" },
+  { path = "std::collections::HashSet", reason = "unordered iteration breaks deterministic output, use BTreeSet" },
+]

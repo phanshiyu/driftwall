@@ -85,6 +85,14 @@ lands. `src/<node>/.arch` tags each module. `model` has no outbound edges. `repo
 `model` types. `lint` and `init` are the only modules that combine `diagram`, `ownership` and
 `imports`.
 
+## Enforcement over instructions
+
+Anything a tool can check is enforced by a tool and kept out of prose (`AGENTS.md`, the skill).
+Style and error handling are clippy lints, unordered collections are `disallowed-types`, missing
+docs are `missing_docs`, undeclared dependencies are `driftwall lint`. The agent skill carries
+only judgment: when to discuss with the user, when to stop and ask. Everything else is a hook or a
+command, for example a hook that runs `driftwall lint --format json` after edits.
+
 ## Quality bar
 
 - Lints live in `Cargo.toml` `[lints]`. CI runs `cargo clippy --all-targets -- -D warnings`.
