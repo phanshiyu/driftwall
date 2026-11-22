@@ -65,6 +65,34 @@ exclusions. Only files with a supported extension count as source.
 
 A dotted edge permits the import. `--strict` turns every warning into a failure.
 
+## init
+
+`driftwall init` reverse-engineers a baseline from an existing repository so that `driftwall lint`
+on the result is clean at once. It writes `architecture.mmd` and the `.arch` tags (a contract
+without tags would leave every file unmapped); `--no-tags` writes the contract only.
+
+- Source files are discovered like `lint` does, so ignores are honored. No source files is an error.
+- Each source file belongs to its ancestor directory at depth N from the repo root, or to its own
+  directory when that is shallower. Root-level files belong to the root directory, node `root`.
+  Every owning directory gets a `.arch` and becomes one node, labelled with its path.
+- `--depth N` sets N. Without it, N is chosen from the layout: starting at the root, descend
+  while the directory holds no source file itself and exactly one child directory holds sources.
+  The directory where that stops (own source files, or two or more source-bearing children) is
+  the fork; N is its depth plus one. So code under `src/` alone yields `src/auth` and
+  `src/billing`, not one `src` node, while a repo with root files plus `lib/` yields `root`
+  and `lib`, and one directory holding everything yields a single node.
+- Ids come from the directory path below the longest prefix all node directories share, segments
+  joined with `-`, other characters replaced by `-` (repeats collapsed, ends trimmed, `n-` prepended
+  to a non-letter start). A directory that is the shared prefix itself is named by its last
+  segment. Collisions and the reserved words `end`, `flowchart`, `subgraph` get `-2`, `-3`, ...
+  in sorted directory order.
+- Every resolved import between files with different owners becomes one solid edge. Nothing is
+  dotted, so a fresh baseline has no stale or planned-realized findings.
+- `init` refuses (exit `2`) when the contract or any `.arch` it would write exists, listing every
+  such path, and checks all of them before writing anything. `--force` overwrites. Existing
+  `.arch` files nested below a baseline directory would override its tag and are refused even
+  with `--force` (remove them or use `--no-tags`).
+
 ## Exit codes
 
 `0` clean. `1` violations. `2` tool error (bad diagram syntax, IO failure, bad arguments).
@@ -74,7 +102,7 @@ A failing lint is not an error, so `anyhow` is used only at the entry point and 
 
 ```
 driftwall lint [PATH] [--format text|json|sarif] [--strict]
-driftwall init [PATH] [--depth N] [--write-tags] [--force]
+driftwall init [PATH] [--depth N] [--contract FILE] [--no-tags] [--force]
 driftwall where <FILE>          # owning node of a path, with the .arch file that decided it
 driftwall neighbors <NODE>      # incoming and outgoing edges, declared and observed
 driftwall diff --base <REF>     # edge delta versus a git ref, for human review (later)
