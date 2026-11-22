@@ -4,8 +4,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use crate::model::{
-    BlindSpots, Contract, Edge, EdgeSummary, LintReport, NodeSummary, NodeView, Overview,
-    Ownership, Site, Symbol,
+    BlindSpots, Contract, DirTag, Edge, EdgeSummary, LintReport, NodeId, NodeSummary, NodeView,
+    Overview, Ownership, Scope, Site, Symbol, Tag,
 };
 
 /// Combines the contract, ownership, observed edges, the symbols they use and the lint report
@@ -14,7 +14,8 @@ use crate::model::{
 /// Pure. Nodes are the declared ones, sorted by id. Edges are the union of the declared and the
 /// observed edges, sorted by `(from, to)`: a declared edge nothing uses has `realised == 0`, and
 /// an observed edge the contract lacks has no kind. A node's directories are those holding a
-/// `.arch` file that names it; its files are the source files it owns; its exports are its
+/// `.arch` file that names it, and the module paths of its files that a `node: *` tag owns (see
+/// "Node directories" in `docs/DESIGN.md`); its files are the source files it owns; its exports are its
 /// declared surface. An edge keeps every site, with its kind and test flag. Every node carries the
 /// tally of its blind spots, and the overview the summary of all of them, and the tally and the
 /// items of the ones no node owns.
@@ -27,16 +28,23 @@ pub fn overview(
     report: &LintReport,
     blind: &BlindSpots,
 ) -> Overview {
+    let mut modules: BTreeMap<&NodeId, BTreeSet<PathBuf>> = BTreeMap::new();
+    for (file, owner) in &ownership.owners {
+        if let Some(path) = module_path(&ownership.tag_dirs, file) {
+            modules.entry(owner).or_default().insert(path);
+        }
+    }
     let nodes = contract
         .nodes
         .iter()
         .map(|(id, info)| {
-            let dirs: BTreeSet<PathBuf> = ownership
+            let mut dirs: BTreeSet<PathBuf> = ownership
                 .tags
                 .iter()
-                .filter(|(_, name)| name == id.as_str())
+                .filter(|(at, name)| name == id.as_str() && !derives_modules(ownership, &at.file))
                 .map(|(at, _)| tagged_dir(&at.file))
                 .collect();
+            dirs.extend(modules.remove(id).into_iter().flatten());
             NodeSummary {
                 id: id.clone(),
                 label: info.label.clone(),
@@ -113,6 +121,36 @@ pub fn node_view(
     })
 }
 
+/// The module `file` is in when a `node: *` tag owns it: the tagged directory joined with the
+/// first segment below it, so a file in a subdirectory gives the directory and a file directly in
+/// the tagged directory gives itself. `None` when no tag owns `file` or the tag names one node.
+fn module_path(tags: &BTreeMap<PathBuf, DirTag>, file: &Path) -> Option<PathBuf> {
+    // why: the nearest tag that covers the file decides, as in `ownership::owner_in`.
+    let (dir, found) = file
+        .parent()
+        .into_iter()
+        .flat_map(Path::ancestors)
+        .find_map(|dir| {
+            let found = tags.get(dir)?;
+            (found.scope == Scope::Subtree || file.parent() == Some(dir)).then_some((dir, found))
+        })?;
+    if !matches!(found.tag, Tag::Modules(_)) {
+        return None;
+    }
+    let first = file.strip_prefix(dir).ok()?.components().next()?;
+    Some(dir.join(first))
+}
+
+/// Whether the `.arch` file `arch_file` is a `node: *` tag. The scan lists the node names such a
+/// tag derives as tags of the file, but the directory is not where those nodes live.
+fn derives_modules(ownership: &Ownership, arch_file: &Path) -> bool {
+    let dir = arch_file.parent().unwrap_or_else(|| Path::new(""));
+    ownership
+        .tag_dirs
+        .get(dir)
+        .is_some_and(|found| matches!(found.tag, Tag::Modules(_)))
+}
+
 /// The directory a `.arch` file tags: its parent, with the repository root spelled `.`.
 fn tagged_dir(arch_file: &Path) -> PathBuf {
     match arch_file.parent() {
@@ -124,7 +162,7 @@ fn tagged_dir(arch_file: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::lint::fixtures::{at, contract, edge, ownership, with_surface};
+    use crate::lint::fixtures::{at, contract, edge, node, ownership, with_surface};
     use crate::model::{EdgeKind, NodeId, Severity, SkipReason, Skipped, Violation, ViolationKind};
 
     fn sites(file: &str, lines: &[u32]) -> Vec<Site> {
@@ -197,6 +235,97 @@ mod tests {
         );
         assert_eq!(view.nodes[2].dirs, Vec::<PathBuf>::new());
         assert_eq!(view.nodes[2].files, 0);
+    }
+
+    fn module_tags(entries: &[(&str, Tag, Scope)]) -> BTreeMap<PathBuf, DirTag> {
+        entries
+            .iter()
+            .map(|(dir, tag, scope)| {
+                let found = DirTag {
+                    tag: tag.clone(),
+                    scope: *scope,
+                };
+                (PathBuf::from(dir), found)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_module_path_is_the_directory_module_or_the_file_itself() {
+        let modules = Tag::Modules(crate::model::Prefix::default());
+        let tags = module_tags(&[
+            ("src", modules.clone(), Scope::Subtree),
+            ("flat", modules.clone(), Scope::Here),
+            ("", modules, Scope::Here),
+            ("src/ui/own", Tag::Node(node("own")), Scope::Subtree),
+        ]);
+        let path = |file: &str| module_path(&tags, Path::new(file));
+        assert_eq!(path("src/ui/a.ts"), Some(PathBuf::from("src/ui")));
+        assert_eq!(path("src/ui/deep/b.ts"), Some(PathBuf::from("src/ui")));
+        assert_eq!(path("src/gitlab.rs"), Some(PathBuf::from("src/gitlab.rs")));
+        assert_eq!(path("flat/a.ts"), Some(PathBuf::from("flat/a.ts")));
+        assert_eq!(path("flat/sub/a.ts"), None);
+        assert_eq!(path("main.rs"), Some(PathBuf::from("main.rs")));
+        assert_eq!(path("src/ui/own/x.ts"), None);
+        assert_eq!(path("elsewhere/x.ts"), None);
+    }
+
+    #[test]
+    fn derived_nodes_show_their_module_paths_and_plain_tags_their_directory() {
+        let c = contract(&["ui", "gitlab", "group", "tool"], &[]);
+        let mut own = ownership(
+            &[
+                ("src/ui/a.ts", "ui"),
+                ("src/ui/b/c.ts", "ui"),
+                ("src/gitlab.rs", "gitlab"),
+                ("src/gitlab/x.rs", "gitlab"),
+                ("g/a.ts", "group"),
+                ("tools/t.ts", "tool"),
+            ],
+            &[
+                ("src/.arch", 1, "ui"),
+                ("src/.arch", 1, "gitlab"),
+                ("g/.arch", 1, "group"),
+                ("tools/.arch", 1, "tool"),
+            ],
+        );
+        own.tag_dirs = module_tags(&[
+            (
+                "src",
+                Tag::Modules(crate::model::Prefix::default()),
+                Scope::Subtree,
+            ),
+            ("g", Tag::Node(node("group")), Scope::Here),
+            ("tools", Tag::Node(node("tool")), Scope::Subtree),
+        ]);
+        let view = overview(
+            &c,
+            &own,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &LintReport::default(),
+            &BlindSpots::default(),
+        );
+        let dirs: Vec<(&str, Vec<String>)> = view
+            .nodes
+            .iter()
+            .map(|n| {
+                (
+                    n.id.as_str(),
+                    n.dirs.iter().map(|d| d.display().to_string()).collect(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            dirs,
+            [
+                ("gitlab", vec!["src/gitlab", "src/gitlab.rs"]),
+                ("group", vec!["g"]),
+                ("tool", vec!["tools"]),
+                ("ui", vec!["src/ui"]),
+            ]
+            .map(|(id, dirs)| (id, dirs.into_iter().map(str::to_owned).collect()))
+        );
     }
 
     #[test]

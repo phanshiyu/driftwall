@@ -1119,7 +1119,7 @@ A directory is answered like a source file, by the tag that covers it. The JSON 
 
 `brief`, `neighbors` and `diff` are read-only maps for agents and reviewers:
 
-- `brief` prints every node (directories, file count) and every edge, declared or observed, with
+- `brief` prints every node (directories, file count, see "Node directories" below) and every edge, declared or observed, with
   the number of import sites that realise it and how they are used (kinds, symbols, see "Import
   kind" and "Symbols and public surfaces"). An edge code uses and the contract lacks is marked
   `UNDECLARED`. It is informational: exit `0` unless the tool fails (`2`).
@@ -1151,6 +1151,21 @@ A directory is answered like a source file, by the tag that covers it. The JSON 
   `excluded` per reason, `ignored`, `skipped` per reason, `unresolved`, each item with its file and
   `node: null`), and every node has `blind_spots`, a tally with `unread`, `excluded`,
   `ignored`, `skipped` and `unresolved` file or reference counts.
+- **Node directories.** The `dirs` of a node, in `brief`, `neighbors` and the JSON `dirs`, are where
+  its code lives, not where its `.arch` file lies. They are the union, sorted and without
+  duplicates, of
+
+  - the directory of every `.arch` file whose plain `node: <id>` names it (the repository root is
+    `.`), also when no file is left under it;
+  - the module path of every source file the node owns that a `node: *` or `node: <prefix>*` tag
+    owns: the tagged directory joined with the first path segment below it. A file in a
+    subdirectory is the directory module `src/ui/**`, shown as `src/ui`; a file directly in the
+    tagged directory is a file module, shown as the file itself (`src/gitlab.rs`; `a.ts` and
+    `a.test.ts`, which share the node `a`, are two entries). The tagged directory itself is never
+    shown for such a node, and a node whose files are all assets has no entry of this kind.
+
+  A `scope: here` group is a plain tag: its directory. The rule reads only the source files the
+  node owns and the tags, so it is the same in `brief`, `neighbors` and JSON, and for every run.
 - `neighbors <NODE>` prints one node's incoming and outgoing edges with up to 3 `file:line`
   example sites each (`--all-sites` prints every site; JSON always has every site, with no cap
   anywhere). `--files` lists the node's source files under its `files:` line, two spaces indented

@@ -585,7 +585,9 @@ pub struct NodeSummary {
     pub id: NodeId,
     /// Human readable label, if the diagram gave one.
     pub label: Option<String>,
-    /// Directories whose `.arch` file tags this node, sorted. The repository root is `.`.
+    /// Where the node's code lives, sorted: the directories of the plain `node:` tags that name it
+    /// and the module paths of its files that a `node: *` tag owns (see "Node directories" in
+    /// `docs/DESIGN.md`). The repository root is `.`.
     pub dirs: Vec<PathBuf>,
     /// Source files this node owns.
     pub files: usize,
