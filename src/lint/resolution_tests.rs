@@ -151,3 +151,82 @@ fn observe_reports_asset_owners_without_counting_assets_as_files() {
         ]
     );
 }
+
+const TWO_NODES: &str = "flowchart LR\n  a[\"a\"]\n  b[\"b\"]\n  a --> b\n";
+
+type Undeclared = (String, u32, String, Option<String>, Option<String>);
+
+fn undeclared(dir: &TempDir) -> Vec<Undeclared> {
+    let observation = observe(dir.path(), &LintOptions::default()).unwrap();
+    observation
+        .blind_spots
+        .skipped
+        .get(&crate::model::SkipReason::UndeclaredOwner)
+        .into_iter()
+        .flatten()
+        .map(|reference| {
+            (
+                reference.at.file.display().to_string(),
+                reference.at.line,
+                reference.specifier.clone(),
+                reference.node.as_ref().map(ToString::to_string),
+                reference.message.clone(),
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn an_asset_import_to_an_undeclared_owner_is_a_skipped_reference_of_the_importer() {
+    let dir = repo(&files(TWO_NODES, BOTH));
+    assert_eq!(
+        undeclared(&dir),
+        [(
+            INDEX.to_owned(),
+            2,
+            "packages/c/theme.css".to_owned(),
+            Some("a".to_owned()),
+            Some(
+                "asset `packages/c/theme.css` is owned by `c`, which the contract does not declare"
+                    .to_owned()
+            ),
+        )]
+    );
+    let found = lint(&dir);
+    assert_eq!(kinds(&found), vec![ViolationKind::UnknownNode]);
+}
+
+#[test]
+fn an_owner_derived_by_a_modules_tag_that_the_contract_lacks_is_named_too() {
+    let mut all = files(TWO_NODES, "import '../../shared/theme.css';\n");
+    all.retain(|(path, _)| !path.starts_with("packages/c"));
+    all.push(("packages/shared/.arch", "node: *\n"));
+    all.push(("packages/shared/theme.css", ""));
+    let dir = repo(&all);
+    let rows = undeclared(&dir);
+    assert_eq!(rows.len(), 1, "{rows:?}");
+    assert_eq!(
+        rows[0].4.as_deref(),
+        Some(
+            "asset `packages/shared/theme.css` is owned by `theme`, which the contract does not declare"
+        )
+    );
+}
+
+#[test]
+fn a_declared_owner_an_unowned_asset_a_source_target_and_an_undeclared_importer_record_nothing() {
+    let dir = repo(&files(CONTRACT, BOTH));
+    assert_eq!(undeclared(&dir), []);
+
+    let unowned = repo(&files(TWO_NODES, "import '../../../data.json';\n"));
+    assert_eq!(undeclared(&unowned), []);
+
+    let mut ghost = files(TWO_NODES, "export {};\n");
+    ghost.push(("packages/g/.arch", "node: ghost\n"));
+    ghost.push(("packages/g/x.ts", "import '../c/theme.css';\n"));
+    assert_eq!(undeclared(&repo(&ghost)), []);
+
+    let mut source = files(TWO_NODES, "import '../../c/x';\n");
+    source.push(("packages/c/x.ts", "export const x = 1;\n"));
+    assert_eq!(undeclared(&repo(&source)), []);
+}

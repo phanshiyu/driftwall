@@ -434,6 +434,9 @@ pub enum SkipReason {
     /// A root-absolute `src`, `href` or import specifier of an HTML file that finds no file below
     /// the Vite root of the page.
     UnresolvedRootPath,
+    /// An import of an asset whose owner is not a node the contract declares, so it can be no
+    /// edge. Recorded by the linter, not by import extraction.
+    UndeclaredOwner,
 }
 
 /// A reference driftwall saw and could not follow, kept so it is never silently dropped.
@@ -447,7 +450,8 @@ pub struct Skipped {
     pub reason: SkipReason,
     /// A sentence of explanation, set for [`SkipReason::UnreachableModule`] (the repository path
     /// the top-level name matches) and [`SkipReason::UnresolvedRootPath`] (the Vite root that was
-    /// searched). Not serialized when absent.
+    /// searched) and [`SkipReason::UndeclaredOwner`] (the asset and its owner). Not serialized when
+    /// absent.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
 }
@@ -894,6 +898,7 @@ mod tests {
         assert!(
             json(SkipReason::UnresolvedRootPath).ends_with(r#""reason":"unresolved-root-path"}"#)
         );
+        assert!(json(SkipReason::UndeclaredOwner).ends_with(r#""reason":"undeclared-owner"}"#));
     }
 
     #[test]

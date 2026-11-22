@@ -161,11 +161,15 @@ pub fn observe(root: &Path, options: &LintOptions) -> Result<Observation, LintEr
     let report = reconcile(&contract, &ownership, &imports, &options.contract);
     let observed = observed_edges(&contract, &ownership, &imports);
     let symbols = observed_symbols(&contract, &ownership, &imports);
+    let undeclared = observe::undeclared_owners(&contract, &ownership, &imports);
     let blind_spots = BlindSpots::build(
         &ownership,
         |path| ownership::owner_in(&ownership.tag_dirs, path),
         |path| Some(ownership::line_count(root, path)),
-        imports.values().flat_map(|found| &found.skipped),
+        imports
+            .values()
+            .flat_map(|found| &found.skipped)
+            .chain(&undeclared),
         imports.values().flat_map(|found| &found.unresolved),
     );
     Ok(Observation {

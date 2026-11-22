@@ -33,6 +33,7 @@ pub(super) const fn skip_reason_str(reason: SkipReason) -> &'static str {
         SkipReason::EmbedNonSource => "embed-non-source",
         SkipReason::UnreachableModule => "unreachable-module",
         SkipReason::UnresolvedRootPath => "unresolved-root-path",
+        SkipReason::UndeclaredOwner => "undeclared-owner",
     }
 }
 
@@ -120,6 +121,7 @@ mod tests {
             SkipReason::EmbedNonSource,
             SkipReason::UnreachableModule,
             SkipReason::UnresolvedRootPath,
+            SkipReason::UndeclaredOwner,
         ] {
             let serde_name = serde_json::to_string(&reason).unwrap();
             assert_eq!(serde_name, format!("\"{}\"", skip_reason_str(reason)));

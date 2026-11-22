@@ -5,7 +5,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use crate::imports::FileImports;
-use crate::model::{Contract, Edge, NodeId, Ownership, ResolvedImport, Site, Symbol};
+use crate::model::{
+    Contract, Edge, NodeId, Ownership, ResolvedImport, Site, SkipReason, Skipped, Symbol,
+};
 
 /// Every resolved import that crosses from one declared owner to another, with its edge.
 ///
@@ -35,6 +37,39 @@ pub(super) fn crossings<'a>(
             })
         })
         .collect()
+}
+
+/// The imports of an asset whose owner is not a node the contract declares, as skipped references.
+///
+/// Such an import is no crossing (see [`crossings`]), but it must not vanish: it is recorded when
+/// the importing file is owned by a declared node. The specifier is the repository path of the
+/// asset and the message names it and its owner. Sorted and free of duplicates.
+pub(super) fn undeclared_owners(
+    contract: &Contract,
+    ownership: &Ownership,
+    imports: &BTreeMap<PathBuf, FileImports>,
+) -> Vec<Skipped> {
+    let found: BTreeSet<Skipped> = imports
+        .values()
+        .flat_map(|file_imports| &file_imports.resolved)
+        .filter_map(|import| {
+            declared_owner(contract, ownership, &import.at.file)?;
+            let owner = ownership.asset_owners.get(&import.target)?;
+            if contract.nodes.contains_key(owner) {
+                return None;
+            }
+            let asset = import.target.display();
+            Some(Skipped {
+                at: import.at.clone(),
+                specifier: asset.to_string(),
+                reason: SkipReason::UndeclaredOwner,
+                message: Some(format!(
+                    "asset `{asset}` is owned by `{owner}`, which the contract does not declare"
+                )),
+            })
+        })
+        .collect();
+    found.into_iter().collect()
 }
 
 /// The edges code realises, each with the import sites that realise it.

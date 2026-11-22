@@ -121,6 +121,16 @@ asset must not be able to fail the scan. The vendored and minified rules (see "E
 to source only, so an asset below `vendor/` is still an asset. `.arch` files are not assets, and ignored
 files (`.gitignore`, `.driftwallignore`) are not walked, so they are neither assets nor resolvable.
 
+An import of an asset whose owner is not a node the contract declares (a tag names an undeclared
+node, or `node: *` derives one the contract lacks, so no edge can exist) is not silent. When the
+importing file is owned by a declared node, `lint` records it as a skipped reference with reason
+`undeclared-owner` (see "Skipped references"). Its specifier is the repository path of the asset,
+since the import as written is not kept, and its message is ``asset `<path>` is owned by `<node>`,
+which the contract does not declare``. It is attributed to the node of the importing file, shows in
+`brief` and `neighbors`, and is no lint finding. An import of a source file keeps its behaviour:
+a target owned by an undeclared node is no edge and no record, as `unknown-node` already reports
+the tag. An asset that no tag covers, and an importer that no declared node owns, produce no record.
+
 ### Blind spots
 
 What driftwall cannot see must never be silent. Beside the source files it reads, the scan keeps a
@@ -782,6 +792,7 @@ a location, the specifier as written and a typed reason (kebab-case in serializa
 | `dynamic-specifier` | a shell `source` or `.` whose path has no value, see "Shell resolution"; `import(expr)` or `require(expr)` whose argument is not a string literal or a template without substitutions; Python `importlib.import_module(..)` and `__import__(..)` whose first argument is not a plain string literal, or whose relative literal has no usable package (see "Python resolution") |
 | `embed-non-source` | a Rust embed whose target is not a known source file |
 | `unreachable-module` | a Python absolute import that no import root resolves, whose top-level name matches a first-party module or package elsewhere in the repository (see "Python resolution") |
+| `undeclared-owner` | an import of an asset whose owner is not a declared node, recorded by `lint` rather than by import extraction (see "Asset files") |
 | `unresolved-root-path` | a root-absolute `src`, `href` or import specifier of an HTML file that finds no file below its Vite root (see "Svelte and HTML") |
 
 For `undeclared-package`, a specifier that a `paths` pattern matches is an alias and never skipped,
@@ -798,7 +809,7 @@ For a skipped Python call the specifier is the text of its first argument.
 
 A skipped reference may carry a `message`, a sentence of explanation. `unreachable-module` has one:
 it names the repository path the top-level name matches. So has `unresolved-root-path`: it names
-the Vite root that was searched. `message` is absent from the
+the Vite root that was searched. And `undeclared-owner`: it names the asset and its owner. `message` is absent from the
 serialized form when there is none.
 
 ## Symbols and public surfaces
