@@ -98,6 +98,11 @@ docs are `missing_docs`, undeclared dependencies are `driftwall lint`. The agent
 only judgment: when to discuss with the user, when to stop and ask. Everything else is a hook or a
 command, for example a hook that runs `driftwall lint --format json` after edits.
 
+The repo applies this to itself. `scripts/gate.sh` is the pre-commit hook, `scripts/hooks/guard.py`
+blocks agent actions that weaken the gates (pkill, `--no-verify`, pushes, edits to the contract and
+lint configuration from a worktree), and `tests/style.rs` requires every plain comment to start
+with `why:`. The golden rule is to leave an agent as little room to err as possible.
+
 ## Quality bar
 
 - Lints live in `Cargo.toml` `[lints]`. CI runs `cargo clippy --all-targets -- -D warnings`.
