@@ -400,15 +400,13 @@ fn output_is_sorted() {
 }
 
 #[test]
-fn rust_yields_nothing() {
-    let got = run("use crate::a;\n", Language::Rust, "a.rs", &["a.rs"]);
-    assert_eq!(got, FileImports::default());
-    assert!(spec(Language::Rust).is_none());
-}
-
-#[test]
 fn table_entries_match_their_language() {
-    for language in [Language::TypeScript, Language::JavaScript, Language::Python] {
+    for language in [
+        Language::TypeScript,
+        Language::JavaScript,
+        Language::Python,
+        Language::Rust,
+    ] {
         assert_eq!(spec(language).map(|s| s.language), Some(language));
     }
 }

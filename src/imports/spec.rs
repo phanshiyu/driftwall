@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use super::{Environment, Reference, Resolution, python, queries, resolve};
+use super::{Environment, Reference, Resolution, python, queries, resolve, rust};
 use crate::model::Language;
 
 /// One tree-sitter grammar with a stable name that keys the compiled-query cache.
@@ -31,6 +31,11 @@ static JAVASCRIPT_GRAMMAR: Grammar = Grammar {
 static PYTHON_GRAMMAR: Grammar = Grammar {
     name: "python",
     language: || tree_sitter_python::LANGUAGE.into(),
+};
+
+static RUST_GRAMMAR: Grammar = Grammar {
+    name: "rust",
+    language: || tree_sitter_rust::LANGUAGE.into(),
 };
 
 /// Everything needed to extract and resolve imports for one language. Adding a language is adding
@@ -70,6 +75,13 @@ static JAVASCRIPT: LanguageSpec = LanguageSpec {
     resolve: resolve::ecmascript,
 };
 
+static RUST: LanguageSpec = LanguageSpec {
+    language: Language::Rust,
+    grammar: rust_grammar,
+    query: queries::RUST,
+    resolve: rust::resolve,
+};
+
 /// The table entry for `language`, or `None` when extraction is not implemented for it yet.
 #[must_use]
 pub fn spec(language: Language) -> Option<&'static LanguageSpec> {
@@ -77,7 +89,7 @@ pub fn spec(language: Language) -> Option<&'static LanguageSpec> {
         Language::TypeScript => Some(&TYPESCRIPT),
         Language::JavaScript => Some(&JAVASCRIPT),
         Language::Python => Some(&PYTHON),
-        Language::Rust => None,
+        Language::Rust => Some(&RUST),
     }
 }
 
@@ -95,4 +107,8 @@ const fn javascript_grammar(_file: &Path) -> &'static Grammar {
 
 const fn python_grammar(_file: &Path) -> &'static Grammar {
     &PYTHON_GRAMMAR
+}
+
+const fn rust_grammar(_file: &Path) -> &'static Grammar {
+    &RUST_GRAMMAR
 }

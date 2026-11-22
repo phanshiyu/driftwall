@@ -17,10 +17,15 @@ mod manifest;
 mod python;
 mod queries;
 mod resolve;
+mod rust;
+mod rust_module;
+mod rust_syntax;
 mod spec;
 
 #[cfg(test)]
 mod python_tests;
+#[cfg(test)]
+mod rust_tests;
 #[cfg(test)]
 mod tests;
 
