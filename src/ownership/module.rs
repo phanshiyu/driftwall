@@ -6,7 +6,7 @@ use std::path::{Component, Path};
 /// Name given to the repository root directory when an entry file takes its directory's name.
 const ROOT_NAME: &str = "root";
 /// Entry files that are named after their directory, not their own stem.
-const DIRECTORY_ENTRIES: [&str; 2] = ["mod.rs", "__init__.py"];
+const DIRECTORY_ENTRIES: [&str; 3] = ["mod.rs", "__init__.py", "__main__.py"];
 /// File stem of the entry files (`index.ts`, `index.d.ts`, `index.js`) named after their directory.
 const INDEX_STEM: &str = "index";
 
@@ -19,10 +19,18 @@ const INDEX_STEM: &str = "index";
 ///   also the node of a sibling module of the same name (`gitlab.rs` and `gitlab/x.rs`).
 /// - A file directly in `dir` is named by its file name up to the first `.`, so `a.test.ts` joins
 ///   `a`, and `main.rs` and `lib.rs` are `main` and `lib`.
-/// - `mod.rs`, `__init__.py` and `index.<ext>` take the name of `dir` itself, or `root` for the
-///   repository root.
+/// - `mod.rs`, `__init__.py`, `__main__.py` and `index.<ext>` take the name of `dir` itself, or
+///   `root` for the repository root.
+/// - Leading underscores are stripped from the result (`_private.py` is `private`), which can leave
+///   it empty.
 #[must_use]
 pub fn module_name(dir: &Path, file: &Path) -> Option<String> {
+    let name = raw_name(dir, file)?;
+    Some(name.trim_start_matches('_').to_owned())
+}
+
+/// The name before the leading underscores are stripped.
+fn raw_name(dir: &Path, file: &Path) -> Option<String> {
     let below = file.strip_prefix(dir).ok()?;
     let mut parts = below.components().filter_map(|part| match part {
         Component::Normal(name) => Some(name),
@@ -74,6 +82,7 @@ mod tests {
         for file in [
             "pkg/mod.rs",
             "pkg/__init__.py",
+            "pkg/__main__.py",
             "pkg/index.ts",
             "pkg/index.d.ts",
             "pkg/index.test.js",
@@ -110,6 +119,39 @@ mod tests {
     #[test]
     fn a_sibling_module_and_its_directory_share_a_node() {
         assert_eq!(name("src", "src/gitlab.rs"), name("src", "src/gitlab/x.rs"));
+    }
+
+    #[test]
+    fn leading_underscores_are_stripped_from_files_and_directories() {
+        assert_eq!(name("pkg", "pkg/_private.py").as_deref(), Some("private"));
+        assert_eq!(name("pkg", "pkg/__x.test.py").as_deref(), Some("x"));
+        assert_eq!(name("pkg", "pkg/_a_b.py").as_deref(), Some("a_b"));
+        assert_eq!(name("pkg", "pkg/a_.py").as_deref(), Some("a_"));
+        assert_eq!(name("pkg", "pkg/_x/y.py").as_deref(), Some("x"));
+        assert_eq!(
+            name("pkg", "pkg/__tests__/y.ts").as_deref(),
+            Some("tests__")
+        );
+        assert_eq!(name("pkg", "pkg/_x.py"), name("pkg", "pkg/x.py"));
+    }
+
+    #[test]
+    fn a_directory_entry_is_named_after_its_directory_without_underscores() {
+        assert_eq!(
+            name("a/_internal", "a/_internal/__init__.py").as_deref(),
+            Some("internal")
+        );
+        assert_eq!(
+            name("a/_internal", "a/_internal/__main__.py").as_deref(),
+            Some("internal")
+        );
+    }
+
+    #[test]
+    fn a_name_of_only_underscores_is_empty() {
+        for file in ["pkg/_.py", "pkg/__.py", "pkg/___/a.py"] {
+            assert_eq!(name("pkg", file).as_deref(), Some(""), "{file}");
+        }
     }
 
     #[test]

@@ -853,7 +853,7 @@ mod tests {
 
     #[test]
     fn star_reports_an_invalid_derived_id_at_the_arch_file() {
-        for bad in ["_private.py", ".eslintrc.js", "9lives.ts", "a b.ts"] {
+        for bad in ["_.py", "__.py", ".eslintrc.js", "9lives.ts", "a b.ts"] {
             let dir = tree(&[
                 ("pkg/.arch", "# c\nnode: *\n"),
                 ("pkg/ok.py", ""),
@@ -868,6 +868,28 @@ mod tests {
                 other => panic!("expected InvalidModule for {bad}, got {other:?}"),
             }
         }
+    }
+
+    #[test]
+    fn star_names_python_entries_and_private_modules_without_underscores() {
+        assert_eq!(
+            derived(&[
+                "src/__init__.py",
+                "src/__main__.py",
+                "src/_private.py",
+                "src/__dunder.py",
+                "src/_x/y.py",
+                "src/x.py",
+            ]),
+            pairs(&[
+                ("src/__dunder.py", "dunder"),
+                ("src/__init__.py", "src"),
+                ("src/__main__.py", "src"),
+                ("src/_private.py", "private"),
+                ("src/_x/y.py", "x"),
+                ("src/x.py", "x"),
+            ])
+        );
     }
 
     #[test]
@@ -977,7 +999,7 @@ mod tests {
     #[test]
     fn explain_reports_an_invalid_derived_id() {
         let dir = tree(&[("src/.arch", "node: *\n")]);
-        match explain(dir.path(), Path::new("src/_x.py")) {
+        match explain(dir.path(), Path::new("src/__.py")) {
             Err(OwnershipError::InvalidModule { at, .. }) => {
                 assert_eq!(at.file, Path::new("src/.arch"));
                 assert_eq!(at.line, 1);
@@ -1045,7 +1067,7 @@ mod tests {
 
     #[test]
     fn a_prefixed_name_must_still_be_non_empty_and_valid() {
-        for bad in [".eslintrc.js", "a b.ts"] {
+        for bad in [".eslintrc.js", "a b.ts", "_.py"] {
             let dir = tree(&[
                 ("pkg/.arch", "node: ui-*\n"),
                 ("pkg/ok.py", ""),

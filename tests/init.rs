@@ -628,7 +628,7 @@ fn an_explicit_depth_keeps_directory_nodes_on_a_flat_crate() {
 #[test]
 fn a_source_file_with_an_unusable_module_name_falls_back_to_directory_nodes() {
     let mut files = rust_flat();
-    files.push(("src/_hidden.rs", "pub fn h() {}\n"));
+    files.push(("src/_.rs", "pub fn h() {}\n"));
     let dir = repo(&files);
     init(&dir, &[]);
     assert_eq!(read(&dir, "src/.arch"), "node: src\n");
@@ -653,7 +653,7 @@ fn lint_reports_a_new_module_the_contract_does_not_declare() {
 fn lint_reports_an_invalid_derived_name_as_a_tool_error() {
     let dir = repo(&rust_flat());
     init(&dir, &[]);
-    fs::write(dir.path().join("src/_x.rs"), "pub fn e() {}\n").unwrap();
+    fs::write(dir.path().join("src/__.rs"), "pub fn e() {}\n").unwrap();
     let lint = run_on("lint", dir.path(), &[]);
     assert_eq!(code(&lint), 2);
     assert!(stderr(&lint).contains("src/.arch:1"), "{}", stderr(&lint));

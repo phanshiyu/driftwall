@@ -205,19 +205,14 @@ fn an_explicit_depth_never_makes_module_nodes() {
 
 #[test]
 fn a_name_the_contract_cannot_hold_falls_back_to_directory_nodes() {
-    for bad in [
-        "src/_private.py",
-        "src/.eslintrc.js",
-        "src/end.rs",
-        "src/9a.ts",
-    ] {
+    for bad in ["src/_.py", "src/.eslintrc.js", "src/end.rs", "src/9a.ts"] {
         let p = plan_of(&["src/a.ts", "src/b.ts", bad], None);
         assert_eq!(tags(&p), pairs(&[("src", "src")]), "{bad}");
     }
-    let bad_directory = plan_of(&["src/a.ts", "src/b.ts", "src/__tests__/t.ts"], None);
+    let bad_directory = plan_of(&["src/a.ts", "src/b.ts", "src/.hidden/t.ts"], None);
     assert_eq!(
         tags(&bad_directory),
-        pairs(&[("src", "src"), ("src/__tests__", "n-__tests__")])
+        pairs(&[("src", "src"), ("src/.hidden", "hidden")])
     );
 }
 

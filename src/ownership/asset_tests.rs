@@ -142,14 +142,11 @@ fn an_asset_whose_module_name_is_not_a_node_id_is_unmapped_not_an_error() {
         ("src/.arch", "node: *\n"),
         ("src/a.ts", ""),
         ("src/.eslintrc.json", ""),
-        ("src/_private.json", ""),
+        ("src/__.json", ""),
     ]);
     let o = scan(dir.path()).unwrap();
     assert_eq!(asset_owners(&o), pairs(&[]));
-    assert_eq!(
-        asset_unmapped(&o),
-        ["src/.eslintrc.json", "src/_private.json"]
-    );
+    assert_eq!(asset_unmapped(&o), ["src/.eslintrc.json", "src/__.json"]);
 }
 
 #[test]

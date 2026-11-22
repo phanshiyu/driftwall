@@ -97,7 +97,7 @@ directory is its own node, named by a fixed rule, with no further tagging:
 - A subdirectory whose name equals a sibling module's id (Rust `gitlab.rs` plus `gitlab/`) belongs to
   that module's node. Any other subdirectory is one node named after the directory.
 - Leading underscores are stripped from every derived name, file or directory: `_private.py` is
-  `private`, `__tests__/` is `tests`, `_x.py` and `x.py` share the node `x`. A name that is empty
+  `private`, `__tests__/` is `tests__`, `_x.py` and `x.py` share the node `x`. A name that is empty
   after stripping (`_.py`, `__/`, a hidden file such as `.eslintrc.js`) is invalid.
 - A nested `.arch` still overrides, as everywhere else.
 - A derived id that is not a valid node id is an error at the `.arch` file, never silently renamed.
