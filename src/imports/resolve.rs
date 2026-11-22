@@ -6,7 +6,7 @@ use std::path::{Component, Path, PathBuf};
 
 use super::extract::literal_text;
 use super::package::{is_builtin, package_name};
-use super::{Environment, Reference, Resolution, ecmascript_symbols, nearest};
+use super::{Candidate, Environment, Reference, Resolution, ecmascript_symbols, nearest};
 use crate::model::SkipReason;
 
 /// Extensions tried, in order, for extension probing and directory index files. Declaration files
@@ -83,21 +83,27 @@ pub fn resolve(specifier: &str, importer: &Path, known: &BTreeSet<PathBuf>) -> R
 ///
 /// Through the alias configuration that governs `importer`, each candidate path is probed like a
 /// relative import: exact, appended extensions, the JavaScript to TypeScript mapping and directory
-/// index files. The first that names a known file wins. A specifier that a `paths` pattern matches
-/// is an alias and is ignored when no file backs it. Anything else is a package: ignored when it
-/// is a Node builtin or declared by a `package.json` at or above the importer, skipped otherwise.
+/// index files. The first that names a known file wins. Then a workspace package of that name, or
+/// for a `#` specifier the `imports` of the nearest `package.json`, gets its turn: it resolves, or
+/// ignores the specifier when it finds no file. A specifier that a `paths` pattern matches is an
+/// alias and is ignored when no file backs it. Anything else is a package: ignored when it is a
+/// Node builtin or declared by a `package.json` at or above the importer, skipped otherwise.
 fn resolve_bare(specifier: &str, importer: &Path, env: &Environment<'_>) -> Resolution {
-    if let Some(config) = nearest(env.aliases, importer) {
-        let found = config
-            .candidates(specifier)
-            .iter()
-            .find_map(|candidate| probe(&candidate.path, candidate.directory_only, env.known));
-        if let Some(target) = found {
-            return Resolution::resolved(target);
-        }
-        if config.matches(specifier) {
-            return Resolution::Ignored;
-        }
+    let config = nearest(env.aliases, importer);
+    if let Some(target) = config.and_then(|config| first_known(&config.candidates(specifier), env))
+    {
+        return Resolution::resolved(target);
+    }
+    let linked = if specifier.starts_with('#') {
+        env.workspaces.imports_candidates(specifier, importer)
+    } else {
+        env.workspaces.candidates(specifier)
+    };
+    if let Some(candidates) = linked {
+        return first_known(&candidates, env).map_or(Resolution::Ignored, Resolution::resolved);
+    }
+    if config.is_some_and(|config| config.matches(specifier)) {
+        return Resolution::Ignored;
     }
     let declared = importer.parent().is_some_and(|dir| {
         dir.ancestors().any(|ancestor| {
@@ -111,6 +117,13 @@ fn resolve_bare(specifier: &str, importer: &Path, env: &Environment<'_>) -> Reso
     } else {
         Resolution::Skipped(SkipReason::UndeclaredPackage)
     }
+}
+
+/// The first of `candidates`, in order, that probes to a known file.
+fn first_known(candidates: &[Candidate], env: &Environment<'_>) -> Option<PathBuf> {
+    candidates
+        .iter()
+        .find_map(|candidate| probe(&candidate.path, candidate.directory_only, env.known))
 }
 
 fn is_relative(specifier: &str) -> bool {

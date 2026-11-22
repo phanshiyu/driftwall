@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use tree_sitter::{Node, Parser, Query, QueryCursor, StreamingIterator};
 
 use super::spec::Grammar;
-use super::{Environment, FileImports, ImportsError, Reference, Resolution, spec};
+use super::{Environment, FileImports, ImportsError, Reference, Resolution, Workspaces, spec};
 use crate::model::{
     ImportKind, Language, Location, ResolvedImport, Skipped, Symbol, UnresolvedImport,
 };
@@ -46,6 +46,7 @@ pub fn extract(
             crates: &crates,
             aliases: &aliases,
             packages: &BTreeMap::new(),
+            workspaces: &Workspaces::default(),
         },
     )
 }

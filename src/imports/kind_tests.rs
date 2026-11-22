@@ -353,6 +353,7 @@ fn rs_with(source: &str, file: &str, repo: &[&str]) -> FileImports {
         crates: &library,
         aliases: &aliases,
         packages: &BTreeMap::new(),
+        workspaces: &Workspaces::default(),
     };
     extract_in(source, Language::Rust, Path::new(file), &env).expect("extract succeeds")
 }

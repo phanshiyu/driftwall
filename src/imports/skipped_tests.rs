@@ -50,6 +50,7 @@ fn run(
         crates: &crates,
         aliases: &aliases,
         packages,
+        workspaces: &Workspaces::default(),
     };
     extract_in(source, language, Path::new(file), &env).expect("extract succeeds")
 }
@@ -195,6 +196,7 @@ fn an_aliased_specifier_is_never_skipped_even_when_nothing_backs_it() {
         crates: &crates,
         aliases: &aliases,
         packages: &packages,
+        workspaces: &Workspaces::default(),
     };
     let got = extract_in(
         "import a from '@/foo';\nimport b from '@/missing';\nimport c from 'other';",
@@ -413,6 +415,7 @@ fn rs_at(source: &str, file: &str) -> FileImports {
         crates: &crates,
         aliases: &aliases,
         packages: &packages,
+        workspaces: &Workspaces::default(),
     };
     extract_in(source, Language::Rust, Path::new(file), &env).expect("extract succeeds")
 }

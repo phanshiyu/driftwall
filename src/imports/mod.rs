@@ -26,6 +26,7 @@ mod alias;
 mod ecmascript_symbols;
 mod error;
 mod extract;
+mod glob;
 mod manifest;
 mod package;
 mod python;
@@ -37,7 +38,9 @@ mod rust_scope;
 mod rust_syntax;
 mod spec;
 mod statement;
+mod subpath;
 mod tsconfig;
+mod workspace;
 
 #[cfg(test)]
 mod alias_resolve_tests;
@@ -45,6 +48,8 @@ mod alias_resolve_tests;
 mod alias_tests;
 #[cfg(test)]
 mod ecmascript_symbols_tests;
+#[cfg(test)]
+mod fixtures;
 #[cfg(test)]
 mod kind_tests;
 #[cfg(test)]
@@ -65,6 +70,8 @@ mod skipped_tests;
 mod tests;
 #[cfg(test)]
 mod tsconfig_tests;
+#[cfg(test)]
+mod workspace_tests;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -82,6 +89,7 @@ pub use package::package_dependencies;
 pub use rust_scope::Bindings;
 pub use spec::{LanguageSpec, spec};
 pub use tsconfig::alias_configs;
+pub use workspace::{Workspaces, discover as workspaces};
 
 /// The imports found in one file. Every list is sorted and free of duplicates.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -113,6 +121,9 @@ pub struct Environment<'a> {
     /// `optionalDependencies`. A file is governed by the nearest directory at or above it. Only
     /// TypeScript and JavaScript resolution reads it.
     pub packages: &'a BTreeMap<PathBuf, BTreeSet<String>>,
+    /// The workspace members of the repository by package name, and the `imports` of its
+    /// `package.json` files. Only TypeScript and JavaScript resolution reads it.
+    pub workspaces: &'a Workspaces,
 }
 
 /// One query match handed to a language resolver: the module reference as written and, for
@@ -195,11 +206,13 @@ pub fn collect(
     let crates = library_crates(root, &known);
     let aliases = alias_configs(root, files);
     let packages = package_dependencies(root, files);
+    let workspaces = workspaces(root, files);
     let env = Environment {
         known: &known,
         crates: &crates,
         aliases: &aliases,
         packages: &packages,
+        workspaces: &workspaces,
     };
     let entries: Vec<(&PathBuf, &Language)> = files.iter().collect();
     // why: collected into an indexed Vec so the reported error never depends on thread scheduling.
