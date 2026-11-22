@@ -6,6 +6,9 @@
 mod reconcile;
 mod rules;
 
+#[cfg(test)]
+mod tests;
+
 use std::collections::BTreeMap;
 use std::fs;
 use std::io;
