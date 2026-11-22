@@ -36,6 +36,8 @@ mod manifest;
 mod package;
 mod project;
 mod python;
+mod python_config;
+mod python_layout;
 mod queries;
 mod resolve;
 mod rust;
@@ -97,6 +99,8 @@ pub use extract::{extract, extract_in};
 pub use manifest::library_crates;
 pub use package::package_dependencies;
 pub use project::Project;
+pub use python_config::python_roots;
+pub use python_layout::PythonLayout;
 pub use rust_scope::Bindings;
 pub use spec::{LanguageSpec, spec};
 pub use tsconfig::{alias_configs, project_configs};
@@ -141,6 +145,9 @@ pub struct Environment<'a> {
     /// Repository-relative directory holding a solution-style `tsconfig.json` to the projects its
     /// `references` name, in the order written. Only TypeScript and JavaScript resolution reads it.
     pub projects: &'a BTreeMap<PathBuf, Vec<Project>>,
+    /// The Python directories, names and configured import roots of the repository. Only Python
+    /// resolution reads it.
+    pub python: &'a PythonLayout,
 }
 
 /// One query match handed to a language resolver: the module reference as written and, for
@@ -251,6 +258,7 @@ pub fn collect_with_assets(
     let packages = package_dependencies(root, files);
     let workspaces = workspaces(root, files);
     let projects = project_configs(root, files);
+    let python = PythonLayout::new(&known, python_roots(root, files));
     let env = Environment {
         known: &known,
         assets,
@@ -259,6 +267,7 @@ pub fn collect_with_assets(
         packages: &packages,
         workspaces: &workspaces,
         projects: &projects,
+        python: &python,
     };
     let entries: Vec<(&PathBuf, &Language)> = files.iter().collect();
     // why: collected into an indexed Vec so the reported error never depends on thread scheduling.

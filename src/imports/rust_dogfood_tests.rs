@@ -72,6 +72,7 @@ fn a_binary_reaches_lint_through_the_library_name_read_from_cargo_toml() {
         packages: &BTreeMap::new(),
         workspaces: &Workspaces::default(),
         projects: &BTreeMap::new(),
+        python: &PythonLayout::default(),
     };
     // why: src/cli/main.rs is a stub today, so the source it will have is supplied here.
     let source = "use driftwall::lint;\nfn main() { driftwall::lint::run(); }\n";

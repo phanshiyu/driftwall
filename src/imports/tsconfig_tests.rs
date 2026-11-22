@@ -54,6 +54,7 @@ fn imports(files: &BTreeMap<PathBuf, String>, importer: &str, source: &str) -> V
         packages: &BTreeMap::new(),
         workspaces: &Workspaces::default(),
         projects: &BTreeMap::new(),
+        python: &PythonLayout::default(),
     };
     let found = extract_in(source, Language::TypeScript, Path::new(importer), &env)
         .expect("extract succeeds");

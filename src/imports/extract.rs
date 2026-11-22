@@ -8,7 +8,9 @@ use tree_sitter::{Node, Parser, Query, QueryCursor, StreamingIterator};
 
 use super::spec::Grammar;
 use super::statement::Flags;
-use super::{Environment, FileImports, ImportsError, Reference, Resolution, Workspaces, spec};
+use super::{
+    Environment, FileImports, ImportsError, PythonLayout, Reference, Resolution, Workspaces, spec,
+};
 use crate::model::{
     ImportKind, Language, Location, ResolvedImport, SkipReason, Skipped, Symbol, UnresolvedImport,
 };
@@ -38,6 +40,7 @@ pub fn extract(
 ) -> Result<FileImports, ImportsError> {
     let crates = BTreeMap::new();
     let aliases = BTreeMap::new();
+    let python = PythonLayout::new(known, BTreeMap::new());
     extract_in(
         source,
         language,
@@ -50,6 +53,7 @@ pub fn extract(
             packages: &BTreeMap::new(),
             workspaces: &Workspaces::default(),
             projects: &BTreeMap::new(),
+            python: &python,
         },
     )
 }

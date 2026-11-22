@@ -45,6 +45,7 @@ fn rs_in(
         packages: &BTreeMap::new(),
         workspaces: &Workspaces::default(),
         projects: &BTreeMap::new(),
+        python: &PythonLayout::default(),
     };
     extract_in(source, Language::Rust, Path::new(file), &env).expect("extract succeeds")
 }
