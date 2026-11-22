@@ -30,6 +30,8 @@ jobs:
       - run: cargo fmt --check
       - run: cargo clippy --all-targets --locked -- -D warnings
       - run: cargo test --locked
+      - name: driftwall lints itself
+        run: cargo run --locked --quiet -- lint . --strict
       - run: cargo doc --no-deps --locked
         env:
           RUSTDOCFLAGS: -D warnings

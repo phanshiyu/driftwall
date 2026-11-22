@@ -4,4 +4,5 @@ cd "$(git rev-parse --show-toplevel)"
 cargo fmt --check
 cargo clippy --all-targets --locked -- -D warnings
 cargo test --locked --quiet
+cargo run --locked --quiet -- lint .
 echo "gate: PASS"

@@ -23,11 +23,11 @@ flowchart LR
     report["report: text, json, sarif"]
   end
 
-  cli -.-> lint
+  cli --> lint
   cli -.-> init
-  cli -.-> report
-  cli -.-> ownership
-  cli -.-> model
+  cli --> report
+  cli --> ownership
+  cli --> model
   lint --> diagram
   lint --> ownership
   lint --> imports
