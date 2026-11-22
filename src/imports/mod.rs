@@ -187,6 +187,12 @@ pub enum Resolution {
     Ignored,
     /// A reference that could not be followed, and is reported as such.
     Skipped(SkipReason),
+    /// A Python module that no import root reaches although its top-level name matches a
+    /// repository path. Skipped as [`SkipReason::UnreachableModule`] with `message`.
+    Unreachable {
+        /// The explanation, naming the repository path the name matches.
+        message: String,
+    },
 }
 
 impl Resolution {

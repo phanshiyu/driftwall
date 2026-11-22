@@ -316,6 +316,9 @@ pub enum SkipReason {
     DynamicSpecifier,
     /// A Rust `include_str!` or `include_bytes!` of a file that is not a known source file.
     EmbedNonSource,
+    /// A Python absolute import that no import root resolves, although its top-level name matches
+    /// a first-party module or package elsewhere in the repository.
+    UnreachableModule,
 }
 
 /// A reference driftwall saw and could not follow, kept so it is never silently dropped.
@@ -327,6 +330,10 @@ pub struct Skipped {
     pub specifier: String,
     /// Why it was skipped.
     pub reason: SkipReason,
+    /// A sentence of explanation, set for [`SkipReason::UnreachableModule`]: the repository path
+    /// the top-level name matches. Not serialized when absent.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
 }
 
 /// Kinds of finding the linter can report.
@@ -660,6 +667,7 @@ mod tests {
                 },
                 specifier: "x".to_owned(),
                 reason,
+                message: None,
             })
             .unwrap()
         };
@@ -669,6 +677,22 @@ mod tests {
         );
         assert!(json(SkipReason::DynamicSpecifier).ends_with(r#""reason":"dynamic-specifier"}"#));
         assert!(json(SkipReason::EmbedNonSource).ends_with(r#""reason":"embed-non-source"}"#));
+        assert!(json(SkipReason::UnreachableModule).ends_with(r#""reason":"unreachable-module"}"#));
+    }
+
+    #[test]
+    fn a_skip_message_is_serialized_after_the_reason_when_present() {
+        let json = serde_json::to_string(&Skipped {
+            at: Location {
+                file: PathBuf::from("a.py"),
+                line: 1,
+            },
+            specifier: "x".to_owned(),
+            reason: SkipReason::UnreachableModule,
+            message: Some("matches s/x.py".to_owned()),
+        })
+        .unwrap();
+        assert!(json.ends_with(r#""reason":"unreachable-module","message":"matches s/x.py"}"#));
     }
 
     #[test]

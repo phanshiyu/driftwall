@@ -7,9 +7,10 @@ use std::sync::{Arc, Mutex, PoisonError};
 use tree_sitter::{Node, Parser, Query, QueryCursor, StreamingIterator};
 
 use super::spec::Grammar;
+use super::statement::Flags;
 use super::{Environment, FileImports, ImportsError, Reference, Resolution, Workspaces, spec};
 use crate::model::{
-    ImportKind, Language, Location, ResolvedImport, Skipped, Symbol, UnresolvedImport,
+    ImportKind, Language, Location, ResolvedImport, SkipReason, Skipped, Symbol, UnresolvedImport,
 };
 
 /// What duplicate imports must agree on to merge: location, target, kind and whether it is test code.
@@ -82,14 +83,11 @@ pub fn extract_in(
     let name_capture = query.capture_index_for_name(NAME_CAPTURE);
     let bindings = (spec.bindings)(tree.root_node(), source);
 
-    // why: keyed by (location, target, kind, test_only): duplicates merge only when all four agree.
-    let mut resolved: BTreeMap<Merge, BTreeSet<Symbol>> = BTreeMap::new();
-    let mut unresolved = BTreeSet::new();
-    let mut skipped = BTreeSet::new();
+    let mut found = Found::default();
     let mut cursor = QueryCursor::new();
     let mut matches = cursor.matches(&query, tree.root_node(), source.as_bytes());
-    while let Some(found) = matches.next() {
-        let Some(node) = found
+    while let Some(hit) = matches.next() {
+        let Some(node) = hit
             .captures()
             .iter()
             .find(|c| c.index == capture)
@@ -100,7 +98,7 @@ pub fn extract_in(
         let Some(specifier) = specifier_text(node, source) else {
             continue;
         };
-        let names: Vec<&str> = found
+        let names: Vec<&str> = hit
             .captures()
             .iter()
             .filter(|c| Some(c.index) == name_capture)
@@ -120,36 +118,14 @@ pub fn extract_in(
             bindings: &bindings,
         };
         for resolution in (spec.resolve)(&reference, file, env) {
-            match resolution {
-                Resolution::Resolved { target, symbols } => {
-                    let merge = (at.clone(), target, flags.kind, flags.test_only);
-                    resolved.entry(merge).or_default().extend(symbols);
-                }
-                Resolution::Unresolved => {
-                    unresolved.insert(UnresolvedImport {
-                        at: at.clone(),
-                        specifier: specifier.to_owned(),
-                    });
-                }
-                Resolution::Embedded { target } => {
-                    let merge = (at.clone(), target, ImportKind::Embed, flags.test_only);
-                    resolved.entry(merge).or_default();
-                }
-                Resolution::Asset { target } => {
-                    let merge = (at.clone(), target, ImportKind::Asset, flags.test_only);
-                    resolved.entry(merge).or_default();
-                }
-                Resolution::Skipped(reason) => {
-                    skipped.insert(Skipped {
-                        at: at.clone(),
-                        specifier: specifier.to_owned(),
-                        reason,
-                    });
-                }
-                Resolution::Ignored => {}
-            }
+            found.record(resolution, &at, specifier, flags);
         }
     }
+    let Found {
+        resolved,
+        unresolved,
+        skipped,
+    } = found;
     let mut resolved: Vec<ResolvedImport> = resolved
         .into_iter()
         .map(|((at, target, kind, test_only), symbols)| ResolvedImport {
@@ -167,6 +143,61 @@ pub fn extract_in(
         unresolved: unresolved.into_iter().collect(),
         skipped: skipped.into_iter().collect(),
     })
+}
+
+/// What the resolutions of one file add up to.
+#[derive(Default)]
+struct Found {
+    // why: keyed by (location, target, kind, test_only): duplicates merge only when all four agree.
+    resolved: BTreeMap<Merge, BTreeSet<Symbol>>,
+    unresolved: BTreeSet<UnresolvedImport>,
+    skipped: BTreeSet<Skipped>,
+}
+
+impl Found {
+    /// Files one resolution of the reference written as `specifier` at `at`.
+    fn record(&mut self, resolution: Resolution, at: &Location, specifier: &str, flags: Flags) {
+        match resolution {
+            Resolution::Resolved { target, symbols } => {
+                let merge = (at.clone(), target, flags.kind, flags.test_only);
+                self.resolved.entry(merge).or_default().extend(symbols);
+            }
+            Resolution::Unresolved => {
+                self.unresolved.insert(UnresolvedImport {
+                    at: at.clone(),
+                    specifier: specifier.to_owned(),
+                });
+            }
+            Resolution::Embedded { target } => {
+                let merge = (at.clone(), target, ImportKind::Embed, flags.test_only);
+                self.resolved.entry(merge).or_default();
+            }
+            Resolution::Asset { target } => {
+                let merge = (at.clone(), target, ImportKind::Asset, flags.test_only);
+                self.resolved.entry(merge).or_default();
+            }
+            Resolution::Skipped(reason) => self.skip(at, specifier, reason, None),
+            Resolution::Unreachable { message } => {
+                self.skip(at, specifier, SkipReason::UnreachableModule, Some(message));
+            }
+            Resolution::Ignored => {}
+        }
+    }
+
+    fn skip(
+        &mut self,
+        at: &Location,
+        specifier: &str,
+        reason: SkipReason,
+        message: Option<String>,
+    ) {
+        self.skipped.insert(Skipped {
+            at: at.clone(),
+            specifier: specifier.to_owned(),
+            reason,
+            message,
+        });
+    }
 }
 
 /// The text of a captured specifier: the contents of a plain literal, else the source text of the
