@@ -47,7 +47,7 @@ use std::path::{Path, PathBuf};
 
 use rayon::prelude::*;
 
-use crate::model::{Language, ResolvedImport, UnresolvedImport};
+use crate::model::{Language, ResolvedImport, Symbol, UnresolvedImport};
 
 pub use alias::{AliasConfig, Candidate, Pattern, TargetTemplate, nearest};
 pub use error::ImportsError;
@@ -97,12 +97,38 @@ pub struct Reference<'a> {
 /// What a language resolver decided about one specifier.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Resolution {
-    /// The specifier names this repository file.
-    Resolved(PathBuf),
+    /// The specifier names this repository file, and the importing code uses `symbols` of it.
+    Resolved {
+        /// The repository-relative file.
+        target: PathBuf,
+        /// What is used from `target`. Empty for a side-effect import.
+        symbols: BTreeSet<Symbol>,
+    },
     /// The specifier points inside the repository but matches no file.
     Unresolved,
     /// Not a repository import: a third party package, a builtin, or a non-source asset.
     Ignored,
+}
+
+impl Resolution {
+    /// A resolution to `target` that uses no symbol yet.
+    #[must_use]
+    pub const fn resolved(target: PathBuf) -> Self {
+        Self::Resolved {
+            target,
+            symbols: BTreeSet::new(),
+        }
+    }
+
+    /// This resolution, with `symbols` as what the importing code uses. Resolutions that did not
+    /// resolve are returned unchanged.
+    #[must_use]
+    pub fn using(self, symbols: BTreeSet<Symbol>) -> Self {
+        match self {
+            Self::Resolved { target, .. } => Self::Resolved { target, symbols },
+            other => other,
+        }
+    }
 }
 
 /// Reads and extracts every file in `files`, relative to `root`.

@@ -21,13 +21,13 @@ fn import(from: &str, to: &str) -> (PathBuf, FileImports) {
     (
         PathBuf::from(from),
         FileImports {
-            resolved: vec![ResolvedImport {
-                at: Location {
+            resolved: vec![ResolvedImport::new(
+                Location {
                     file: PathBuf::from(from),
                     line: 1,
                 },
-                target: PathBuf::from(to),
-            }],
+                PathBuf::from(to),
+            )],
             unresolved: Vec::new(),
         },
     )

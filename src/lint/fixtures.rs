@@ -69,10 +69,7 @@ pub fn imports(resolved: &[(&str, u32, &str)]) -> BTreeMap<PathBuf, FileImports>
         map.entry(PathBuf::from(file))
             .or_default()
             .resolved
-            .push(ResolvedImport {
-                at: at(file, line),
-                target: PathBuf::from(target),
-            });
+            .push(ResolvedImport::new(at(file, line), PathBuf::from(target)));
     }
     map
 }

@@ -8,7 +8,7 @@ use tree_sitter::{Node, Parser, Query, QueryCursor, StreamingIterator};
 
 use super::spec::Grammar;
 use super::{Environment, FileImports, ImportsError, Reference, Resolution, spec};
-use crate::model::{Language, Location, ResolvedImport, UnresolvedImport};
+use crate::model::{Language, Location, ResolvedImport, Symbol, UnresolvedImport};
 
 const SPECIFIER_CAPTURE: &str = "specifier";
 const NAME_CAPTURE: &str = "name";
@@ -72,7 +72,8 @@ pub fn extract_in(
 
     let name_capture = query.capture_index_for_name(NAME_CAPTURE);
 
-    let mut resolved = BTreeSet::new();
+    // why: keyed by (location, target) so duplicate imports collapse and their symbols union.
+    let mut resolved: BTreeMap<(Location, PathBuf), BTreeSet<Symbol>> = BTreeMap::new();
     let mut unresolved = BTreeSet::new();
     let mut cursor = QueryCursor::new();
     let mut matches = cursor.matches(&query, tree.root_node(), source.as_bytes());
@@ -106,11 +107,11 @@ pub fn extract_in(
         };
         for resolution in (spec.resolve)(&reference, file, env) {
             match resolution {
-                Resolution::Resolved(target) => {
-                    resolved.insert(ResolvedImport {
-                        at: at.clone(),
-                        target,
-                    });
+                Resolution::Resolved { target, symbols } => {
+                    resolved
+                        .entry((at.clone(), target))
+                        .or_default()
+                        .extend(symbols);
                 }
                 Resolution::Unresolved => {
                     unresolved.insert(UnresolvedImport {
@@ -123,7 +124,14 @@ pub fn extract_in(
         }
     }
     Ok(FileImports {
-        resolved: resolved.into_iter().collect(),
+        resolved: resolved
+            .into_iter()
+            .map(|((at, target), symbols)| ResolvedImport {
+                at,
+                target,
+                symbols,
+            })
+            .collect(),
         unresolved: unresolved.into_iter().collect(),
     })
 }

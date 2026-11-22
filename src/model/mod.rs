@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::path::PathBuf;
 
-use serde::Serialize;
+use serde::{Serialize, Serializer};
 use thiserror::Error;
 
 /// Contract path used when none is given, relative to the repository root.
@@ -126,13 +126,74 @@ pub struct Ownership {
     pub tags: Vec<(Location, String)>,
 }
 
+/// A symbol an import uses from its target file, exactly as the importing code writes it.
+///
+/// Serialized as a plain string: the name itself, or `*` for [`Symbol::All`]. A name never
+/// contains `*`, so the two cannot collide. Ordering is by name, with `*` last, so a set of
+/// symbols serializes in the same order on every run.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Symbol {
+    /// One named item: a function, type, constant or module inside the target, or `default`.
+    Name(String),
+    /// The whole target: a glob, a namespace import, or a module used as a module.
+    All,
+}
+
+impl Symbol {
+    /// The text a symbol is serialized and displayed as: the name, or `*` for [`Symbol::All`].
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::Name(name) => name,
+            Self::All => "*",
+        }
+    }
+}
+
+impl fmt::Display for Symbol {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Serialize for Symbol {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
 /// One import statement resolved to a repository file.
+///
+/// Several statements on one line that reach the same file are one `ResolvedImport` whose
+/// `symbols` is the union. Statements on different lines stay separate.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 pub struct ResolvedImport {
     /// Where the import statement is.
     pub at: Location,
     /// Repository-relative file it resolves to.
     pub target: PathBuf,
+    /// What the import uses from `target`, sorted. Empty for a side-effect import, which uses no
+    /// symbol. Serialized as an array of strings, see [`Symbol`].
+    pub symbols: BTreeSet<Symbol>,
+}
+
+impl ResolvedImport {
+    /// An import at `at` of `target` that uses no symbol, such as a side-effect import.
+    #[must_use]
+    pub const fn new(at: Location, target: PathBuf) -> Self {
+        Self {
+            at,
+            target,
+            symbols: BTreeSet::new(),
+        }
+    }
+
+    /// The same import using `symbols`, in addition to any it already uses.
+    #[must_use]
+    pub fn with_symbols(mut self, symbols: impl IntoIterator<Item = Symbol>) -> Self {
+        self.symbols.extend(symbols);
+        self
+    }
 }
 
 /// An import that points at a repository-relative path that could not be resolved.
@@ -369,6 +430,47 @@ mod tests {
                 Err(ModelError::InvalidNodeId(bad.to_owned()))
             );
         }
+    }
+
+    #[test]
+    fn symbols_serialize_as_names_with_a_star_for_all_and_sort_names_first() {
+        let import = ResolvedImport::new(
+            Location {
+                file: PathBuf::from("a.rs"),
+                line: 3,
+            },
+            PathBuf::from("b.rs"),
+        )
+        .with_symbols([
+            Symbol::All,
+            Symbol::Name("zeta".to_owned()),
+            Symbol::Name("alpha".to_owned()),
+        ]);
+        let json = serde_json::to_string(&import).unwrap();
+        assert_eq!(
+            json,
+            r#"{"at":{"file":"a.rs","line":3},"target":"b.rs","symbols":["alpha","zeta","*"]}"#
+        );
+    }
+
+    #[test]
+    fn an_import_without_symbols_serializes_an_empty_array() {
+        let import = ResolvedImport::new(
+            Location {
+                file: PathBuf::from("a.rs"),
+                line: 1,
+            },
+            PathBuf::from("b.rs"),
+        );
+        assert!(import.symbols.is_empty());
+        let json = serde_json::to_string(&import).unwrap();
+        assert!(json.ends_with(r#""symbols":[]}"#), "{json}");
+    }
+
+    #[test]
+    fn symbols_display_as_their_serialized_text() {
+        assert_eq!(Symbol::Name("fetch".to_owned()).to_string(), "fetch");
+        assert_eq!(Symbol::All.to_string(), "*");
     }
 
     #[test]

@@ -33,6 +33,6 @@ pub fn resolve(
         .iter()
         .filter_map(|path| path.target(site.as_ref(), env))
         .filter(|target| target != importer)
-        .map(Resolution::Resolved)
+        .map(Resolution::resolved)
         .collect()
 }

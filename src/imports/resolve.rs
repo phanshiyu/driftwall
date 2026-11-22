@@ -47,7 +47,7 @@ pub fn resolve(specifier: &str, importer: &Path, known: &BTreeSet<PathBuf>) -> R
         };
     };
     match probe(&base, specifier.ends_with('/'), known) {
-        Some(target) => Resolution::Resolved(target),
+        Some(target) => Resolution::resolved(target),
         None if is_asset => Resolution::Ignored,
         None => Resolution::Unresolved,
     }
@@ -67,7 +67,7 @@ fn resolve_aliased(specifier: &str, importer: &Path, env: &Environment<'_>) -> R
         .candidates(specifier)
         .iter()
         .find_map(|candidate| probe(&candidate.path, candidate.directory_only, env.known))
-        .map_or(Resolution::Ignored, Resolution::Resolved)
+        .map_or(Resolution::Ignored, Resolution::resolved)
 }
 
 fn is_relative(specifier: &str) -> bool {

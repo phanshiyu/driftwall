@@ -60,7 +60,7 @@ pub fn resolve(
             });
             match hit {
                 Some(target) if target == importer => Resolution::Ignored,
-                Some(target) => Resolution::Resolved(target),
+                Some(target) => Resolution::resolved(target),
                 None if dots == 0 => Resolution::Ignored,
                 None => Resolution::Unresolved,
             }

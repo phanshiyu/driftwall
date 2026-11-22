@@ -179,10 +179,7 @@ mod tests {
             map.entry(PathBuf::from(file))
                 .or_default()
                 .resolved
-                .push(ResolvedImport {
-                    at: at(file, line),
-                    target: PathBuf::from(target),
-                });
+                .push(ResolvedImport::new(at(file, line), PathBuf::from(target)));
         }
         map
     }
