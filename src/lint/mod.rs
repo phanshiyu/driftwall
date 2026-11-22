@@ -39,10 +39,12 @@ impl Default for LintOptions {
 }
 
 /// Everything that can stop a lint from producing a report. A report with violations is not one.
+///
+/// A variant's message names only its own context. The cause is reachable through `source()`.
 #[derive(Debug, Error)]
 pub enum LintError {
     /// The contract file could not be read.
-    #[error("cannot read {}: {source}", path.display())]
+    #[error("cannot read {}", path.display())]
     Io {
         /// The contract path as given in the options.
         path: PathBuf,
@@ -50,7 +52,7 @@ pub enum LintError {
         source: io::Error,
     },
     /// The contract file is not valid.
-    #[error("{}: {source}", path.display())]
+    #[error("{}", path.display())]
     Diagram {
         /// The contract path as given in the options.
         path: PathBuf,

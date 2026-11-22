@@ -6,6 +6,6 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 pub enum ReportError {
     /// The report could not be serialised, for example a path that is not valid UTF-8.
-    #[error("failed to serialise report: {0}")]
+    #[error("failed to serialise report")]
     Serialize(#[from] serde_json::Error),
 }

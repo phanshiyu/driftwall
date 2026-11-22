@@ -37,7 +37,7 @@ pub enum DiagramError {
         statement: String,
     },
     /// An identifier does not match `[A-Za-z][A-Za-z0-9_-]*`.
-    #[error("line {line}: {source}")]
+    #[error("line {line}: invalid identifier")]
     InvalidId {
         /// Line of the statement.
         line: u32,

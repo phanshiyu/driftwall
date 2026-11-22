@@ -28,7 +28,7 @@ pub enum ArchProblem {
 #[derive(Debug, Error)]
 pub enum OwnershipError {
     /// A file could not be read.
-    #[error("cannot read {}: {source}", path.display())]
+    #[error("cannot read {}", path.display())]
     Io {
         /// The path that failed.
         path: PathBuf,
@@ -44,7 +44,7 @@ pub enum OwnershipError {
         problem: ArchProblem,
     },
     /// Walking the directory tree failed, or an ignore file was malformed.
-    #[error("cannot walk {}: {source}", root.display())]
+    #[error("cannot walk {}", root.display())]
     Walk {
         /// The root being scanned.
         root: PathBuf,

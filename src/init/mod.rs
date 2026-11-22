@@ -61,7 +61,7 @@ pub struct InitSummary {
 #[derive(Debug, Error)]
 pub enum InitError {
     /// A file could not be written or inspected.
-    #[error("cannot write {}: {source}", path.display())]
+    #[error("cannot write {}", path.display())]
     Io {
         /// The path that failed.
         path: PathBuf,
@@ -93,7 +93,7 @@ pub enum InitError {
     #[error("no supported source files found")]
     NoSources,
     /// The rendered contract does not parse.
-    #[error("generated contract is invalid: {0}")]
+    #[error("generated contract is invalid")]
     Diagram(#[from] DiagramError),
     /// The rendered contract parses to something other than the plan.
     #[error("generated contract does not round-trip through the diagram parser")]
