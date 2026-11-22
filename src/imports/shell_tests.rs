@@ -158,6 +158,15 @@ source \"$UP/top.sh\"\n";
 }
 
 #[test]
+fn an_unquoted_command_substitution_value_is_read_like_a_quoted_one() {
+    let text = "HERE=$(cd \"$(dirname \"${BASH_SOURCE[0]}\")\" && pwd)\n\
+. \"$HERE/helper.sh\"\n\
+TOP=$(dirname \"$0\")/..\n\
+. $TOP/top.sh\n";
+    assert_eq!(run(text), [edge(2, "scripts/helper.sh"), edge(4, "top.sh")]);
+}
+
+#[test]
 fn the_nearest_earlier_assignment_decides_and_never_an_older_one() {
     let text = "ROOT=\"$(dirname \"$0\")/..\"\n\
 source \"$ROOT/top.sh\"\n\
