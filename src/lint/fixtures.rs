@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use crate::imports::FileImports;
 use crate::model::{
-    Contract, Edge, EdgeKind, Location, NodeId, NodeInfo, Ownership, ResolvedImport,
+    Contract, Edge, EdgeKind, Location, NodeId, NodeInfo, Ownership, ResolvedImport, Symbol,
 };
 
 pub fn node(raw: &str) -> NodeId {
@@ -71,6 +71,32 @@ pub fn imports(resolved: &[(&str, u32, &str)]) -> BTreeMap<PathBuf, FileImports>
             .or_default()
             .resolved
             .push(ResolvedImport::new(at(file, line), PathBuf::from(target)));
+    }
+    map
+}
+
+/// `contract` where `node` exports exactly `names`.
+pub fn with_surface(mut contract: Contract, node_id: &str, names: &[&str]) -> Contract {
+    contract.surfaces.insert(
+        node(node_id),
+        names.iter().map(|n| (*n).to_owned()).collect(),
+    );
+    contract
+}
+
+/// Imports from (importing file, line, target file, symbols used) tuples. A symbol written `*` is
+/// [`Symbol::All`], any other is a named symbol. Each tuple is one import.
+pub fn imports_using(resolved: &[(&str, u32, &str, &[&str])]) -> BTreeMap<PathBuf, FileImports> {
+    let mut map: BTreeMap<PathBuf, FileImports> = BTreeMap::new();
+    for &(file, line, target, symbols) in resolved {
+        let used = symbols.iter().map(|symbol| match *symbol {
+            "*" => Symbol::All,
+            name => Symbol::Name(name.to_owned()),
+        });
+        map.entry(PathBuf::from(file))
+            .or_default()
+            .resolved
+            .push(ResolvedImport::new(at(file, line), PathBuf::from(target)).with_symbols(used));
     }
     map
 }

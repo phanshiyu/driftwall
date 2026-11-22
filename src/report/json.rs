@@ -126,6 +126,7 @@ mod tests {
                 "stale-edge",
                 "planned-realized",
                 "unresolved-import",
+                "private-symbol",
             ]
         );
     }

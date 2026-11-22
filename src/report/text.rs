@@ -132,6 +132,7 @@ driftwall: 0 errors, 1 warning
             "stale-edge",
             "planned-realized",
             "unresolved-import",
+            "private-symbol",
         ] {
             assert!(
                 text.contains(&format!("warning[{name}]: message")),

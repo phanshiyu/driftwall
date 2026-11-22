@@ -10,7 +10,8 @@ pub(super) const fn severity(kind: ViolationKind) -> Severity {
     match kind {
         ViolationKind::UnmappedFile
         | ViolationKind::UnknownNode
-        | ViolationKind::UndeclaredEdge => Severity::Error,
+        | ViolationKind::UndeclaredEdge
+        | ViolationKind::PrivateSymbol => Severity::Error,
         ViolationKind::StaleEdge
         | ViolationKind::PlannedRealized
         | ViolationKind::UnresolvedImport => Severity::Warning,
@@ -34,6 +35,9 @@ pub(super) const fn hint(kind: ViolationKind) -> &'static str {
         }
         ViolationKind::PlannedRealized => "change `-.->` to `-->` in the contract",
         ViolationKind::UnresolvedImport => "fix the import path or add the missing file",
+        ViolationKind::PrivateSymbol => {
+            "import a name the node exports, or ask the user to approve extending its `%% exports` line in the contract"
+        }
     }
 }
 

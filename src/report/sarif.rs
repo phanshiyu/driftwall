@@ -175,6 +175,7 @@ mod tests {
             ids,
             [
                 "planned-realized",
+                "private-symbol",
                 "stale-edge",
                 "undeclared-edge",
                 "unknown-node",
@@ -182,7 +183,7 @@ mod tests {
                 "unresolved-import",
             ]
         );
-        assert_eq!(value["runs"][0]["results"].as_array().unwrap().len(), 6);
+        assert_eq!(value["runs"][0]["results"].as_array().unwrap().len(), 7);
     }
 
     #[test]

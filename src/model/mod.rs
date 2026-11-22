@@ -224,6 +224,8 @@ pub enum ViolationKind {
     PlannedRealized,
     /// A relative import could not be resolved to a file.
     UnresolvedImport,
+    /// An import uses a symbol outside the public surface its target node declares.
+    PrivateSymbol,
 }
 
 /// How serious a violation is.
