@@ -6,10 +6,11 @@ use std::fs;
 use std::path::Path;
 
 use anyhow::{Result, anyhow, bail};
+use driftwall::init::{self, InitOptions, InitSummary, WriteOptions};
 use driftwall::lint::{self, LintOptions};
 use driftwall::report;
 
-use crate::args::{Command, LintArgs, LintFormat};
+use crate::args::{Command, InitArgs, LintArgs, LintFormat};
 use crate::locate;
 use crate::outcome::Outcome;
 
@@ -29,6 +30,7 @@ pub struct Run {
 pub fn execute(command: &Command) -> Result<Run> {
     match command {
         Command::Lint(args) => run_lint(args),
+        Command::Init(args) => run_init(args),
         Command::Where(args) => locate::run(args),
     }
 }
@@ -51,6 +53,38 @@ fn run_lint(args: &LintArgs) -> Result<Run> {
     })
 }
 
+fn run_init(args: &InitArgs) -> Result<Run> {
+    require_directory(&args.path)?;
+    let options = InitOptions { depth: args.depth };
+    let mut write = WriteOptions {
+        write_tags: !args.no_tags,
+        force: args.force,
+        ..WriteOptions::default()
+    };
+    if let Some(contract) = &args.contract {
+        write.contract.clone_from(contract);
+    }
+    let summary = init::run(&args.path, &options, &write)?;
+    Ok(Run {
+        stdout: render_init_summary(&summary),
+        outcome: Outcome::Clean,
+    })
+}
+
+/// `driftwall: wrote <contract> (<n> nodes, <m> edges) and <k> .arch files`.
+fn render_init_summary(summary: &InitSummary) -> String {
+    let tags = match summary.tag_files {
+        0 => "no .arch files".to_owned(),
+        count => format!("{count} .arch files"),
+    };
+    format!(
+        "driftwall: wrote {} ({} nodes, {} edges) and {tags}\n",
+        summary.contract.display(),
+        summary.nodes,
+        summary.edges,
+    )
+}
+
 /// Fails unless `path` exists and is a directory.
 ///
 /// # Errors
@@ -62,4 +96,30 @@ pub fn require_directory(path: &Path) -> Result<()> {
         bail!("{} is not a directory", path.display());
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn summary(nodes: usize, edges: usize, tag_files: usize) -> InitSummary {
+        InitSummary {
+            nodes,
+            edges,
+            tag_files,
+            contract: "architecture.mmd".into(),
+        }
+    }
+
+    #[test]
+    fn init_summary_names_contract_counts_and_tags() {
+        assert_eq!(
+            render_init_summary(&summary(3, 2, 3)),
+            "driftwall: wrote architecture.mmd (3 nodes, 2 edges) and 3 .arch files\n"
+        );
+        assert_eq!(
+            render_init_summary(&summary(1, 0, 0)),
+            "driftwall: wrote architecture.mmd (1 nodes, 0 edges) and no .arch files\n"
+        );
+    }
 }

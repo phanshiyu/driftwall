@@ -4,6 +4,9 @@ use std::path::PathBuf;
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
 
+/// Repository root used when `PATH` is omitted, shared by every command that takes one.
+const DEFAULT_PATH: &str = ".";
+
 /// Architecture drift linter: a Mermaid diagram is the contract, your code must obey it.
 ///
 /// Exit codes: 0 clean, 1 violations, 2 tool error.
@@ -20,6 +23,10 @@ pub struct Cli {
 pub enum Command {
     /// Check the code against the architecture contract.
     Lint(LintArgs),
+    /// Write a baseline contract and `.arch` tags for an existing repository.
+    ///
+    /// The result lints clean. Refuses to overwrite existing files unless `--force`.
+    Init(InitArgs),
     /// Show which node owns a file and which .arch file decided it.
     ///
     /// Exits 1 when the file is unmapped.
@@ -53,7 +60,7 @@ pub enum WhereFormat {
 #[derive(Debug, Args)]
 pub struct LintArgs {
     /// Repository root to lint.
-    #[arg(value_name = "PATH", default_value = ".")]
+    #[arg(value_name = "PATH", default_value = DEFAULT_PATH)]
     pub path: PathBuf,
     /// Contract file, relative to PATH [default: architecture.mmd].
     #[arg(long, value_name = "FILE")]
@@ -75,4 +82,24 @@ pub enum LintFormat {
     Json,
     /// SARIF 2.1.0 for code scanning.
     Sarif,
+}
+
+/// Arguments of `driftwall init`.
+#[derive(Debug, Args)]
+pub struct InitArgs {
+    /// Repository root to baseline.
+    #[arg(value_name = "PATH", default_value = DEFAULT_PATH)]
+    pub path: PathBuf,
+    /// Directory depth at which nodes are cut [default: chosen from the layout].
+    #[arg(long, value_name = "N")]
+    pub depth: Option<usize>,
+    /// Contract file to write, relative to PATH [default: architecture.mmd].
+    #[arg(long, value_name = "FILE")]
+    pub contract: Option<PathBuf>,
+    /// Write the contract only, without `.arch` files.
+    #[arg(long)]
+    pub no_tags: bool,
+    /// Overwrite an existing contract or `.arch` file.
+    #[arg(long)]
+    pub force: bool,
 }
