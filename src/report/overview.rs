@@ -66,6 +66,7 @@ pub fn render_overview_text(overview: &Overview) -> String {
     out.push_str(&blind::summary_block(
         &overview.blind_spots,
         &overview.unmapped,
+        &overview.unmapped_items,
     ));
     out
 }
@@ -155,6 +156,7 @@ pub fn render_overview_json(overview: &Overview) -> Result<String, ReportError> 
         #[serde(flatten)]
         summary: &'a BlindSummary,
         unmapped: &'a BlindTally,
+        unmapped_items: &'a BlindSpots,
     }
     to_json(&Document {
         version: SCHEMA_VERSION,
@@ -167,6 +169,7 @@ pub fn render_overview_json(overview: &Overview) -> Result<String, ReportError> 
         blind_spots: Blind {
             summary: &overview.blind_spots,
             unmapped: &overview.unmapped,
+            unmapped_items: &overview.unmapped_items,
         },
     })
 }
@@ -347,6 +350,7 @@ mod tests {
         Overview {
             blind_spots: BlindSummary::default(),
             unmapped: BlindTally::default(),
+            unmapped_items: BlindSpots::default(),
             nodes: vec![
                 node("cli", &["src"], 3),
                 node("lint", &["src/lint", "src/lint2"], 1),
@@ -459,6 +463,7 @@ blind spots: none
         let overview = Overview {
             blind_spots: BlindSummary::default(),
             unmapped: BlindTally::default(),
+            unmapped_items: BlindSpots::default(),
             nodes: vec![],
             edges: vec![
                 using(
@@ -570,6 +575,7 @@ blind spots: none
         let overview = Overview {
             blind_spots: BlindSummary::default(),
             unmapped: BlindTally::default(),
+            unmapped_items: BlindSpots::default(),
             nodes: vec![
                 exporting(node("a", &[], 0), &["Client", "fetch"]),
                 node("b", &[], 0),

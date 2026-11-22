@@ -65,9 +65,18 @@ fn unread_by_count(summary: &BlindSummary) -> Vec<(&String, &crate::model::Unrea
     entries
 }
 
+/// How many unmapped items the `brief` text names before it says `+N more`.
+const MAX_UNMAPPED_LISTED: usize = 20;
+
 /// The block that ends the `brief` text: one line per category with a non-zero count, or the one
-/// line `blind spots: none`. `unmapped` counts the items no node owns, over all categories.
-pub(super) fn summary_block(summary: &BlindSummary, unmapped: &BlindTally) -> String {
+/// line `blind spots: none`. `unmapped` counts the items no node owns, over all categories, and
+/// `unowned` is those items: the first [`MAX_UNMAPPED_LISTED`] follow the count, indented, then
+/// `+N more`.
+pub(super) fn summary_block(
+    summary: &BlindSummary,
+    unmapped: &BlindTally,
+    unowned: &BlindSpots,
+) -> String {
     if summary.is_empty() {
         return "blind spots: none\n".to_owned();
     }
@@ -109,6 +118,16 @@ pub(super) fn summary_block(summary: &BlindSummary, unmapped: &BlindTally) -> St
     }
     if unmapped.total() > 0 {
         lines.push(format!("unmapped: {}", unmapped.total()));
+        let items = item_lines(unowned);
+        lines.extend(
+            items
+                .iter()
+                .take(MAX_UNMAPPED_LISTED)
+                .map(|item| format!("  {item}")),
+        );
+        if items.len() > MAX_UNMAPPED_LISTED {
+            lines.push(format!("  +{} more", items.len() - MAX_UNMAPPED_LISTED));
+        }
     }
     block(&lines)
 }
@@ -136,6 +155,15 @@ pub(super) fn node_suffix(tally: &BlindTally) -> String {
 
 /// The `blind spots:` block of `neighbors`: one line per item, or `blind spots: none`.
 pub(super) fn items_block(spots: &BlindSpots) -> String {
+    let lines = item_lines(spots);
+    if lines.is_empty() {
+        return "blind spots: none\n".to_owned();
+    }
+    block(&lines)
+}
+
+/// One line per item of `spots`: not read, excluded, ignored, skipped, then unresolved.
+fn item_lines(spots: &BlindSpots) -> Vec<String> {
     let mut lines = Vec::new();
     for (key, group) in &spots.unread {
         for file in &group.files {
@@ -170,10 +198,7 @@ pub(super) fn items_block(spots: &BlindSpots) -> String {
             reference.specifier
         ));
     }
-    if lines.is_empty() {
-        return "blind spots: none\n".to_owned();
-    }
-    block(&lines)
+    lines
 }
 
 /// `blind spots:` followed by the lines, two spaces indented.
@@ -285,7 +310,7 @@ mod tests {
             ..BlindTally::default()
         };
         assert_eq!(
-            summary_block(&found, &unmapped),
+            summary_block(&found, &unmapped, &BlindSpots::default()),
             "\
 blind spots:
   not read: swift 40 files (1200 lines), sh 1 file (1 line)
@@ -298,7 +323,11 @@ blind spots:
     #[test]
     fn an_empty_summary_is_the_single_line_none_whatever_the_tally() {
         assert_eq!(
-            summary_block(&BlindSummary::default(), &BlindTally::default()),
+            summary_block(
+                &BlindSummary::default(),
+                &BlindTally::default(),
+                &BlindSpots::default()
+            ),
             "blind spots: none\n"
         );
     }

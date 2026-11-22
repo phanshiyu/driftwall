@@ -1133,15 +1133,23 @@ A directory is answered like a source file, by the tag that covers it. The JSON 
     ignored by .driftwallignore: 4
     skipped references: undeclared-package 5, dynamic-specifier 1
     unresolved imports: 2
-    unmapped: 7
+    unmapped: 2
+      not read: loose/tool.pl (pl, 1 line)
+      excluded: loose/app.min.js (minified)
   ```
 
   A line is present only when its count is not zero (`unmapped` counts the items attributed to no
-  node, over all categories). Unread extensions are ordered by file count, then name. Excluded
+  node, over all categories). The `unmapped` line is followed by those items, one per line and four
+  spaces indented, in the forms and the order of the `blind spots:` block of `neighbors` below (not
+  read, excluded, ignored, skipped, unresolved), so every one is named by its path. At most 20 are
+  listed, then one line `    +N more` for the rest. Unread extensions are ordered by file count, then name. Excluded
   reasons and skip reasons are in the order of this document. When every count is zero the block is
   the single line `blind spots: none`. In JSON, `blind_spots` has `unread` (key to `{count, lines}`),
-  `excluded` (reason to count), `ignored`, `skipped` (reason to count), `unresolved` and `unmapped`
-  (a tally, see below), and every node has `blind_spots`, a tally with `unread`, `excluded`,
+  `excluded` (reason to count), `ignored`, `skipped` (reason to count), `unresolved`, `unmapped`
+  (a tally with the same five counts) and `unmapped_items` (every item no node owns, uncapped, in the
+  shape of the `blind_spots` of `neighbors` JSON: `unread` per key with `count`, `lines` and `files`,
+  `excluded` per reason, `ignored`, `skipped` per reason, `unresolved`, each item with its file and
+  `node: null`), and every node has `blind_spots`, a tally with `unread`, `excluded`,
   `ignored`, `skipped` and `unresolved` file or reference counts.
 - `neighbors <NODE>` prints one node's incoming and outgoing edges with up to 3 `file:line`
   example sites each (`--all-sites` prints every site; JSON always has every site, with no cap

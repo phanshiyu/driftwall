@@ -632,8 +632,10 @@ pub struct Overview {
     pub warnings: usize,
     /// Everything the analysis could not see, as counts.
     pub blind_spots: BlindSummary,
-    /// The blind spots no node owns.
+    /// The blind spots no node owns, as counts.
     pub unmapped: BlindTally,
+    /// The blind spots no node owns, each one by name.
+    pub unmapped_items: BlindSpots,
 }
 
 /// One node with the edges that touch it.

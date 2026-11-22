@@ -16,8 +16,8 @@ use crate::model::{
 /// an observed edge the contract lacks has no kind. A node's directories are those holding a
 /// `.arch` file that names it; its files are the source files it owns; its exports are its
 /// declared surface. An edge keeps every site, with its kind and test flag. Every node carries the
-/// tally of its blind spots, and the overview the summary of all of them and the tally of the ones
-/// no node owns.
+/// tally of its blind spots, and the overview the summary of all of them, and the tally and the
+/// items of the ones no node owns.
 #[must_use]
 pub fn overview(
     contract: &Contract,
@@ -77,6 +77,7 @@ pub fn overview(
         warnings,
         blind_spots: blind.summary(),
         unmapped: blind.tally(None),
+        unmapped_items: blind.of_unowned(),
     }
 }
 

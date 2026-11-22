@@ -268,7 +268,17 @@ impl BlindSpots {
     /// Only the items attributed to `node`.
     #[must_use]
     pub fn of_node(&self, node: &NodeId) -> Self {
-        let own = Some(node);
+        self.attributed_to(Some(node))
+    }
+
+    /// Only the items no node owns.
+    #[must_use]
+    pub fn of_unowned(&self) -> Self {
+        self.attributed_to(None)
+    }
+
+    /// Only the items attributed to `own`, where `None` is no node.
+    fn attributed_to(&self, own: Option<&NodeId>) -> Self {
         let files = |list: &[BlindFile]| -> Vec<BlindFile> {
             list.iter()
                 .filter(|f| f.node.as_ref() == own)
@@ -450,6 +460,23 @@ mod tests {
             [&SkipReason::UndeclaredPackage]
         );
         assert_eq!(own.tally(Some(&id("a"))), sample().tally(Some(&id("a"))));
+    }
+
+    #[test]
+    fn of_unowned_keeps_only_the_items_no_node_owns() {
+        let none = sample().of_unowned();
+        assert_eq!(none.unread.keys().collect::<Vec<_>>(), ["sh", "swift"]);
+        assert_eq!(none.unread["swift"].files.len(), 1);
+        assert_eq!(
+            none.unread["swift"].files[0].file,
+            PathBuf::from("loose.swift")
+        );
+        assert!(none.excluded.is_empty());
+        assert_eq!(
+            none.skipped.keys().collect::<Vec<_>>(),
+            [&SkipReason::UnreachableModule]
+        );
+        assert_eq!(none.tally(None), sample().tally(None));
     }
 
     #[test]

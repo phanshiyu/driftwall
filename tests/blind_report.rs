@@ -119,6 +119,8 @@ blind spots:
   skipped references: undeclared-package 1, dynamic-specifier 1
   unresolved imports: 1
   unmapped: 2
+    not read: loose/tool.pl (pl, 1 line)
+    excluded: loose/app.min.js (minified)
 ";
     assert_eq!(stdout(&output), expected);
     assert_eq!(stderr(&output), "");
@@ -158,6 +160,19 @@ fn brief_json_has_the_summary_the_unmapped_tally_and_a_tally_per_node() {
             "skipped": {"undeclared-package": 1, "dynamic-specifier": 1},
             "unresolved": 1,
             "unmapped": {"unread": 1, "excluded": 1, "ignored": 0, "skipped": 0, "unresolved": 0},
+            "unmapped_items": {
+                "unread": {
+                    "pl": {
+                        "count": 1,
+                        "lines": 1,
+                        "files": [{"file": "loose/tool.pl", "node": null, "lines": 1}],
+                    },
+                },
+                "excluded": {"minified": [{"file": "loose/app.min.js", "node": null}]},
+                "ignored": [],
+                "skipped": {},
+                "unresolved": [],
+            },
         })
     );
     assert_eq!(
@@ -179,8 +194,70 @@ fn brief_json_of_a_clean_repo_has_empty_blind_spots() {
         json!({
             "unread": {}, "excluded": {}, "ignored": 0, "skipped": {}, "unresolved": 0,
             "unmapped": {"unread": 0, "excluded": 0, "ignored": 0, "skipped": 0, "unresolved": 0},
+            "unmapped_items": {
+                "unread": {}, "excluded": {}, "ignored": [], "skipped": {}, "unresolved": [],
+            },
         })
     );
+}
+
+/// `clean_files` plus `count` unread Go files in a directory no node owns.
+fn with_loose_files(count: usize) -> Vec<(String, &'static str)> {
+    let mut files: Vec<(String, &'static str)> = clean_files()
+        .into_iter()
+        .map(|(path, text)| (path.to_owned(), text))
+        .collect();
+    files.extend((0..count).map(|n| (format!("loose/f{n:02}.go"), "x\n")));
+    files
+}
+
+#[test]
+fn brief_names_the_first_twenty_unmapped_items_and_counts_the_rest() {
+    let owned = with_loose_files(25);
+    let files: Vec<(&str, &str)> = owned
+        .iter()
+        .map(|(path, text)| (path.as_str(), *text))
+        .collect();
+    let dir = repo(&files);
+    let out = stdout(&driftwall(&dir, &["brief"]));
+    let tail = out.split_once("  unmapped: 25\n").unwrap().1;
+    let mut expected: Vec<String> = (0..20)
+        .map(|n| format!("    not read: loose/f{n:02}.go (go, 1 line)"))
+        .collect();
+    expected.push("    +5 more".to_owned());
+    assert_eq!(tail, format!("{}\n", expected.join("\n")));
+}
+
+#[test]
+fn brief_names_exactly_twenty_unmapped_items_without_a_more_line() {
+    let owned = with_loose_files(20);
+    let files: Vec<(&str, &str)> = owned
+        .iter()
+        .map(|(path, text)| (path.as_str(), *text))
+        .collect();
+    let dir = repo(&files);
+    let out = stdout(&driftwall(&dir, &["brief"]));
+    assert!(out.contains("  unmapped: 20\n"), "{out}");
+    assert!(
+        out.ends_with("    not read: loose/f19.go (go, 1 line)\n"),
+        "{out}"
+    );
+}
+
+#[test]
+fn brief_json_lists_every_unmapped_item_uncapped() {
+    let owned = with_loose_files(25);
+    let files: Vec<(&str, &str)> = owned
+        .iter()
+        .map(|(path, text)| (path.as_str(), *text))
+        .collect();
+    let dir = repo(&files);
+    let value = json_of(&driftwall(&dir, &["brief", "--format", "json"]));
+    let listed = &value["blind_spots"]["unmapped_items"]["unread"]["go"];
+    assert_eq!(listed["count"], 25);
+    assert_eq!(listed["files"].as_array().unwrap().len(), 25);
+    assert_eq!(listed["files"][24]["file"], "loose/f24.go");
+    assert_eq!(value["blind_spots"]["unmapped"]["unread"], 25);
 }
 
 #[test]
