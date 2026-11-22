@@ -13,3 +13,22 @@ Your architecture diagram is the contract. driftwall fails the build when the co
 - `driftwall lint` finds unmapped files, unknown nodes and undeclared dependencies, with file and
   line, in text, JSON or SARIF.
 - Built for AI agents: a deterministic map of where code lives and what may depend on what.
+
+## Install
+
+Not published yet. See [docs/RELEASING.md](docs/RELEASING.md). Until then:
+
+```
+cargo install --git https://github.com/phanshiyu/driftwall
+```
+
+## Use
+
+```
+driftwall init            # baseline architecture.mmd and .arch tags from the existing code
+driftwall lint            # exit 0 clean, 1 violations, 2 tool error
+driftwall lint --format json
+driftwall where src/foo.ts
+```
+
+Agent integration (Claude Code skill and hooks): [integrations/claude-code](integrations/claude-code).
