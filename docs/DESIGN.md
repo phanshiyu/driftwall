@@ -105,12 +105,25 @@ A failing lint is not an error, so `anyhow` is used only at the entry point and 
 driftwall lint [PATH] [--format text|json|sarif] [--strict]
 driftwall init [PATH] [--depth N] [--contract FILE] [--no-tags] [--force]
 driftwall where <FILE>          # owning node of a path, with the .arch file that decided it
-driftwall neighbors <NODE>      # incoming and outgoing edges, declared and observed
-driftwall diff --base <REF>     # edge delta versus a git ref, for human review (later)
+driftwall brief [PATH] [--contract FILE] [--format text|json]
+driftwall neighbors <NODE> [PATH] [--contract FILE] [--format text|json]
+driftwall diff --base <REF> [PATH] [--contract FILE] [--format text|json] [--exit-code]
 ```
 
 `--format json` is the agent interface. Every violation carries `kind`, `severity`, `at`
 (`file`, `line`), `message`, `hint`.
+
+`brief`, `neighbors` and `diff` are read-only maps for agents and reviewers:
+
+- `brief` prints every node (directories, file count) and every edge, declared or observed, with
+  the number of import sites that realise it. An edge code uses and the contract lacks is marked
+  `UNDECLARED`. It is informational: exit `0` unless the tool fails (`2`).
+- `neighbors <NODE>` prints one node's incoming and outgoing edges with up to 3 `file:line`
+  example sites each. An unknown node is a tool error that lists the declared ids.
+- `diff --base <REF>` compares the contract at a git ref with the working tree (nodes and edge
+  kinds; labels and boundaries are ignored). The old text comes from `git show REF:./<contract>`;
+  a contract absent at that ref counts as empty, any other git failure is exit `2`. Exit `0`
+  normally; with `--exit-code`, `1` when anything changed, so CI can require approval.
 
 ## Module map
 
