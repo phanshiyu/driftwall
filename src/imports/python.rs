@@ -16,9 +16,9 @@ const ABSOLUTE_ROOTS: [&str; 2] = ["", "src"];
 /// With names, each name resolves on its own: the submodule `<module>/<name>` first, then the
 /// module itself. Without names (`import a.b`, `from a import *`) only the module resolves.
 ///
-/// The symbols used follow what each name resolved to. A name that is a submodule file uses the
-/// submodule as a whole ([`Symbol::All`]); a name found inside the module uses that name. A
-/// statement without names uses the module as a whole.
+/// The symbols used follow what each name resolved to. A name that is a submodule is a module
+/// binding and uses no symbol; a name found inside the module uses that name. `import a.b` is a
+/// module binding too. Only `from a import *` uses [`Symbol::All`].
 /// A call to `importlib.import_module(..)` or `__import__(..)` names its module at run time and is
 /// skipped as dynamic, whatever its argument.
 /// Absolute modules that match no file are third party or standard library and are ignored;
@@ -48,6 +48,7 @@ pub fn resolve(
         .split('.')
         .filter(|segment| !segment.is_empty())
         .collect();
+    let star = is_star(reference);
     let names: Vec<Vec<&str>> = if reference.names.is_empty() {
         vec![Vec::new()]
     } else {
@@ -71,12 +72,12 @@ pub fn resolve(
         .map(|name| {
             let hit = roots.iter().find_map(|root| {
                 let base = join(root, &module);
-                first_known(&candidates(&base, name, !module.is_empty()), known)
+                first_known(&candidates(&base, name, !module.is_empty(), star), known)
             });
             match hit {
                 Some((target, _)) if target == importer => Resolution::Ignored,
                 Some((target, symbol)) => {
-                    Resolution::resolved(target).using(BTreeSet::from([symbol]))
+                    Resolution::resolved(target).using(symbol.into_iter().collect())
                 }
                 None if dots == 0 => Resolution::Ignored,
                 None => Resolution::Unresolved,
@@ -97,6 +98,18 @@ fn relative_root(importer: &Path, dots: usize) -> Option<PathBuf> {
     Some(dir)
 }
 
+/// Whether the reference is the module of `from m import *`.
+fn is_star(reference: &Reference<'_>) -> bool {
+    reference.node.parent().is_some_and(|statement| {
+        statement.kind() == "import_from_statement" && {
+            let mut cursor = statement.walk();
+            statement
+                .children(&mut cursor)
+                .any(|child| child.kind() == "wildcard_import")
+        }
+    })
+}
+
 fn join(root: &Path, segments: &[&str]) -> PathBuf {
     let mut path = root.to_path_buf();
     path.extend(segments);
@@ -104,18 +117,24 @@ fn join(root: &Path, segments: &[&str]) -> PathBuf {
 }
 
 /// Files `base` plus `name` can mean, best first, each with the symbol it makes the import use:
-/// the submodule as a module file or package (all of it), then the module itself (the name inside
-/// it, or all of it when there is no name). A relative import with no module (`from . import x`)
-/// has the package `__init__.py` as its module.
-fn candidates(base: &Path, name: &[&str], has_module: bool) -> Vec<(PathBuf, Symbol)> {
+/// the submodule as a module file or package (none, a module binding), then the module itself (the
+/// name inside it, or none for a module binding, or all of it for a star import). A relative import
+/// with no module (`from . import x`) has the package `__init__.py` as its module.
+fn candidates(
+    base: &Path,
+    name: &[&str],
+    has_module: bool,
+    star: bool,
+) -> Vec<(PathBuf, Option<Symbol>)> {
     let inside = name
         .first()
-        .map_or(Symbol::All, |name| Symbol::Name((*name).to_owned()));
+        .map(|name| Symbol::Name((*name).to_owned()))
+        .or_else(|| star.then_some(Symbol::All));
     let mut found = Vec::new();
     if !name.is_empty() {
         let sub = join(base, name);
-        found.push((sub.with_extension("py"), Symbol::All));
-        found.push((sub.join("__init__.py"), Symbol::All));
+        found.push((sub.with_extension("py"), None));
+        found.push((sub.join("__init__.py"), None));
     }
     if has_module {
         found.push((base.with_extension("py"), inside.clone()));
@@ -125,9 +144,9 @@ fn candidates(base: &Path, name: &[&str], has_module: bool) -> Vec<(PathBuf, Sym
 }
 
 fn first_known(
-    candidates: &[(PathBuf, Symbol)],
+    candidates: &[(PathBuf, Option<Symbol>)],
     known: &BTreeSet<PathBuf>,
-) -> Option<(PathBuf, Symbol)> {
+) -> Option<(PathBuf, Option<Symbol>)> {
     candidates
         .iter()
         .find(|(candidate, _)| known.contains(candidate))

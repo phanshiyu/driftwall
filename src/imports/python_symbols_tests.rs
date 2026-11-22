@@ -48,23 +48,23 @@ fn from_import_in_a_package_init_records_the_names() {
 }
 
 #[test]
-fn from_import_of_a_submodule_records_all_of_it() {
+fn from_import_of_a_submodule_records_no_symbol() {
     let got = used(
         "from a import b",
         "app/main.py",
         &["a/__init__.py", "a/b.py"],
     );
-    assert_eq!(got, [entry(1, "a/b.py", &["*"])]);
+    assert_eq!(got, [entry(1, "a/b.py", &[])]);
 }
 
 #[test]
-fn from_import_of_a_subpackage_records_all_of_it() {
+fn from_import_of_a_subpackage_records_no_symbol() {
     let got = used(
         "from a import b",
         "app/main.py",
         &["a.py", "a/b/__init__.py"],
     );
-    assert_eq!(got, [entry(1, "a/b/__init__.py", &["*"])]);
+    assert_eq!(got, [entry(1, "a/b/__init__.py", &[])]);
 }
 
 #[test]
@@ -78,7 +78,7 @@ fn from_import_mixing_a_submodule_and_a_name_records_each_against_its_file() {
         got,
         [
             entry(1, "a/__init__.py", &["b", "d"]),
-            entry(1, "a/c.py", &["*"]),
+            entry(1, "a/c.py", &[]),
         ]
     );
 }
@@ -90,18 +90,18 @@ fn from_import_star_records_all() {
 }
 
 #[test]
-fn plain_import_records_all() {
+fn plain_import_records_no_symbol() {
     assert_eq!(
         used("import a.b", "app/main.py", &["a/b.py"]),
-        [entry(1, "a/b.py", &["*"])]
+        [entry(1, "a/b.py", &[])]
     );
     assert_eq!(
         used("import a.b as x", "app/main.py", &["a/b.py"]),
-        [entry(1, "a/b.py", &["*"])]
+        [entry(1, "a/b.py", &[])]
     );
     assert_eq!(
         used("import a, b", "app/main.py", &["a.py", "b.py"]),
-        [entry(1, "a.py", &["*"]), entry(1, "b.py", &["*"])]
+        [entry(1, "a.py", &[]), entry(1, "b.py", &[])]
     );
 }
 
@@ -110,7 +110,7 @@ fn relative_from_import_follows_the_same_rule() {
     let repo = ["pkg/__init__.py", "pkg/x.py", "pkg/a.py"];
     assert_eq!(
         used("from . import x", "pkg/m.py", &repo),
-        [entry(1, "pkg/x.py", &["*"])]
+        [entry(1, "pkg/x.py", &[])]
     );
     assert_eq!(
         used("from . import y", "pkg/m.py", &repo),
@@ -144,4 +144,21 @@ fn separate_statements_stay_separate_entries() {
         &["a.py"],
     );
     assert_eq!(got, [entry(1, "a.py", &["b"]), entry(2, "a.py", &["c"])]);
+}
+
+#[test]
+fn a_star_import_is_the_only_python_import_that_records_all() {
+    let repo = ["a/__init__.py", "a/b.py"];
+    assert_eq!(
+        used(
+            "from a import *\nfrom a import b\nimport a.b",
+            "app/main.py",
+            &repo
+        ),
+        [
+            entry(1, "a/__init__.py", &["*"]),
+            entry(2, "a/b.py", &[]),
+            entry(3, "a/b.py", &[]),
+        ]
+    );
 }
