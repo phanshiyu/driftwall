@@ -98,10 +98,34 @@ renderers ignore:
 %% exports gitlab: Client, fetch_mrs, post_note
 ```
 
-At most one `exports` line per node, naming a declared node. When a node has a surface, an import
-from another node that uses a symbol outside it, or uses `*`, is a `private-symbol` error at the
-import. Nodes without an `exports` line are unrestricted. `diff` reports surface changes, and
-`neighbors` and `brief` list the symbols each edge uses.
+At most one `exports` line per node, naming a declared node (checked after the whole file is read,
+like edge endpoints). The list is one or more comma separated identifiers (`[A-Za-z_$]` then
+letters, digits, `_` or `$`), each at most once. A comment whose first word is `exports` is always
+this directive, so a malformed one (no `:`, empty list, bad or repeated name) is a hard error with
+its line, never a silent comment; every other `%%` line stays a plain comment. The renderer writes
+the lines after the edges, sorted by node, names sorted.
+
+When a node has a surface, an import from another node (both owners declared, so unmapped and unknown
+owners never cascade) that uses a symbol outside it, or uses `*`, is a `private-symbol` error at the
+import, one per symbol. An import that uses no symbol (side-effect) is never private, and imports
+inside one node are never checked. Nodes without an `exports` line are unrestricted.
+
+`*` in Rust is the one case that needs a decision. `use crate::gitlab;` (and `{self}`) records `*`
+on the module file, exactly like the glob `use crate::gitlab::*;`, but they differ in what the code
+can then reach: through a module name every item is written `gitlab::item` and recorded as its own
+import, which is checked against the surface at its own line, so the `*` adds nothing. A glob
+brings in names that are never seen. Syntax alone cannot tell them apart, so a `*` from a Rust file
+is allowed only when that same file also names an item of the same target file through another
+import (the evidence that the module name is in use and its items are being checked), and is a
+violation otherwise. Everywhere else (TypeScript `import * as`, `export *`, Python `import a.b`)
+`*` is a violation. Known gap: a glob in a file that also names an item of the same target by a
+qualified path is allowed, and its unqualified names go unseen.
+
+`diff` reports surface changes as `+ exports gitlab: X` and `- exports gitlab: Y`, one line per
+name; a node that loses its whole surface shows only `-` lines and is unrestricted from then on.
+`brief` and `neighbors` list the symbols each edge uses (`uses: Client, fetch`, the first six then
+`+N more`) and mark a declared surface (`exports: ...`); JSON carries `symbols` on every edge and
+`exports` on a node that has a surface.
 
 ## Rules (violation kinds)
 
