@@ -212,29 +212,55 @@ impl Serialize for Symbol {
     }
 }
 
+/// What an import statement is for.
+///
+/// Serialized as the lower-case strings `runtime`, `typeonly` and `embed`. The order is the order
+/// entries of equal location and target are sorted in.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ImportKind {
+    /// An import the program needs at run time. The default, and anything not known to be another.
+    #[default]
+    Runtime,
+    /// An import that only names types and is erased before the program runs: TypeScript
+    /// `import type`, an import inside `if TYPE_CHECKING:`, anything in a declaration file.
+    TypeOnly,
+    /// A file the program embeds as data or source at build time, such as Rust `include_str!`. It
+    /// uses no named item of its target.
+    Embed,
+}
+
 /// One import statement resolved to a repository file.
 ///
-/// Several statements on one line that reach the same file are one `ResolvedImport` whose
-/// `symbols` is the union. Statements on different lines stay separate.
+/// Imports reaching the same file from the same location collapse into one `ResolvedImport`
+/// whose `symbols` is the union, but only when their `kind` and `test_only` agree. Statements
+/// on different lines stay separate.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 pub struct ResolvedImport {
-    /// Where the import statement is.
+    /// Where the import statement starts.
     pub at: Location,
     /// Repository-relative file it resolves to.
     pub target: PathBuf,
     /// What the import uses from `target`, sorted. Empty for a side-effect import, which uses no
     /// symbol. Serialized as an array of strings, see [`Symbol`].
     pub symbols: BTreeSet<Symbol>,
+    /// What the import is for.
+    pub kind: ImportKind,
+    /// Whether the import is written in test code: a test file, or Rust code under `#[cfg(test)]`.
+    pub test_only: bool,
 }
 
 impl ResolvedImport {
-    /// An import at `at` of `target` that uses no symbol, such as a side-effect import.
+    /// A runtime import at `at` of `target` that uses no symbol, such as a side-effect import, and
+    /// is not test code.
     #[must_use]
     pub const fn new(at: Location, target: PathBuf) -> Self {
         Self {
             at,
             target,
             symbols: BTreeSet::new(),
+            kind: ImportKind::Runtime,
+            test_only: false,
         }
     }
 
@@ -242,6 +268,20 @@ impl ResolvedImport {
     #[must_use]
     pub fn with_symbols(mut self, symbols: impl IntoIterator<Item = Symbol>) -> Self {
         self.symbols.extend(symbols);
+        self
+    }
+
+    /// The same import of the given `kind`.
+    #[must_use]
+    pub const fn with_kind(mut self, kind: ImportKind) -> Self {
+        self.kind = kind;
+        self
+    }
+
+    /// The same import, written in test code when `test_only`.
+    #[must_use]
+    pub const fn with_test_only(mut self, test_only: bool) -> Self {
+        self.test_only = test_only;
         self
     }
 }
@@ -523,7 +563,7 @@ mod tests {
         let json = serde_json::to_string(&import).unwrap();
         assert_eq!(
             json,
-            r#"{"at":{"file":"a.rs","line":3},"target":"b.rs","symbols":["alpha","zeta","*"]}"#
+            r#"{"at":{"file":"a.rs","line":3},"target":"b.rs","symbols":["alpha","zeta","*"],"kind":"runtime","test_only":false}"#
         );
     }
 
@@ -538,7 +578,38 @@ mod tests {
         );
         assert!(import.symbols.is_empty());
         let json = serde_json::to_string(&import).unwrap();
-        assert!(json.ends_with(r#""symbols":[]}"#), "{json}");
+        assert!(json.contains(r#""symbols":[]"#), "{json}");
+    }
+
+    #[test]
+    fn kinds_serialize_as_lower_case_strings() {
+        let import = |kind| {
+            ResolvedImport::new(
+                Location {
+                    file: PathBuf::from("a.ts"),
+                    line: 1,
+                },
+                PathBuf::from("b.ts"),
+            )
+            .with_kind(kind)
+            .with_test_only(true)
+        };
+        let tail = |kind| {
+            let json = serde_json::to_string(&import(kind)).unwrap();
+            json.split_once(r#""symbols":[],"#).unwrap().1.to_owned()
+        };
+        assert_eq!(
+            tail(ImportKind::Runtime),
+            r#""kind":"runtime","test_only":true}"#
+        );
+        assert_eq!(
+            tail(ImportKind::TypeOnly),
+            r#""kind":"typeonly","test_only":true}"#
+        );
+        assert_eq!(
+            tail(ImportKind::Embed),
+            r#""kind":"embed","test_only":true}"#
+        );
     }
 
     #[test]

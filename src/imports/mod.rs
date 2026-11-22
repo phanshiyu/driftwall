@@ -41,6 +41,8 @@ mod alias_tests;
 #[cfg(test)]
 mod ecmascript_symbols_tests;
 #[cfg(test)]
+mod kind_tests;
+#[cfg(test)]
 mod python_symbols_tests;
 #[cfg(test)]
 mod python_tests;

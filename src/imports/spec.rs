@@ -4,6 +4,7 @@ use std::path::Path;
 
 use super::{
     Bindings, Environment, Reference, Resolution, python, queries, resolve, rust, statement,
+    statement::Flags,
 };
 use crate::model::Language;
 
@@ -56,6 +57,9 @@ pub struct LanguageSpec {
     /// The node whose first line is the location of the import that `@specifier` is part of: the
     /// statement, or the call expression, around it.
     pub anchor: for<'a> fn(tree_sitter::Node<'a>) -> tree_sitter::Node<'a>,
+    /// Decides from the anchor, the source text and the importing file whether the import is
+    /// type-only and whether it is written in test code.
+    pub flags: for<'a> fn(tree_sitter::Node<'a>, &str, &Path) -> Flags,
     /// Resolves one match, written in `importer`, against the [`Environment`]. Returns one
     /// [`Resolution`] per target the match refers to, so a statement naming several imports can
     /// resolve each independently.
@@ -68,6 +72,7 @@ static TYPESCRIPT: LanguageSpec = LanguageSpec {
     query: queries::TYPESCRIPT,
     bindings: no_bindings,
     anchor: statement::ecmascript_anchor,
+    flags: statement::ecmascript_flags,
     resolve: resolve::ecmascript,
 };
 
@@ -77,6 +82,7 @@ static PYTHON: LanguageSpec = LanguageSpec {
     query: queries::PYTHON,
     bindings: no_bindings,
     anchor: statement::python_anchor,
+    flags: statement::python_flags,
     resolve: python::resolve,
 };
 
@@ -86,6 +92,7 @@ static JAVASCRIPT: LanguageSpec = LanguageSpec {
     query: queries::JAVASCRIPT,
     bindings: no_bindings,
     anchor: statement::ecmascript_anchor,
+    flags: statement::ecmascript_flags,
     resolve: resolve::ecmascript,
 };
 
@@ -95,6 +102,7 @@ static RUST: LanguageSpec = LanguageSpec {
     query: queries::RUST,
     bindings: rust_bindings,
     anchor: statement::rust_anchor,
+    flags: statement::rust_flags,
     resolve: rust::resolve,
 };
 

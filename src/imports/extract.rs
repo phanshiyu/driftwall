@@ -8,7 +8,10 @@ use tree_sitter::{Node, Parser, Query, QueryCursor, StreamingIterator};
 
 use super::spec::Grammar;
 use super::{Environment, FileImports, ImportsError, Reference, Resolution, spec};
-use crate::model::{Language, Location, ResolvedImport, Symbol, UnresolvedImport};
+use crate::model::{ImportKind, Language, Location, ResolvedImport, Symbol, UnresolvedImport};
+
+/// What duplicate imports must agree on to merge: location, target, kind and whether it is test code.
+type Merge = (Location, PathBuf, ImportKind, bool);
 
 const SPECIFIER_CAPTURE: &str = "specifier";
 const NAME_CAPTURE: &str = "name";
@@ -73,8 +76,8 @@ pub fn extract_in(
     let name_capture = query.capture_index_for_name(NAME_CAPTURE);
     let bindings = (spec.bindings)(tree.root_node(), source);
 
-    // why: keyed by (location, target) so duplicate imports collapse and their symbols union.
-    let mut resolved: BTreeMap<(Location, PathBuf), BTreeSet<Symbol>> = BTreeMap::new();
+    // why: keyed by (location, target, kind, test_only): duplicates merge only when all four agree.
+    let mut resolved: BTreeMap<Merge, BTreeSet<Symbol>> = BTreeMap::new();
     let mut unresolved = BTreeSet::new();
     let mut cursor = QueryCursor::new();
     let mut matches = cursor.matches(&query, tree.root_node(), source.as_bytes());
@@ -96,10 +99,12 @@ pub fn extract_in(
             .filter(|c| Some(c.index) == name_capture)
             .filter_map(|c| c.node.utf8_text(source.as_bytes()).ok())
             .collect();
+        let anchor = (spec.anchor)(node);
         let at = Location {
             file: file.to_path_buf(),
-            line: line_of((spec.anchor)(node)),
+            line: line_of(anchor),
         };
+        let flags = (spec.flags)(anchor, source, file);
         let reference = Reference {
             specifier,
             names: &names,
@@ -110,10 +115,8 @@ pub fn extract_in(
         for resolution in (spec.resolve)(&reference, file, env) {
             match resolution {
                 Resolution::Resolved { target, symbols } => {
-                    resolved
-                        .entry((at.clone(), target))
-                        .or_default()
-                        .extend(symbols);
+                    let merge = (at.clone(), target, flags.kind, flags.test_only);
+                    resolved.entry(merge).or_default().extend(symbols);
                 }
                 Resolution::Unresolved => {
                     unresolved.insert(UnresolvedImport {
@@ -125,15 +128,20 @@ pub fn extract_in(
             }
         }
     }
+    let mut resolved: Vec<ResolvedImport> = resolved
+        .into_iter()
+        .map(|((at, target, kind, test_only), symbols)| ResolvedImport {
+            at,
+            target,
+            symbols,
+            kind,
+            test_only,
+        })
+        .collect();
+    // why: the map is ordered by its merge key; the documented order puts symbols before kind.
+    resolved.sort();
     Ok(FileImports {
-        resolved: resolved
-            .into_iter()
-            .map(|((at, target), symbols)| ResolvedImport {
-                at,
-                target,
-                symbols,
-            })
-            .collect(),
+        resolved,
         unresolved: unresolved.into_iter().collect(),
     })
 }
