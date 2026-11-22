@@ -175,6 +175,19 @@ directory is its own node, named by a fixed rule, with no further tagging:
 
 - A source file is a module. Its node id is the file name up to the first `.`, so `gitlab.rs` is
   `gitlab` and `gitlab.test.ts` joins `gitlab`.
+- **A test file never creates a node of its own.** A file is a test file when its name has a part
+  `test` or `spec` between two dots (`a.test.ts`, `a.b.spec.d.ts`, `snap.test.json`), or is
+  `test_<x>.py`, `<x>_test.py`, `<x>_test.rs` or `<x>_tests.rs` (`<x>` not empty). Its name is
+  derived as above (`rows.test.ts` is `rows`, `test_rows.py` is `test_rows`), but it keeps that
+  name only when a non-test module directly in the same directory has it: a source file that is
+  not a test file and derives it, or a subdirectory of that name that holds source files at any
+  depth. Otherwise it joins the node of the directory itself, the node an `index.*` file there
+  gets (`rows.test.ts` next to no `rows.*` module, in `src/`, is the node `src`; in the repository
+  root it is `root`). So `rows.test.ts` beside `rows.ts` is `rows`, and every orphan test of a
+  directory is one and the same node. The rule applies to assets too, and to files directly in
+  the directory only: a file in a subdirectory is named by the subdirectory, as above. The
+  non-test modules of a directory are fixed by the files the scan sees, so `lint`, `where` and
+  `init` agree.
 - Entry files (`mod.rs`, `lib.rs`, `main.rs`, `index.*`, `__init__.py`, `__main__.py`) are named by
   their file stem too (`main`, `lib`), except `mod.rs`, `index.*`, `__init__.py` and `__main__.py`,
   which are named after their directory: `__main__.py` joins its directory's node like
@@ -873,22 +886,35 @@ after the first target in name order.
 
 **Every unit is decomposed, except a Swift target.** A file belongs to the unit of its deepest ancestor unit directory.
 Each unit has a source directory: a crate's `src/`; a JavaScript unit's `src/` when it holds a
-source file there, else the unit directory; a Python package's own directory.
+source file there, else the unit directory; a Python package's own directory. How the source
+directory is cut depends on the unit:
 
-- **Module nodes.** When the source directory directly holds two or more modules (source files and
+- **Module nodes: a Rust crate, a Python package, and the primary JavaScript unit.** Their files
+  are modules. When the source directory directly holds two or more modules (source files and
   subdirectories both count, by distinct derived name: `a.ts` and `a.test.ts` are one, and so are
   `a.rs` and `a/`; only files of that unit count), it is tagged `node: *`
   (see "Prefixes"), so every module and subdirectory of it is a node named by the module rule.
   When a derived id is not valid, is reserved or is already taken (see "Ids"), the source
-  directory is not decomposed.
+  directory is not decomposed. The primary JavaScript unit is also not decomposed when its source
+  directory is the repository root and any source file of the repository lies in a subdirectory
+  (see "Root files").
+- **Directory nodes: every other JavaScript unit.** A JavaScript or TypeScript unit that is not the
+  primary unit, including one declared only by a `tsconfig.json` or `jsconfig.json` and one that
+  lies inside another unit's source directory, is a layer of the project and not a set of file
+  modules, so its source directory is never `node: *`. It is split by subdirectory only: the files
+  directly in the source directory are one group node (tagged `scope: here`, see "Contract and
+  writing"), and each subdirectory of the source directory that holds source files of the unit is
+  one node covering everything below it that no nearer tag or unit takes. A file added to a
+  subdirectory stays in its node; a file added to the source directory joins the group. Every such
+  unit is split, whatever it holds.
 - **The rest of the unit.** When the source directory is a subdirectory of the unit, the other files
   of the unit are directory nodes too: each subdirectory of the unit directory other than the
   source directory (`test/`, `scripts/`, `dev/`) is one node covering everything below it that no
   nearer tag or unit takes, and the files directly in the unit directory are one node of the unit
   directory (the unit group, tagged `scope: here`, see "Contract and writing").
 - **A unit that is not decomposed.** The primary unit (below) decides nothing: its files are cut
-  by rule 3 like any other. Every other unit is one directory node covering its whole directory,
-  where a nested unit and nearer tags still win.
+  by rule 3 like any other. Every other crate or package is one directory node covering its whole
+  directory, where a nested unit and nearer tags still win.
 
 - **A Swift target is one node, never decomposed.** Files of a Swift module never import each other
   and every import of the module resolves to a single entry file (see "Swift resolution"), so a
@@ -927,15 +953,20 @@ and `components` when it is.
   cannot lint.
 - **Root files.** The repository root is never a `node: *` source root when it also has source
   directories: its own files (`vite.config.ts`, `eslint.config.js`, `build.rs`, `setup.py`) are
-  tooling next to the code, and become one node `root` beside one node per source directory. A
-  root that holds only files (flat scripts) still gets `node: *`. A project that wants root modules
-  writes a root `.arch` with `node: *` itself (rule 1).
+  tooling next to the code, and become one node `root` (tagged `scope: here`) beside one node per
+  source directory. A root that holds only files (flat scripts) still gets `node: *`. A project
+  that wants root modules writes a root `.arch` with `node: *` itself (rule 1). This holds when
+  the root is the source directory of the primary JavaScript unit too: with a root `package.json`
+  whose `src/` is itself a unit (it has a `tsconfig.json`), the files of the root unit are the
+  tooling files and the directories beside `src/`, so they are cut here and not by `node: *`.
 
 ### Prefixes
 
 `init` writes `node: *` with no prefix for the primary unit and for the automatic cut, and
-`node: <unit-id>-*` for every other unit. The prefix is part of the derived id: a prefixed module
-is "taken" when `<prefix><name>` is.
+`node: <unit-id>-*` for every other Rust crate and Python package. The prefix is part of the derived
+id: a prefixed module is "taken" when `<prefix><name>` is. A non-primary JavaScript unit is not
+tagged with a module prefix (it has directory nodes), but its subdirectory nodes are named with the
+same prefix, see "Ids".
 
 ### Ids
 
@@ -947,6 +978,12 @@ is "taken" when `<prefix><name>` is.
   directories of a unit that has a prefix (see "Prefixes") are the exception: they use their whole
   path, which does not count for the shared prefix, so the `test/` directory of the unit `ui/` is
   `ui-test`, in step with its module ids `ui-...`, and the group of the unit `ui/` is `ui`.
+- A subdirectory of the source directory of a non-primary JavaScript unit is named like the module
+  of that name: the unit prefix followed by the directory name, sanitised as above, so
+  `ui/src/components/` is `ui-components` (not `ui-src-components`). The loose files of the source
+  directory are named by the whole path, so `ui/src` is `ui-src`; the unit group is the unit id
+  (`ui`), and a directory of the unit outside the source directory uses its whole path (`ui/dev` is
+  `ui-dev`). The normal collision rules apply when two of these are the same id.
 - A Swift target directory is named by its target name: the name sanitised as above replaces the
   path derivation, and the directory does not count for the shared prefix of the others. The same
   collision rules as for any directory node apply.
@@ -968,10 +1005,14 @@ is "taken" when `<prefix><name>` is.
   the walked non-source files (assets) known, as `lint` does: an asset (a `.json`, a `.css`) has the
   owner the tags give it, the existing ones and the ones `init` writes, and an import of an asset
   owned by another declared node is an edge. An asset no tag covers, or one whose derived name is
-  no declared node, adds no edge, exactly as in `lint`.
+  no declared node, adds no edge, exactly as in `lint`. Every node that a directory tag `init`
+  writes names is declared, so an asset in a directory of a unit (`ui/src/index.css`, imported by
+  `ui/src/main.tsx`) is owned by a node the contract declares (`ui-src`): `where` and `lint` never
+  name a node `init` left out.
 - A directory tag that is a group also gets `scope: here`: the repository root group (the node of
-  the files directly in the root, usually `node: root`) and a unit group (see "Code units"),
-  provided every file the tag owns sits directly in its directory. A directory added later is then
+  the files directly in the root, usually `node: root`), a unit group and the group of the loose
+  files in the source directory of a non-primary JavaScript unit (see "Code units"), provided every
+  file the tag owns sits directly in its directory. A directory added later is then
   not covered by inheritance, and `unmapped-file` reports its sources. Every other directory tag
   inherits as always, because the files below it belong to it.
 - `init` refuses (exit `2`) when the contract or an `.arch` it would write exists, listing every
