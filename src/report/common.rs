@@ -51,6 +51,21 @@ pub(super) fn plural(n: usize, noun: &str) -> String {
     }
 }
 
+/// How many names a one-line list shows before it says `+N more`.
+pub(super) const MAX_LISTED: usize = 6;
+
+/// `a, b, c`, or the first [`MAX_LISTED`] names followed by ` +N more` when there are more.
+pub(super) fn capped<'a>(names: impl ExactSizeIterator<Item = &'a str>) -> String {
+    let total = names.len();
+    let shown: Vec<&str> = names.take(MAX_LISTED).collect();
+    let listed = shown.join(", ");
+    if total > MAX_LISTED {
+        format!("{listed} +{} more", total - MAX_LISTED)
+    } else {
+        listed
+    }
+}
+
 /// `file:line` with `/` separators.
 pub(super) fn site_str(at: &Location) -> String {
     format!("{}:{}", slash_path(&at.file), at.line)
@@ -73,7 +88,7 @@ pub(super) fn slash_path(path: &Path) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{arrow, edge_kind_str, kind_str, plural, severity_str, site_str};
+    use super::{arrow, capped, edge_kind_str, kind_str, plural, severity_str, site_str};
     use crate::model::{EdgeKind, Location, Severity};
 
     #[test]
@@ -96,6 +111,19 @@ mod tests {
         assert_eq!(plural(0, "import"), "0 imports");
         assert_eq!(plural(1, "import"), "1 import");
         assert_eq!(plural(2, "import"), "2 imports");
+    }
+
+    #[test]
+    fn capped_lists_show_six_names_then_count_the_rest() {
+        let list = |n: usize| {
+            let names: Vec<String> = (0..n).map(|i| format!("n{i}")).collect();
+            capped(names.iter().map(String::as_str))
+        };
+        assert_eq!(list(0), "");
+        assert_eq!(list(1), "n0");
+        assert_eq!(list(6), "n0, n1, n2, n3, n4, n5");
+        assert_eq!(list(7), "n0, n1, n2, n3, n4, n5 +1 more");
+        assert_eq!(list(10), "n0, n1, n2, n3, n4, n5 +4 more");
     }
 
     #[test]

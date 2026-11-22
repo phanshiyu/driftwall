@@ -270,6 +270,16 @@ fn observe_returns_what_run_reports_plus_what_it_read() {
         observation.observed.values().next().unwrap(),
         &vec![at("a/main.ts", 1)]
     );
+    let used: Vec<_> = observation
+        .symbols
+        .values()
+        .map(std::collections::BTreeSet::len)
+        .collect();
+    assert_eq!(used, [1, 1]);
+    assert_eq!(
+        observation.symbols.keys().collect::<Vec<_>>(),
+        observation.observed.keys().collect::<Vec<_>>()
+    );
 }
 
 #[test]

@@ -60,6 +60,7 @@ fn scan(path: &std::path::Path, contract: Option<&PathBuf>) -> Result<Overview> 
         &observation.contract,
         &observation.ownership,
         &observation.observed,
+        &observation.symbols,
         &observation.report,
     ))
 }
@@ -92,6 +93,7 @@ mod tests {
                     label: None,
                     dirs: Vec::new(),
                     files: 0,
+                    exports: None,
                 })
                 .collect(),
             ..Overview::default()

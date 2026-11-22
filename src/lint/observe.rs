@@ -1,11 +1,11 @@
 //! The edges code actually uses, computed once and shared by [`reconcile`](super::reconcile) and
 //! the overview.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use crate::imports::FileImports;
-use crate::model::{Contract, Edge, Location, NodeId, Ownership, ResolvedImport};
+use crate::model::{Contract, Edge, Location, NodeId, Ownership, ResolvedImport, Symbol};
 
 /// Every resolved import that crosses from one declared owner to another, with its edge.
 ///
@@ -57,6 +57,25 @@ pub fn observed_edges(
     observed
 }
 
+/// The symbols the imports behind each observed edge use, over all of its sites.
+///
+/// The keys are exactly those of [`observed_edges`]. An edge whose imports are all side-effect
+/// imports has an empty set. Pure: the result does not depend on the order of the inputs.
+#[must_use]
+pub fn observed_symbols(
+    contract: &Contract,
+    ownership: &Ownership,
+    imports: &BTreeMap<PathBuf, FileImports>,
+) -> BTreeMap<Edge, BTreeSet<Symbol>> {
+    let mut used: BTreeMap<Edge, BTreeSet<Symbol>> = BTreeMap::new();
+    for (edge, import) in crossings(contract, ownership, imports) {
+        used.entry(edge)
+            .or_default()
+            .extend(import.symbols.iter().cloned());
+    }
+    used
+}
+
 /// The owner of `file`, only when that owner is a node the contract declares.
 fn declared_owner<'a>(
     contract: &Contract,
@@ -72,7 +91,7 @@ fn declared_owner<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::lint::fixtures::{at, contract, edge, imports, node, ownership};
+    use crate::lint::fixtures::{at, contract, edge, imports, imports_using, node, ownership};
     use crate::model::EdgeKind;
 
     fn owners() -> Ownership {
@@ -147,6 +166,57 @@ mod tests {
             ]),
         );
         assert!(found.is_empty(), "{found:?}");
+    }
+
+    fn names(symbols: &BTreeSet<Symbol>) -> Vec<&str> {
+        symbols.iter().map(Symbol::as_str).collect()
+    }
+
+    #[test]
+    fn symbols_are_the_union_over_every_site_of_an_edge_with_all_last() {
+        let used = observed_symbols(
+            &contract(&["a", "b", "c"], &[]),
+            &owners(),
+            &imports_using(&[
+                ("a/x.ts", 1, "b/y.ts", &["*", "zed"]),
+                ("a/z.ts", 2, "b/y.ts", &["alpha", "zed"]),
+                ("b/y.ts", 3, "c/w.ts", &["only"]),
+            ]),
+        );
+        assert_eq!(names(&used[&edge("a", "b")]), ["alpha", "zed", "*"]);
+        assert_eq!(names(&used[&edge("b", "c")]), ["only"]);
+    }
+
+    #[test]
+    fn symbols_cover_the_observed_edges_and_a_side_effect_import_adds_none() {
+        let c = contract(&["a", "b", "c"], &[]);
+        let sites = [
+            ("a/x.ts", 1, "b/y.ts", &[][..]),
+            ("a/x.ts", 2, "a/z.ts", &["same_node"][..]),
+            ("a/x.ts", 3, "loose.ts", &["unowned"][..]),
+        ];
+        let used = observed_symbols(&c, &owners(), &imports_using(&sites));
+        let observed = observed_edges(&c, &owners(), &imports_using(&sites));
+        assert_eq!(
+            used.keys().collect::<Vec<_>>(),
+            observed.keys().collect::<Vec<_>>()
+        );
+        assert!(used[&edge("a", "b")].is_empty());
+    }
+
+    #[test]
+    fn symbols_do_not_depend_on_construction_order() {
+        let c = contract(&["a", "b"], &[]);
+        let sites = [
+            ("a/x.ts", 3, "b/y.ts", &["one"][..]),
+            ("a/z.ts", 5, "b/y.ts", &["two"][..]),
+        ];
+        let mut reversed = sites;
+        reversed.reverse();
+        assert_eq!(
+            observed_symbols(&c, &owners(), &imports_using(&sites)),
+            observed_symbols(&c, &owners(), &imports_using(&reversed))
+        );
     }
 
     #[test]

@@ -146,7 +146,7 @@ nodes:
   a: a (1 file)
   b: b (1 file)
 edges:
-  a --> b (1 import)
+  a --> b (1 import) uses: b
 ";
     assert_eq!(stdout(&output), expected);
     assert_eq!(stderr(&output), "");
@@ -169,8 +169,11 @@ fn brief_marks_an_undeclared_observed_edge_and_still_exits_0() {
         ),
         "{out}"
     );
-    assert!(out.contains("  b --> a (1 import) UNDECLARED\n"), "{out}");
-    assert!(out.contains("  a --> b (1 import)\n"), "{out}");
+    assert!(
+        out.contains("  b --> a (1 import) UNDECLARED uses: a\n"),
+        "{out}"
+    );
+    assert!(out.contains("  a --> b (1 import) uses: b\n"), "{out}");
 }
 
 #[test]
@@ -217,6 +220,7 @@ fn brief_json_parses_and_matches_the_text() {
             "kind": "implemented",
             "realised": 1,
             "sites": [{ "file": "a/main.ts", "line": 1 }],
+            "symbols": ["b"],
         }])
     );
 }
@@ -271,10 +275,10 @@ label: b: middle
 dirs: b
 files: 1
 outgoing:
-  b --> c (1 import)
+  b --> c (1 import) uses: c
     b/lib.ts:1
 incoming:
-  a --> b (1 import)
+  a --> b (1 import) uses: b
     a/main.ts:1
 ";
     assert_eq!(stdout(&output), expected);
@@ -289,7 +293,7 @@ fn neighbors_includes_undeclared_observed_edges() {
     assert_eq!(code(&output), 0);
     let out = stdout(&output);
     assert!(
-        out.contains("incoming:\n  c --> a (1 import) UNDECLARED\n    c/back.ts:1\n"),
+        out.contains("incoming:\n  c --> a (1 import) UNDECLARED uses: a\n    c/back.ts:1\n"),
         "{out}"
     );
 }
@@ -314,7 +318,7 @@ fn neighbors_shows_at_most_three_example_sites() {
     assert_eq!(code(&output), 0);
     let expected_incoming = "\
 incoming:
-  a --> b (5 imports)
+  a --> b (5 imports) uses: b
     a/five.ts:1
     a/four.ts:1
     a/one.ts:1

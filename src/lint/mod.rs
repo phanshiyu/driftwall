@@ -16,7 +16,7 @@ mod fixtures;
 #[cfg(test)]
 mod tests;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -25,11 +25,13 @@ use thiserror::Error;
 
 use crate::diagram::{self, DiagramError};
 use crate::imports::{self, ImportsError};
-use crate::model::{Contract, DEFAULT_CONTRACT, Edge, Language, LintReport, Location, Ownership};
+use crate::model::{
+    Contract, DEFAULT_CONTRACT, Edge, Language, LintReport, Location, Ownership, Symbol,
+};
 use crate::ownership::{self, OwnershipError};
 
 pub use diff::{EMPTY_CONTRACT, contract_diff};
-pub use observe::observed_edges;
+pub use observe::{observed_edges, observed_symbols};
 pub use overview::{node_view, overview};
 pub use reconcile::reconcile;
 
@@ -98,6 +100,8 @@ pub struct Observation {
     pub ownership: Ownership,
     /// Edges code realises with their import sites, declared or not.
     pub observed: BTreeMap<Edge, Vec<Location>>,
+    /// The symbols the imports behind each observed edge use.
+    pub symbols: BTreeMap<Edge, BTreeSet<Symbol>>,
     /// The lint result for the same scan.
     pub report: LintReport,
 }
@@ -138,10 +142,12 @@ pub fn observe(root: &Path, options: &LintOptions) -> Result<Observation, LintEr
 
     let report = reconcile(&contract, &ownership, &imports, &options.contract);
     let observed = observed_edges(&contract, &ownership, &imports);
+    let symbols = observed_symbols(&contract, &ownership, &imports);
     Ok(Observation {
         contract,
         ownership,
         observed,
+        symbols,
         report,
     })
 }

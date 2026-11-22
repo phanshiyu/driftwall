@@ -295,6 +295,10 @@ pub struct NodeSummary {
     pub dirs: Vec<PathBuf>,
     /// Source files this node owns.
     pub files: usize,
+    /// The node's declared public surface, or `None` when it declares none and is unrestricted.
+    /// Omitted from JSON when `None`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exports: Option<BTreeSet<String>>,
 }
 
 /// One edge as the overview presents it: declared, observed in code, or both.
@@ -310,6 +314,9 @@ pub struct EdgeSummary {
     pub realised: usize,
     /// The first [`MAX_SITES`] import sites, in sorted order.
     pub sites: Vec<Location>,
+    /// Every symbol the imports behind the edge use, over all sites, sorted with `*` last. Empty
+    /// when nothing uses the edge or every import is a side-effect import.
+    pub symbols: BTreeSet<Symbol>,
 }
 
 /// The whole architecture at a glance: every node and every declared or observed edge.

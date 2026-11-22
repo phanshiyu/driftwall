@@ -5,20 +5,23 @@ use std::path::{Path, PathBuf};
 
 use crate::model::{
     Contract, Edge, EdgeSummary, LintReport, Location, MAX_SITES, NodeSummary, NodeView, Overview,
-    Ownership,
+    Ownership, Symbol,
 };
 
-/// Combines the contract, ownership, observed edges and lint report into an [`Overview`].
+/// Combines the contract, ownership, observed edges, the symbols they use and the lint report
+/// into an [`Overview`].
 ///
 /// Pure. Nodes are the declared ones, sorted by id. Edges are the union of the declared and the
 /// observed edges, sorted by `(from, to)`: a declared edge nothing uses has `realised == 0`, and
 /// an observed edge the contract lacks has no kind. A node's directories are those holding a
-/// `.arch` file that names it; its files are the source files it owns.
+/// `.arch` file that names it; its files are the source files it owns; its exports are its
+/// declared surface. An edge's symbols are the union over all its sites, not just the kept ones.
 #[must_use]
 pub fn overview(
     contract: &Contract,
     ownership: &Ownership,
     observed: &BTreeMap<Edge, Vec<Location>>,
+    symbols: &BTreeMap<Edge, BTreeSet<Symbol>>,
     report: &LintReport,
 ) -> Overview {
     let nodes = contract
@@ -40,6 +43,7 @@ pub fn overview(
                     .values()
                     .filter(|owner| *owner == id)
                     .count(),
+                exports: contract.surfaces.get(id).cloned(),
             }
         })
         .collect();
@@ -55,6 +59,7 @@ pub fn overview(
                 kind: contract.edges.get(edge).copied(),
                 realised: sites.len(),
                 sites: sites.iter().take(MAX_SITES).cloned().collect(),
+                symbols: symbols.get(edge).cloned().unwrap_or_default(),
             }
         })
         .collect();
@@ -99,7 +104,7 @@ fn tagged_dir(arch_file: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::lint::fixtures::{at, contract, edge, ownership};
+    use crate::lint::fixtures::{at, contract, edge, ownership, with_surface};
     use crate::model::{EdgeKind, Severity, Violation, ViolationKind};
 
     fn sites(file: &str, lines: &[u32]) -> Vec<Location> {
@@ -144,6 +149,7 @@ mod tests {
             &c,
             &own,
             &observed,
+            &BTreeMap::new(),
             &report(&[Severity::Error, Severity::Warning]),
         )
     }
@@ -169,7 +175,13 @@ mod tests {
     fn a_tag_at_the_root_names_the_dot_directory() {
         let c = contract(&["a"], &[]);
         let own = ownership(&[("x.ts", "a")], &[(".arch", 1, "a")]);
-        let view = overview(&c, &own, &BTreeMap::new(), &LintReport::default());
+        let view = overview(
+            &c,
+            &own,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &LintReport::default(),
+        );
         assert_eq!(view.nodes[0].dirs, vec![PathBuf::from(".")]);
     }
 
@@ -177,7 +189,13 @@ mod tests {
     fn tags_naming_undeclared_nodes_are_not_nodes() {
         let c = contract(&["a"], &[]);
         let own = ownership(&[], &[("g/.arch", 1, "ghost")]);
-        let view = overview(&c, &own, &BTreeMap::new(), &LintReport::default());
+        let view = overview(
+            &c,
+            &own,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &LintReport::default(),
+        );
         assert_eq!(view.nodes.len(), 1);
     }
 
@@ -207,6 +225,58 @@ mod tests {
         assert_eq!(view.edges[1].sites, Vec::new());
     }
 
+    fn used(names: &[&str]) -> BTreeSet<Symbol> {
+        names
+            .iter()
+            .map(|name| match *name {
+                "*" => Symbol::All,
+                other => Symbol::Name(other.to_owned()),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn edges_carry_the_symbols_over_all_their_sites_not_only_the_kept_ones() {
+        let c = contract(&["a", "b"], &[("a", "b", EdgeKind::Implemented)]);
+        let mut observed = BTreeMap::new();
+        observed.insert(edge("a", "b"), sites("a/x.ts", &[1, 2, 3, 4, 5]));
+        let mut symbols = BTreeMap::new();
+        symbols.insert(edge("a", "b"), used(&["*", "z", "a"]));
+        let view = overview(
+            &c,
+            &Ownership::default(),
+            &observed,
+            &symbols,
+            &LintReport::default(),
+        );
+        assert_eq!(view.edges[0].sites.len(), 3);
+        assert_eq!(view.edges[0].symbols, used(&["a", "z", "*"]));
+        let listed: Vec<&str> = view.edges[0].symbols.iter().map(Symbol::as_str).collect();
+        assert_eq!(listed, ["a", "z", "*"]);
+    }
+
+    #[test]
+    fn an_edge_nothing_uses_has_no_symbols() {
+        assert!(sample().edges.iter().all(|e| e.symbols.is_empty()));
+    }
+
+    #[test]
+    fn nodes_carry_their_declared_surface_and_others_none() {
+        let c = with_surface(contract(&["a", "b"], &[]), "b", &["Client", "fetch"]);
+        let view = overview(
+            &c,
+            &Ownership::default(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &LintReport::default(),
+        );
+        assert_eq!(view.nodes[0].exports, None);
+        assert_eq!(
+            view.nodes[1].exports,
+            Some(["Client", "fetch"].map(str::to_owned).into())
+        );
+    }
+
     #[test]
     fn counts_come_from_the_report() {
         let view = sample();
@@ -218,6 +288,7 @@ mod tests {
         let view = overview(
             &Contract::default(),
             &Ownership::default(),
+            &BTreeMap::new(),
             &BTreeMap::new(),
             &LintReport::default(),
         );
@@ -250,6 +321,7 @@ mod tests {
             &c,
             &Ownership::default(),
             &BTreeMap::new(),
+            &BTreeMap::new(),
             &LintReport::default(),
         );
         let found = node_view(&view, "a").unwrap();
@@ -271,8 +343,8 @@ mod tests {
         let observed: BTreeMap<_, _> = [(edge("a", "b"), sites("a/x.ts", &[1]))].into();
         let none = LintReport::default();
         assert_eq!(
-            overview(&c, &own, &observed, &none),
-            overview(&c, &own2, &observed, &none)
+            overview(&c, &own, &observed, &BTreeMap::new(), &none),
+            overview(&c, &own2, &observed, &BTreeMap::new(), &none)
         );
     }
 }
