@@ -72,7 +72,7 @@ mod witness {
         UnclosedSubgraph,
         StrayEnd,
     );
-    witness!(OwnershipError: Io, InvalidArch, Walk, OutsideRoot);
+    witness!(OwnershipError: Io, InvalidArch, InvalidModule, Walk, OutsideRoot);
     witness!(ImportsError: Io, Grammar, Query);
     witness!(LintError: Io, Diagram, Ownership, Imports, OldContract, NewContract);
     witness!(
@@ -214,6 +214,14 @@ mod witness {
                         line: 2,
                     },
                     problem: ArchProblem::MissingNode,
+                },
+                Self::InvalidModule {
+                    at: Location {
+                        file: path(),
+                        line: 2,
+                    },
+                    file: path(),
+                    source: model_error(),
                 },
                 Self::Walk {
                     root: path(),

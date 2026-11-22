@@ -3,8 +3,9 @@
 mod arch;
 mod error;
 mod language;
+mod module;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsStr;
 use std::fs;
 use std::io;
@@ -12,8 +13,10 @@ use std::path::{Component, Path, PathBuf};
 
 use ignore::WalkBuilder;
 
+pub use arch::Tag;
 pub use error::{ArchProblem, OwnershipError};
 pub use language::language_of;
+pub use module::module_name;
 
 use crate::model::{Location, NodeId, Ownership};
 
@@ -31,54 +34,101 @@ pub struct Explanation {
     pub arch_file: Option<PathBuf>,
 }
 
+/// One `.arch` file's decision about its directory.
+struct Decision {
+    tag: Tag,
+    arch_file: PathBuf,
+    line: u32,
+}
+
+impl Decision {
+    /// The node `file` gets from this decision, where `dir` is the directory of the `.arch` file.
+    fn node_for(&self, dir: &Path, file: &Path) -> Result<NodeId, OwnershipError> {
+        match &self.tag {
+            Tag::Node(id) => Ok(id.clone()),
+            Tag::Modules => {
+                let name = module_name(dir, file).unwrap_or_default();
+                NodeId::new(&name).map_err(|source| OwnershipError::InvalidModule {
+                    at: self.location(),
+                    file: file.to_path_buf(),
+                    source,
+                })
+            }
+        }
+    }
+
+    fn location(&self) -> Location {
+        Location {
+            file: self.arch_file.clone(),
+            line: self.line,
+        }
+    }
+}
+
 /// Scans `root` and maps every source file to the node named by its nearest `.arch` file.
+///
+/// A `node: *` file names each source file by its position (see [`module_name`]). Its tags are one
+/// entry per distinct derived node, all located at the `node: *` line, so the linter can check
+/// each derived name against the contract.
 ///
 /// Honors `.gitignore` (with or without a `.git` directory) and `.driftwallignore`. Machine
 /// specific ignore sources (global git config, `.git/info/exclude`, parent directories) are
 /// deliberately not consulted so the result depends only on the contents of `root`.
 ///
 /// # Errors
-/// Fails when the tree cannot be walked, a file cannot be read, or a `.arch` file is invalid.
+/// Fails when the tree cannot be walked, a file cannot be read, a `.arch` file is invalid, or a
+/// `node: *` derives a name that is not a valid node id.
 pub fn scan(root: &Path) -> Result<Ownership, OwnershipError> {
     let (sources, arch_files) = discover(root)?;
 
-    let mut decisions: BTreeMap<PathBuf, NodeId> = BTreeMap::new();
+    let mut decisions: BTreeMap<PathBuf, Decision> = BTreeMap::new();
     let mut tags = Vec::new();
     for arch_file in arch_files {
-        let tag = read_tag(root, &arch_file)?;
-        tags.push((
-            Location {
-                file: arch_file.clone(),
-                line: tag.line,
-            },
-            tag.raw,
-        ));
+        let parsed = read_tag(root, &arch_file)?;
+        let location = Location {
+            file: arch_file.clone(),
+            line: parsed.line,
+        };
+        if matches!(parsed.tag, Tag::Node(_)) {
+            tags.push((location, parsed.raw));
+        }
         let dir = arch_file
             .parent()
             .map_or_else(PathBuf::new, Path::to_path_buf);
-        decisions.insert(dir, tag.node);
+        decisions.insert(
+            dir,
+            Decision {
+                tag: parsed.tag,
+                arch_file,
+                line: parsed.line,
+            },
+        );
     }
-    tags.sort();
 
-    let mut ownership = Ownership {
-        tags,
-        ..Ownership::default()
-    };
+    let mut ownership = Ownership::default();
+    let mut derived: BTreeSet<(Location, String)> = BTreeSet::new();
     for source in sources {
         let owner = source
             .parent()
             .into_iter()
             .flat_map(Path::ancestors)
-            .find_map(|dir| decisions.get(dir));
+            .find_map(|dir| decisions.get(dir).map(|decision| (dir, decision)));
         match owner {
-            Some(node) => {
-                ownership.owners.insert(source, node.clone());
+            Some((dir, decision)) => {
+                let node = decision.node_for(dir, &source)?;
+                if decision.tag == Tag::Modules {
+                    derived.insert((decision.location(), node.to_string()));
+                }
+                ownership.owners.insert(source, node);
             }
             None => {
                 ownership.unmapped.insert(source);
             }
         }
     }
+    tags.extend(derived);
+    tags.sort();
+    ownership.tags = tags;
     Ok(ownership)
 }
 
@@ -87,20 +137,27 @@ pub fn scan(root: &Path) -> Result<Ownership, OwnershipError> {
 /// A relative `file` is taken relative to `root`; an absolute one must lie inside it. The path
 /// need not exist or have a source extension. Unlike [`scan`], this reads only the `.arch`
 /// files on the path from `file` up to `root`, so ignore files are not consulted and unrelated
-/// invalid `.arch` files elsewhere do not matter.
+/// invalid `.arch` files elsewhere do not matter. Under `node: *` the node is derived from
+/// `file`'s position and the `.arch` file reported is the `node: *` one.
 ///
 /// # Errors
-/// Fails when `file` is outside `root`, or an `.arch` on its path is unreadable or invalid.
+/// Fails when `file` is outside `root`, an `.arch` on its path is unreadable or invalid, or a
+/// `node: *` derives a name that is not a valid node id.
 pub fn explain(root: &Path, file: &Path) -> Result<Explanation, OwnershipError> {
     let relative = relative_to_root(root, file)?;
     for dir in relative.parent().into_iter().flat_map(Path::ancestors) {
         let arch_file = dir.join(ARCH_FILE);
         match fs::read_to_string(root.join(&arch_file)) {
             Ok(contents) => {
-                let tag = arch::parse(&arch_file, &contents)?;
+                let parsed = arch::parse(&arch_file, &contents)?;
+                let decision = Decision {
+                    tag: parsed.tag,
+                    arch_file,
+                    line: parsed.line,
+                };
                 return Ok(Explanation {
-                    node: Some(tag.node),
-                    arch_file: Some(arch_file),
+                    node: Some(decision.node_for(dir, &relative)?),
+                    arch_file: Some(decision.arch_file),
                 });
             }
             Err(e) if e.kind() == io::ErrorKind::NotFound => {}
@@ -552,6 +609,274 @@ mod tests {
                 assert_eq!(problem, ArchProblem::DuplicateNode);
             }
             other => panic!("expected InvalidArch, got {other:?}"),
+        }
+    }
+
+    /// Maps each path to its owner, as plain strings, for a tree whose root `.arch` is `node: *`.
+    fn derived(paths: &[&str]) -> Vec<(String, String)> {
+        let mut files: Vec<(&str, &str)> = vec![("src/.arch", "node: *\n")];
+        files.extend(paths.iter().map(|path| (*path, "")));
+        let dir = tree(&files);
+        let o = scan(dir.path()).unwrap();
+        assert!(o.unmapped.is_empty(), "{:?}", o.unmapped);
+        o.owners
+            .iter()
+            .map(|(path, node)| (path.display().to_string(), node.to_string()))
+            .collect()
+    }
+
+    fn pairs(expected: &[(&str, &str)]) -> Vec<(String, String)> {
+        expected
+            .iter()
+            .map(|(path, node)| ((*path).to_owned(), (*node).to_owned()))
+            .collect()
+    }
+
+    #[test]
+    fn star_names_flat_files_by_their_stem() {
+        assert_eq!(
+            derived(&["src/gitlab.rs", "src/store.ts", "src/auth.py"]),
+            pairs(&[
+                ("src/auth.py", "auth"),
+                ("src/gitlab.rs", "gitlab"),
+                ("src/store.ts", "store"),
+            ])
+        );
+    }
+
+    #[test]
+    fn star_joins_test_suffixed_files_to_their_module() {
+        assert_eq!(
+            derived(&["src/a.ts", "src/a.test.ts", "src/a.spec.tsx", "src/b.ts"]),
+            pairs(&[
+                ("src/a.spec.tsx", "a"),
+                ("src/a.test.ts", "a"),
+                ("src/a.ts", "a"),
+                ("src/b.ts", "b"),
+            ])
+        );
+    }
+
+    #[test]
+    fn star_names_main_and_lib_by_their_stem() {
+        assert_eq!(
+            derived(&["src/main.rs", "src/lib.rs"]),
+            pairs(&[("src/lib.rs", "lib"), ("src/main.rs", "main")])
+        );
+    }
+
+    #[test]
+    fn star_names_directory_entries_after_the_tagged_directory() {
+        assert_eq!(
+            derived(&[
+                "src/mod.rs",
+                "src/__init__.py",
+                "src/index.ts",
+                "src/index.d.ts",
+            ]),
+            pairs(&[
+                ("src/__init__.py", "src"),
+                ("src/index.d.ts", "src"),
+                ("src/index.ts", "src"),
+                ("src/mod.rs", "src"),
+            ])
+        );
+    }
+
+    #[test]
+    fn star_names_entries_in_the_repository_root_root() {
+        let dir = tree(&[(".arch", "node: *\n"), ("index.ts", ""), ("a.ts", "")]);
+        let o = scan(dir.path()).unwrap();
+        assert_eq!(owner(&o, "index.ts").as_deref(), Some("root"));
+        assert_eq!(owner(&o, "a.ts").as_deref(), Some("a"));
+    }
+
+    #[test]
+    fn star_makes_a_sibling_module_and_its_directory_one_node() {
+        assert_eq!(
+            derived(&[
+                "src/gitlab.rs",
+                "src/gitlab/client.rs",
+                "src/gitlab/deep/x.rs"
+            ]),
+            pairs(&[
+                ("src/gitlab/client.rs", "gitlab"),
+                ("src/gitlab/deep/x.rs", "gitlab"),
+                ("src/gitlab.rs", "gitlab"),
+            ])
+        );
+    }
+
+    #[test]
+    fn star_makes_a_plain_subdirectory_one_node() {
+        assert_eq!(
+            derived(&[
+                "src/routes/a.rs",
+                "src/routes/mod.rs",
+                "src/routes/deep/b.rs",
+                "src/ui/index.ts"
+            ]),
+            pairs(&[
+                ("src/routes/a.rs", "routes"),
+                ("src/routes/deep/b.rs", "routes"),
+                ("src/routes/mod.rs", "routes"),
+                ("src/ui/index.ts", "ui"),
+            ])
+        );
+    }
+
+    #[test]
+    fn a_nested_arch_overrides_inside_a_star_tree() {
+        let dir = tree(&[
+            ("src/.arch", "node: *\n"),
+            ("src/a.rs", ""),
+            ("src/vendor/.arch", "node: third\n"),
+            ("src/vendor/x.rs", ""),
+            ("src/vendor/deep/y.rs", ""),
+            ("src/split/.arch", "node: *\n"),
+            ("src/split/p.rs", ""),
+            ("src/split/q/r.rs", ""),
+        ]);
+        let o = scan(dir.path()).unwrap();
+        assert_eq!(owner(&o, "src/a.rs").as_deref(), Some("a"));
+        assert_eq!(owner(&o, "src/vendor/x.rs").as_deref(), Some("third"));
+        assert_eq!(owner(&o, "src/vendor/deep/y.rs").as_deref(), Some("third"));
+        assert_eq!(owner(&o, "src/split/p.rs").as_deref(), Some("p"));
+        assert_eq!(owner(&o, "src/split/q/r.rs").as_deref(), Some("q"));
+    }
+
+    #[test]
+    fn star_reports_an_invalid_derived_id_at_the_arch_file() {
+        for bad in ["_private.py", ".eslintrc.js", "9lives.ts", "a b.ts"] {
+            let dir = tree(&[
+                ("pkg/.arch", "# c\nnode: *\n"),
+                ("pkg/ok.py", ""),
+                (&format!("pkg/{bad}"), ""),
+            ]);
+            match scan(dir.path()) {
+                Err(OwnershipError::InvalidModule { at, file, .. }) => {
+                    assert_eq!(at.file, Path::new("pkg/.arch"), "{bad}");
+                    assert_eq!(at.line, 2, "{bad}");
+                    assert_eq!(file, Path::new("pkg").join(bad), "{bad}");
+                }
+                other => panic!("expected InvalidModule for {bad}, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn star_reports_an_invalid_directory_name() {
+        let dir = tree(&[(".arch", "node: *\n"), ("my.pkg/a.py", "")]);
+        let message = scan(dir.path()).unwrap_err().to_string();
+        assert_eq!(message, ".arch:1: `node: *` cannot name my.pkg/a.py");
+    }
+
+    #[test]
+    fn star_emits_one_tag_per_distinct_derived_node() {
+        let dir = tree(&[
+            ("src/.arch", "# c\n\nnode: *\n"),
+            ("src/b.ts", ""),
+            ("src/a.ts", ""),
+            ("src/a.test.ts", ""),
+            ("src/gitlab.rs", ""),
+            ("src/gitlab/x.rs", ""),
+            ("z/.arch", "node: zed\n"),
+            ("z/k.ts", ""),
+        ]);
+        let o = scan(dir.path()).unwrap();
+        let at = |file: &str, line| Location {
+            file: PathBuf::from(file),
+            line,
+        };
+        assert_eq!(
+            o.tags,
+            vec![
+                (at("src/.arch", 3), "a".to_owned()),
+                (at("src/.arch", 3), "b".to_owned()),
+                (at("src/.arch", 3), "gitlab".to_owned()),
+                (at("z/.arch", 1), "zed".to_owned()),
+            ]
+        );
+    }
+
+    #[test]
+    fn star_without_sources_emits_no_tags() {
+        let dir = tree(&[("src/.arch", "node: *\n"), ("src/README.md", "")]);
+        assert_eq!(scan(dir.path()).unwrap().tags, Vec::new());
+    }
+
+    #[test]
+    fn star_output_is_deterministic() {
+        let files = [
+            ("src/.arch", "node: *\n"),
+            ("src/b.rs", ""),
+            ("src/a/x.rs", ""),
+            ("src/a.rs", ""),
+            ("src/c/.arch", "node: sealed\n"),
+            ("src/c/y.rs", ""),
+        ];
+        let first = scan(tree(&files).path()).unwrap();
+        let mut reversed = files;
+        reversed.reverse();
+        assert_eq!(first, scan(tree(&reversed).path()).unwrap());
+    }
+
+    #[test]
+    fn explain_derives_the_node_and_names_the_deciding_arch_file() {
+        let dir = tree(&[
+            ("src/.arch", "node: *\n"),
+            ("src/gitlab.rs", ""),
+            ("src/routes/a.rs", ""),
+            ("src/routes/inner/.arch", "node: inner\n"),
+            ("src/routes/inner/b.rs", ""),
+        ]);
+        let explain_of = |path: &str| explain(dir.path(), Path::new(path)).unwrap();
+        let expect = |path: &str, node: &str, arch: &str| {
+            let explanation = explain_of(path);
+            assert_eq!(
+                explanation.node.as_ref().map(NodeId::as_str),
+                Some(node),
+                "{path}"
+            );
+            assert_eq!(
+                explanation.arch_file.as_deref(),
+                Some(Path::new(arch)),
+                "{path}"
+            );
+        };
+        expect("src/gitlab.rs", "gitlab", "src/.arch");
+        expect("src/gitlab/new.rs", "gitlab", "src/.arch");
+        expect("src/routes/a.rs", "routes", "src/.arch");
+        expect("src/routes/inner/b.rs", "inner", "src/routes/inner/.arch");
+        expect("src/main.rs", "main", "src/.arch");
+    }
+
+    #[test]
+    fn explain_agrees_with_scan_under_star() {
+        let dir = tree(&[
+            ("src/.arch", "node: *\n"),
+            ("src/a.ts", ""),
+            ("src/a.test.ts", ""),
+            ("src/index.ts", ""),
+            ("src/d/e.ts", ""),
+            ("src/d/f/g.ts", ""),
+        ]);
+        let scanned = scan(dir.path()).unwrap();
+        for (path, node) in &scanned.owners {
+            let explanation = explain(dir.path(), path).unwrap();
+            assert_eq!(explanation.node.as_ref(), Some(node), "{}", path.display());
+        }
+    }
+
+    #[test]
+    fn explain_reports_an_invalid_derived_id() {
+        let dir = tree(&[("src/.arch", "node: *\n")]);
+        match explain(dir.path(), Path::new("src/_x.py")) {
+            Err(OwnershipError::InvalidModule { at, .. }) => {
+                assert_eq!(at.file, Path::new("src/.arch"));
+                assert_eq!(at.line, 1);
+            }
+            other => panic!("expected InvalidModule, got {other:?}"),
         }
     }
 

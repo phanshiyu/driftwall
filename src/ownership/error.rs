@@ -43,6 +43,16 @@ pub enum OwnershipError {
         /// What is wrong with it.
         problem: ArchProblem,
     },
+    /// A `node: *` tag derived a node name that is not a valid node id. Never renamed.
+    #[error("{}:{}: `node: *` cannot name {}", at.file.display(), at.line, file.display())]
+    InvalidModule {
+        /// The `.arch` file and the line of its `node: *`.
+        at: Location,
+        /// The source file whose derived name is invalid.
+        file: PathBuf,
+        /// The invalid name.
+        source: ModelError,
+    },
     /// Walking the directory tree failed, or an ignore file was malformed.
     #[error("cannot walk {}", root.display())]
     Walk {
