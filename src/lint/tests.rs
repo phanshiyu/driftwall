@@ -244,3 +244,39 @@ fn nested_override_back_to_the_same_node_is_a_same_owner_import() {
     ]);
     assert_eq!(lint(&dir), Vec::new());
 }
+
+#[test]
+fn observe_returns_what_run_reports_plus_what_it_read() {
+    let mut files = clean_files();
+    files.push((
+        "b/other.ts",
+        "export const x = 1;\nimport { a } from '../a/main';\n",
+    ));
+    let dir = repo(&files);
+    let observation = observe(dir.path(), &LintOptions::default()).unwrap();
+    assert_eq!(
+        observation.report,
+        run(dir.path(), &LintOptions::default()).unwrap()
+    );
+    assert_eq!(observation.contract.nodes.len(), 2);
+    assert_eq!(observation.ownership.owners.len(), 3);
+    let edges: Vec<_> = observation
+        .observed
+        .keys()
+        .map(|e| (e.from.as_str(), e.to.as_str()))
+        .collect();
+    assert_eq!(edges, [("a", "b"), ("b", "a")]);
+    assert_eq!(
+        observation.observed.values().next().unwrap(),
+        &vec![at("a/main.ts", 1)]
+    );
+}
+
+#[test]
+fn observe_fails_like_run_on_a_missing_contract() {
+    let dir = repo(&[("a/x.ts", "")]);
+    assert!(matches!(
+        observe(dir.path(), &LintOptions::default()),
+        Err(LintError::Io { .. })
+    ));
+}

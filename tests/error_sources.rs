@@ -74,7 +74,7 @@ mod witness {
     );
     witness!(OwnershipError: Io, InvalidArch, Walk, OutsideRoot);
     witness!(ImportsError: Io, Grammar, Query);
-    witness!(LintError: Io, Diagram, Ownership, Imports);
+    witness!(LintError: Io, Diagram, Ownership, Imports, OldContract, NewContract);
     witness!(
         InitError: Io,
         Ownership,
@@ -256,6 +256,12 @@ mod witness {
                 },
                 Self::Ownership(ownership_error()),
                 Self::Imports(imports_error()),
+                Self::OldContract {
+                    source: diagram_error(),
+                },
+                Self::NewContract {
+                    source: diagram_error(),
+                },
             ]
         }
     }

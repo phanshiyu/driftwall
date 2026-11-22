@@ -4,10 +4,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use crate::imports::FileImports;
-use crate::model::{
-    Contract, Edge, EdgeKind, LintReport, Location, NodeId, Ownership, ViolationKind,
-};
+use crate::model::{Contract, Edge, EdgeKind, LintReport, Location, Ownership, ViolationKind};
 
+use super::observe::crossings;
 use super::rules::violation;
 
 /// Reconciles the contract, ownership and import graph into a sorted, duplicate-free report.
@@ -16,10 +15,11 @@ use super::rules::violation;
 /// not depend on the order in which the inputs were built. `contract_file` is the path of the
 /// contract relative to the repository root; it is only used to name the contract in messages.
 ///
-/// An import counts as an edge only when both files have an owner, the owners differ, and both
-/// owners are declared in the contract. Anything else (an unmapped file, an owner that names an
-/// unknown node, an import within one node) produces no edge findings, so one root cause is
-/// reported once. An edge is realised when code uses it, whatever its declared kind.
+/// An import counts as an edge only when it crosses between two declared owners (see
+/// [`observed_edges`](super::observed_edges), which shares the computation). Anything else (an
+/// unmapped file, an owner that names an unknown node, an import within one node) produces no
+/// edge findings, so one root cause is reported once. An edge is realised when code uses it,
+/// whatever its declared kind.
 #[must_use]
 pub fn reconcile(
     contract: &Contract,
@@ -53,35 +53,25 @@ pub fn reconcile(
         ));
     }
 
-    let mut realised: BTreeSet<Edge> = BTreeSet::new();
-    for file_imports in imports.values() {
-        for import in &file_imports.resolved {
-            let (Some(from), Some(to)) = (
-                declared_owner(contract, ownership, &import.at.file),
-                declared_owner(contract, ownership, &import.target),
-            ) else {
-                continue;
-            };
-            if from == to {
-                continue;
-            }
-            let edge = Edge {
-                from: from.clone(),
-                to: to.clone(),
-            };
-            if !contract.edges.contains_key(&edge) {
-                violations.push(violation(
-                    ViolationKind::UndeclaredEdge,
-                    Some(import.at.clone()),
-                    format!(
-                        "`{from}` imports `{to}` ({}) but {} declares no edge {from} --> {to}",
-                        import.target.display(),
-                        contract_file.display()
-                    ),
-                ));
-            }
-            realised.insert(edge);
+    let crossings = crossings(contract, ownership, imports);
+    for (edge, import) in &crossings {
+        if !contract.edges.contains_key(edge) {
+            violations.push(violation(
+                ViolationKind::UndeclaredEdge,
+                Some(import.at.clone()),
+                format!(
+                    "`{from}` imports `{to}` ({}) but {} declares no edge {from} --> {to}",
+                    import.target.display(),
+                    contract_file.display(),
+                    from = edge.from,
+                    to = edge.to,
+                ),
+            ));
         }
+    }
+    let realised: BTreeSet<&Edge> = crossings.iter().map(|(edge, _)| edge).collect();
+
+    for file_imports in imports.values() {
         for import in &file_imports.unresolved {
             violations.push(violation(
                 ViolationKind::UnresolvedImport,
@@ -92,7 +82,7 @@ pub fn reconcile(
     }
 
     for (edge, kind) in &contract.edges {
-        let used = realised.contains(edge);
+        let used = realised.contains(&edge);
         match (kind, used) {
             (EdgeKind::Implemented, false) => violations.push(violation(
                 ViolationKind::StaleEdge,
@@ -124,22 +114,10 @@ fn declared(contract: &Contract, name: &str) -> bool {
     contract.nodes.keys().any(|id| id.as_str() == name)
 }
 
-/// The owner of `file`, only when that owner is a node the contract declares.
-fn declared_owner<'a>(
-    contract: &Contract,
-    ownership: &'a Ownership,
-    file: &Path,
-) -> Option<&'a NodeId> {
-    ownership
-        .owners
-        .get(file)
-        .filter(|owner| contract.nodes.contains_key(*owner))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{NodeInfo, ResolvedImport, Severity, UnresolvedImport, Violation};
+    use crate::model::{NodeId, NodeInfo, ResolvedImport, Severity, UnresolvedImport, Violation};
 
     const CONTRACT_FILE: &str = "architecture.mmd";
 

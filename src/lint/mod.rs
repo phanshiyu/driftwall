@@ -1,11 +1,18 @@
 //! Reconciles the code graph against the contract and produces violations.
 //!
 //! The pure core is [`reconcile`]: three in-memory views in, a [`LintReport`] out. [`run`] is the
-//! thin shell that reads the contract, scans ownership, extracts imports and calls it.
+//! thin shell that reads the contract, scans ownership, extracts imports and calls it. [`observe`]
+//! is its sibling that also hands back what it read, for commands that present the architecture
+//! ([`overview`], [`node_view`]) or compare contracts ([`contract_diff`]).
 
+mod diff;
+mod observe;
+mod overview;
 mod reconcile;
 mod rules;
 
+#[cfg(test)]
+mod fixtures;
 #[cfg(test)]
 mod tests;
 
@@ -18,9 +25,12 @@ use thiserror::Error;
 
 use crate::diagram::{self, DiagramError};
 use crate::imports::{self, ImportsError};
-use crate::model::{DEFAULT_CONTRACT, Language, LintReport};
+use crate::model::{Contract, DEFAULT_CONTRACT, Edge, Language, LintReport, Location, Ownership};
 use crate::ownership::{self, OwnershipError};
 
+pub use diff::{EMPTY_CONTRACT, contract_diff};
+pub use observe::observed_edges;
+pub use overview::{node_view, overview};
 pub use reconcile::reconcile;
 
 /// Settings for [`run`].
@@ -65,6 +75,31 @@ pub enum LintError {
     /// Extracting imports failed.
     #[error(transparent)]
     Imports(#[from] ImportsError),
+    /// The old side of a contract comparison is not a valid contract.
+    #[error("the old contract is not valid")]
+    OldContract {
+        /// What is wrong with it, including the line.
+        source: DiagramError,
+    },
+    /// The new side of a contract comparison is not a valid contract.
+    #[error("the new contract is not valid")]
+    NewContract {
+        /// What is wrong with it, including the line.
+        source: DiagramError,
+    },
+}
+
+/// Everything one scan of a repository found: the inputs of the lint and its result.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Observation {
+    /// The parsed contract.
+    pub contract: Contract,
+    /// Who owns which file.
+    pub ownership: Ownership,
+    /// Edges code realises with their import sites, declared or not.
+    pub observed: BTreeMap<Edge, Vec<Location>>,
+    /// The lint result for the same scan.
+    pub report: LintReport,
 }
 
 /// Lints the repository at `root` against the contract named by `options`.
@@ -72,6 +107,15 @@ pub enum LintError {
 /// # Errors
 /// Fails when the contract cannot be read or parsed, or ownership or import extraction fails.
 pub fn run(root: &Path, options: &LintOptions) -> Result<LintReport, LintError> {
+    observe(root, options).map(|observation| observation.report)
+}
+
+/// Scans the repository at `root` once and returns what [`run`] would report together with the
+/// contract, ownership and observed edges it was computed from.
+///
+/// # Errors
+/// The same as [`run`].
+pub fn observe(root: &Path, options: &LintOptions) -> Result<Observation, LintError> {
     let source =
         fs::read_to_string(root.join(&options.contract)).map_err(|source| LintError::Io {
             path: options.contract.clone(),
@@ -92,10 +136,12 @@ pub fn run(root: &Path, options: &LintOptions) -> Result<LintReport, LintError> 
         .collect();
     let imports = imports::collect(root, &files)?;
 
-    Ok(reconcile(
-        &contract,
-        &ownership,
-        &imports,
-        &options.contract,
-    ))
+    let report = reconcile(&contract, &ownership, &imports, &options.contract);
+    let observed = observed_edges(&contract, &ownership, &imports);
+    Ok(Observation {
+        contract,
+        ownership,
+        observed,
+        report,
+    })
 }
