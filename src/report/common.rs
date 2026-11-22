@@ -43,3 +43,22 @@ pub(super) fn slash_path(path: &Path) -> String {
         raw.replace(std::path::MAIN_SEPARATOR, "/")
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{kind_str, severity_str};
+    use crate::model::Severity;
+    use crate::report::fixtures::ALL_KINDS;
+
+    #[test]
+    fn labels_match_the_models_serde_names() {
+        for kind in ALL_KINDS {
+            let serde_name = serde_json::to_string(&kind).unwrap();
+            assert_eq!(serde_name, format!("\"{}\"", kind_str(kind)));
+        }
+        for severity in [Severity::Error, Severity::Warning] {
+            let serde_name = serde_json::to_string(&severity).unwrap();
+            assert_eq!(serde_name, format!("\"{}\"", severity_str(severity)));
+        }
+    }
+}
