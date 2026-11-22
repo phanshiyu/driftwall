@@ -80,6 +80,15 @@ fn a_binary_reaches_lint_through_the_library_name_read_from_cargo_toml() {
 }
 
 #[test]
+fn the_binary_modules_reach_the_library_through_its_name() {
+    let all = dogfood();
+    let deps = dependencies(&all, "src/cli/commands.rs");
+    assert!(deps.contains("src/lint/mod.rs"), "{deps:?}");
+    assert!(deps.contains("src/report/mod.rs"), "{deps:?}");
+    assert!(deps.contains("src/cli/args.rs"), "{deps:?}");
+}
+
+#[test]
 fn model_depends_on_no_other_node() {
     let all = dogfood();
     for (file, imports) in &all {
