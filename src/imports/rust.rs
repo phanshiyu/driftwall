@@ -8,6 +8,7 @@
 //! that start with a local module name (`use rules::x;`), and macro-generated paths are not
 //! followed.
 
+use std::collections::BTreeSet;
 use std::path::Path;
 
 use super::rust_module::Site;
@@ -32,7 +33,7 @@ pub fn resolve(
     paths
         .iter()
         .filter_map(|path| path.target(site.as_ref(), env))
-        .filter(|target| target != importer)
-        .map(Resolution::resolved)
+        .filter(|(target, _)| target != importer)
+        .map(|(target, symbol)| Resolution::resolved(target).using(BTreeSet::from([symbol])))
         .collect()
 }

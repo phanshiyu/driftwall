@@ -5,6 +5,7 @@ use std::collections::BTreeSet;
 use std::path::{Component, Path, PathBuf};
 
 use super::Environment;
+use crate::model::Symbol;
 
 /// Files that mark a directory as a crate root.
 const ROOT_FILES: [&str; 2] = ["lib.rs", "main.rs"];
@@ -54,13 +55,16 @@ impl<'s> WrittenPath<'s> {
         Self { segments }
     }
 
-    /// The repository file this path points into, written at `site`. `None` means the path is not
-    /// a repository reference: it starts with a third party or standard library name, climbs above
-    /// the crate root, or uses `crate`, `self` or `super` outside any known crate.
+    /// The repository file this path points into, written at `site`, and the symbol it uses from
+    /// that file. `None` means the path is not a repository reference: it starts with a third
+    /// party or standard library name, climbs above the crate root, or uses `crate`, `self` or
+    /// `super` outside any known crate.
     ///
     /// The file is the longest prefix of the path that names a module file. Trailing segments are
-    /// items inside that module. When no module file matches, the crate root file is the target.
-    pub fn target(&self, site: Option<&Site>, env: &Environment<'_>) -> Option<PathBuf> {
+    /// items inside that module, and the first of them is the symbol. A path that ends at the
+    /// module file itself uses [`Symbol::All`]. When no module file matches, the crate root file
+    /// is the target and the first segment after `crate` is the symbol.
+    pub fn target(&self, site: Option<&Site>, env: &Environment<'_>) -> Option<(PathBuf, Symbol)> {
         let (first, tail) = self.segments.split_first()?;
         let (root, mut module, mut rest) = match first {
             Segment::Crate => (site?.root.clone(), ModulePath::default(), tail),
@@ -95,7 +99,11 @@ impl<'s> WrittenPath<'s> {
             .map(String::as_str)
             .chain(items)
             .collect();
-        Some(root.deepest_file(&written, env.known))
+        let (file, matched) = root.deepest_file(&written, env.known);
+        let symbol = written
+            .get(matched)
+            .map_or(Symbol::All, |name| Symbol::Name((*name).to_owned()));
+        Some((file, symbol))
     }
 }
 
@@ -158,8 +166,9 @@ impl CrateRoot {
         })
     }
 
-    /// The file of the longest prefix of `written` that is a module file, else the root file.
-    fn deepest_file(&self, written: &[&str], known: &BTreeSet<PathBuf>) -> PathBuf {
+    /// The file of the longest prefix of `written` that is a module file, with the length of that
+    /// prefix. Else the root file, with length 0.
+    fn deepest_file(&self, written: &[&str], known: &BTreeSet<PathBuf>) -> (PathBuf, usize) {
         (1..=written.len())
             .rev()
             .find_map(|len| {
@@ -170,8 +179,9 @@ impl CrateRoot {
                 [base.with_extension("rs"), base.join("mod.rs")]
                     .into_iter()
                     .find(|candidate| known.contains(candidate))
+                    .map(|file| (file, len))
             })
-            .unwrap_or_else(|| self.file.clone())
+            .unwrap_or_else(|| (self.file.clone(), 0))
     }
 }
 
