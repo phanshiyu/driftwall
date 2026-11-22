@@ -4,7 +4,10 @@ use std::collections::BTreeSet;
 use std::ffi::OsString;
 use std::path::{Component, Path, PathBuf};
 
+use super::extract::literal_text;
+use super::package::{is_builtin, package_name};
 use super::{Environment, Reference, Resolution, ecmascript_symbols, nearest};
+use crate::model::SkipReason;
 
 /// Extensions tried, in order, for extension probing and directory index files.
 const SOURCE_EXTENSIONS: [&str; 8] = ["ts", "tsx", "mts", "cts", "js", "jsx", "mjs", "cjs"];
@@ -20,16 +23,24 @@ const JS_TO_TS: [(&str, &[&str]); 4] = [
 
 /// The table entry: an ECMAScript match carries one specifier and no names. The symbols it uses
 /// are read from the statement around the specifier, see [`ecmascript_symbols`].
+///
+/// A specifier that is not a plain literal (`require(name)`, a template with a substitution) names
+/// no file and is skipped as dynamic. A literal that is relative or an alias is resolved against
+/// the repository. A literal that is neither, and is not a Node builtin or a declared package, is
+/// skipped as an undeclared package.
 pub fn ecmascript(
     reference: &Reference<'_>,
     importer: &Path,
     env: &Environment<'_>,
 ) -> Vec<Resolution> {
+    if literal_text(reference.node, reference.source).is_none() {
+        return vec![Resolution::Skipped(SkipReason::DynamicSpecifier)];
+    }
     let specifier = reference.specifier;
     let resolution = if is_relative(specifier) {
         resolve(specifier, importer, env.known)
     } else {
-        resolve_aliased(specifier, importer, env)
+        resolve_bare(specifier, importer, env)
     };
     vec![resolution.using(ecmascript_symbols::used(reference.node, reference.source))]
 }
@@ -55,21 +66,33 @@ pub fn resolve(specifier: &str, importer: &Path, known: &BTreeSet<PathBuf>) -> R
     }
 }
 
-/// Resolves a non-relative `specifier` through the alias configuration that governs `importer`.
+/// Resolves a non-relative `specifier` written in `importer`.
 ///
-/// Each candidate path is probed like a relative import: exact, appended extensions, the
-/// JavaScript to TypeScript mapping and directory index files. The first that names a known file
-/// wins. When nothing does, or no pattern matches, the specifier is ignored rather than reported
-/// unresolved, because it may be a package.
-fn resolve_aliased(specifier: &str, importer: &Path, env: &Environment<'_>) -> Resolution {
-    let Some(config) = nearest(env.aliases, importer) else {
-        return Resolution::Ignored;
-    };
-    config
-        .candidates(specifier)
-        .iter()
-        .find_map(|candidate| probe(&candidate.path, candidate.directory_only, env.known))
-        .map_or(Resolution::Ignored, Resolution::resolved)
+/// Through the alias configuration that governs `importer`, each candidate path is probed like a
+/// relative import: exact, appended extensions, the JavaScript to TypeScript mapping and directory
+/// index files. The first that names a known file wins. A specifier that a `paths` pattern matches
+/// is an alias and is ignored when no file backs it. Anything else is a package: ignored when it
+/// is a Node builtin or declared by the nearest `package.json`, skipped otherwise.
+fn resolve_bare(specifier: &str, importer: &Path, env: &Environment<'_>) -> Resolution {
+    if let Some(config) = nearest(env.aliases, importer) {
+        let found = config
+            .candidates(specifier)
+            .iter()
+            .find_map(|candidate| probe(&candidate.path, candidate.directory_only, env.known));
+        if let Some(target) = found {
+            return Resolution::resolved(target);
+        }
+        if config.matches(specifier) {
+            return Resolution::Ignored;
+        }
+    }
+    let declared = nearest(env.packages, importer)
+        .is_some_and(|names| names.contains(package_name(specifier)));
+    if is_builtin(specifier) || declared {
+        Resolution::Ignored
+    } else {
+        Resolution::Skipped(SkipReason::UndeclaredPackage)
+    }
 }
 
 fn is_relative(specifier: &str) -> bool {

@@ -590,6 +590,18 @@ mod tests {
         }
 
         #[test]
+        fn an_embed_uses_no_symbol_so_a_surface_does_not_restrict_it() {
+            let c = with_surface(ab(), "b", &["Client"]);
+            let mut used = imports(&[(MAIN, 1, LIB)]);
+            for file in used.values_mut() {
+                for import in &mut file.resolved {
+                    import.kind = crate::model::ImportKind::Embed;
+                }
+            }
+            assert_eq!(lint(&c, &owners(), &used), Vec::new());
+        }
+
+        #[test]
         fn a_node_without_a_surface_is_unrestricted() {
             let c = with_surface(ab(), "c", &["Only"]);
             let used = imports_using(&[(MAIN, 1, LIB, &["anything", "*"])]);

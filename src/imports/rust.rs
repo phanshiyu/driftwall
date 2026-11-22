@@ -16,6 +16,10 @@
 //! function counts for its whole module, a name bound twice to different paths is not followed,
 //! and a binding is never followed through another binding.
 //!
+//! `include_str!`, `include_bytes!` and `include!` with a string literal embed a file relative to the
+//! importing file: a known repository file is an [`Embedded`](Resolution::Embedded) resolution that
+//! uses no symbol, anything else is skipped as a non-source embed.
+//!
 //! Known limitations: `#[path = "..."]` module attributes, `extern crate` renames, names that
 //! only a glob import brings in (`use crate::*; gitlab::x()`), local names that come from an
 //! inline `mod name { }`, and macro-generated paths are not followed.
@@ -23,10 +27,11 @@
 use std::collections::BTreeSet;
 use std::path::Path;
 
+use super::resolve::join_normalised;
 use super::rust_module::{Site, WrittenPath};
 use super::rust_syntax;
 use super::{Environment, Reference, Resolution};
-use crate::model::Symbol;
+use crate::model::{SkipReason, Symbol};
 
 /// The table entry. `reference.node` is a `use` argument, a scoped path, or a token inside a macro
 /// argument list; each is expanded into the repository files it points at. A reference that
@@ -37,6 +42,9 @@ pub fn resolve(
     importer: &Path,
     env: &Environment<'_>,
 ) -> Vec<Resolution> {
+    if reference.node.kind() == "string_literal" {
+        return vec![embed(reference.specifier, importer, env)];
+    }
     let paths = rust_syntax::paths(reference.node, reference.source);
     if paths.is_empty() {
         return Vec::new();
@@ -61,6 +69,15 @@ pub fn resolve(
         resolutions.push(Resolution::resolved(target).using(used));
     }
     resolutions
+}
+
+/// An `include_str!("..")`, `include_bytes!("..")` or `include!("..")` of `path`, relative to the
+/// directory of `importer`. A known repository file is embedded, anything else is skipped.
+fn embed(path: &str, importer: &Path, env: &Environment<'_>) -> Resolution {
+    match join_normalised(importer.parent(), path) {
+        Some(target) if env.known.contains(&target) => Resolution::Embedded { target },
+        _ => Resolution::Skipped(SkipReason::EmbedNonSource),
+    }
 }
 
 /// `path` with its first segment replaced by the module path the file bound that name to, when

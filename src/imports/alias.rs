@@ -165,6 +165,13 @@ impl AliasConfig {
         found
     }
 
+    /// Whether a `paths` pattern matches `specifier`, so it is an alias even when no file backs it.
+    /// `baseUrl` alone is not an alias.
+    #[must_use]
+    pub fn matches(&self, specifier: &str) -> bool {
+        self.select(specifier).is_some()
+    }
+
     /// The pattern TypeScript would choose: an exact key equal to `specifier`, else the matching
     /// star pattern with the longest prefix, the first declared on a tie.
     fn select<'s>(&self, specifier: &'s str) -> Option<(&Pattern, Capture<'s>)> {
@@ -192,13 +199,12 @@ impl AliasConfig {
     }
 }
 
-/// The alias configuration for `importer`: the one of its own directory or, failing that, of the
-/// nearest ancestor directory that has one. `configs` is keyed by repository-relative directory.
+/// The entry of `configs` for `importer`, in its own directory or the nearest ancestor that has one.
+///
+/// `configs` is keyed by repository-relative directory and holds alias configurations or the
+/// packages a `package.json` declares.
 #[must_use]
-pub fn nearest<'a>(
-    configs: &'a BTreeMap<PathBuf, AliasConfig>,
-    importer: &Path,
-) -> Option<&'a AliasConfig> {
+pub fn nearest<'a, T>(configs: &'a BTreeMap<PathBuf, T>, importer: &Path) -> Option<&'a T> {
     importer
         .parent()?
         .ancestors()

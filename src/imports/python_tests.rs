@@ -134,10 +134,17 @@ fn import_inside_type_checking_block_counts() {
 }
 
 #[test]
-fn dynamic_imports_are_not_extracted() {
+fn dynamic_imports_are_skipped_not_resolved() {
     let source = "__import__('a')\nimportlib.import_module('a')\nimport_module('a')\n";
     let got = py(source, &["a.py"]);
-    assert_eq!(got, FileImports::default());
+    assert_eq!(got.resolved, Vec::new());
+    assert_eq!(got.unresolved, Vec::new());
+    let skipped: Vec<(u32, &str)> = got
+        .skipped
+        .iter()
+        .map(|s| (s.at.line, s.specifier.as_str()))
+        .collect();
+    assert_eq!(skipped, [(1, "'a'"), (2, "'a'")]);
 }
 
 #[test]

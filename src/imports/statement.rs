@@ -41,10 +41,15 @@ pub fn python_anchor(specifier: Node<'_>) -> Node<'_> {
     )
 }
 
-/// The Rust `use` declaration around a specifier. A path in code is its own anchor.
+/// The Rust `use` declaration around a specifier, or the `include_str!` invocation around a string.
+/// A path in code is its own anchor.
 pub fn rust_anchor(specifier: Node<'_>) -> Node<'_> {
-    match specifier.parent() {
+    let parent = specifier.parent();
+    match parent {
         Some(parent) if parent.kind() == "use_declaration" => parent,
+        Some(parent) if specifier.kind() == "string_literal" => {
+            parent.parent().unwrap_or(specifier)
+        }
         _ => specifier,
     }
 }

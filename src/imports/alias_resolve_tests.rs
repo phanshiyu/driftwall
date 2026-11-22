@@ -31,6 +31,7 @@ fn run(source: &str, repo: &[&str], config: AliasConfig) -> FileImports {
         known: &known,
         crates: &crates,
         aliases: &aliases,
+        packages: &BTreeMap::new(),
     };
     extract_in(
         source,
@@ -138,21 +139,24 @@ fn a_matched_pattern_with_no_file_is_ignored_not_unresolved() {
 }
 
 #[test]
-fn a_specifier_matching_no_pattern_is_ignored() {
+fn a_specifier_matching_no_pattern_is_not_an_alias_so_it_is_a_package() {
     let c = config("", false, &[("@/*", &["./src/*"])]);
     let got = run(
         "import a from 'react';\nimport b from '@scope/pkg';",
         &["src/react.ts"],
         c,
     );
-    assert_eq!(got, FileImports::default());
+    assert_eq!(got.resolved, Vec::new());
+    let names: Vec<&str> = got.skipped.iter().map(|s| s.specifier.as_str()).collect();
+    assert_eq!(names, ["react", "@scope/pkg"]);
 }
 
 #[test]
-fn a_bare_package_name_is_ignored_when_base_url_finds_nothing() {
+fn a_bare_package_name_is_not_an_alias_when_base_url_finds_nothing() {
     let c = config("src", true, &[]);
     let got = run("import a from 'react';", &["src/other.ts"], c);
-    assert_eq!(got, FileImports::default());
+    assert_eq!(got.resolved, Vec::new());
+    assert_eq!(got.skipped.len(), 1);
 }
 
 #[test]
@@ -187,7 +191,7 @@ fn require_and_dynamic_import_resolve_aliases_too() {
 }
 
 #[test]
-fn files_without_a_governing_config_see_no_aliases() {
+fn files_without_a_governing_config_see_no_aliases_and_the_specifier_is_a_package() {
     let known: BTreeSet<PathBuf> = [PathBuf::from("src/a.ts")].into();
     let crates = BTreeMap::new();
     let aliases = BTreeMap::from([(
@@ -198,6 +202,7 @@ fn files_without_a_governing_config_see_no_aliases() {
         known: &known,
         crates: &crates,
         aliases: &aliases,
+        packages: &BTreeMap::new(),
     };
     let got = extract_in(
         "import a from '@/a';",
@@ -206,5 +211,7 @@ fn files_without_a_governing_config_see_no_aliases() {
         &env,
     )
     .expect("extract succeeds");
-    assert_eq!(got, FileImports::default());
+    assert_eq!(got.resolved, Vec::new());
+    assert_eq!(got.unresolved, Vec::new());
+    assert_eq!(got.skipped.len(), 1);
 }

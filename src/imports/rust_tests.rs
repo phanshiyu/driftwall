@@ -41,6 +41,7 @@ fn rs_in(
         known: &known,
         crates: library,
         aliases: &BTreeMap::new(),
+        packages: &BTreeMap::new(),
     };
     extract_in(source, Language::Rust, Path::new(file), &env).expect("extract succeeds")
 }

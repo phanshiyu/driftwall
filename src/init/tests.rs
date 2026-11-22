@@ -29,6 +29,7 @@ fn import(from: &str, to: &str) -> (PathBuf, FileImports) {
                 PathBuf::from(to),
             )],
             unresolved: Vec::new(),
+            skipped: Vec::new(),
         },
     )
 }

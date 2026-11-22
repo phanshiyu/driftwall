@@ -4,7 +4,8 @@
 //! imported names as `@name`; all captures of one match are resolved together.
 
 /// Forms shared by TypeScript and JavaScript: `import ... from`, `import 'a'`, every
-/// `export ... from`, dynamic `import(...)` and `require(...)`.
+/// `export ... from`, dynamic `import(...)` and `require(...)`. The argument of a call is captured
+/// whatever it is, so the resolver can tell a literal from a computed specifier.
 macro_rules! ecmascript_imports {
     () => {
         r#"
@@ -12,20 +13,21 @@ macro_rules! ecmascript_imports {
 (export_statement source: (string) @specifier)
 (call_expression
   function: (import)
-  arguments: (arguments . (string) @specifier))
+  arguments: (arguments . (_) @specifier))
 (call_expression
   function: (identifier) @callee
-  arguments: (arguments . (string) @specifier .)
+  arguments: (arguments . (_) @specifier .)
   (#eq? @callee "require"))
 "#
     };
 }
 
-/// Python: `import a.b`, `import a.b as c`, and `from a.b import c, d as e` or `import *`.
+/// Python: `import a.b`, `import a.b as c`, and `from a.b import c, d as e` or `import *`, plus the
+/// first argument of `importlib.import_module(..)` and `__import__(..)`, which the resolver skips.
 ///
 /// A `from` statement is a single match carrying every imported name, so the resolver can try
 /// submodules before the module itself. `from __future__` is its own node and never matches.
-pub const PYTHON: &str = r"
+pub const PYTHON: &str = r#"
 (import_statement
   name: (dotted_name) @specifier)
 (import_statement
@@ -36,7 +38,18 @@ pub const PYTHON: &str = r"
     name: (dotted_name) @name
     name: (aliased_import name: (dotted_name) @name)
   ]*)
-";
+(call
+  function: (identifier) @callee
+  arguments: (argument_list . (_) @specifier)
+  (#eq? @callee "__import__"))
+(call
+  function: (attribute
+    object: (identifier) @module
+    attribute: (identifier) @method)
+  arguments: (argument_list . (_) @specifier)
+  (#eq? @module "importlib")
+  (#eq? @method "import_module"))
+"#;
 
 /// JavaScript and JSX.
 pub const JAVASCRIPT: &str = ecmascript_imports!();
@@ -47,15 +60,23 @@ pub const TYPESCRIPT: &str = concat!(
     "(import_require_clause source: (string) @specifier)\n"
 );
 
-/// Rust: the argument of every `use` declaration, every scoped path in any position, and every
+/// Rust: the argument of every `use` declaration, every scoped path in any position, every
 /// token inside a macro argument list (macro arguments are not parsed into expressions, so the
-/// resolver reassembles `a::b::c` from the tokens). `mod foo;` is containment and is not matched.
+/// resolver reassembles `a::b::c` from the tokens), and the string literal of `include_str!`,
+/// `include_bytes!` and `include!`. `mod foo;` is containment and is not matched.
 ///
 /// A match is only a candidate. The resolver keeps the outermost path and drops the paths that
 /// are inside a `use` declaration or a visibility modifier, which have their own handling.
-pub const RUST: &str = r"
+pub const RUST: &str = r#"
 (use_declaration argument: (_) @specifier)
 (scoped_identifier) @specifier
 (scoped_type_identifier) @specifier
 (token_tree [(crate) (self) (super) (identifier)] @specifier)
-";
+(macro_invocation
+  macro: [
+    (identifier) @macro
+    (scoped_identifier name: (identifier) @macro)
+  ]
+  (token_tree . (string_literal) @specifier .)
+  (#any-of? @macro "include_str" "include_bytes" "include"))
+"#;

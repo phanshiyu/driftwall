@@ -8,7 +8,9 @@ use tree_sitter::{Node, Parser, Query, QueryCursor, StreamingIterator};
 
 use super::spec::Grammar;
 use super::{Environment, FileImports, ImportsError, Reference, Resolution, spec};
-use crate::model::{ImportKind, Language, Location, ResolvedImport, Symbol, UnresolvedImport};
+use crate::model::{
+    ImportKind, Language, Location, ResolvedImport, Skipped, Symbol, UnresolvedImport,
+};
 
 /// What duplicate imports must agree on to merge: location, target, kind and whether it is test code.
 type Merge = (Location, PathBuf, ImportKind, bool);
@@ -43,6 +45,7 @@ pub fn extract(
             known,
             crates: &crates,
             aliases: &aliases,
+            packages: &BTreeMap::new(),
         },
     )
 }
@@ -79,6 +82,7 @@ pub fn extract_in(
     // why: keyed by (location, target, kind, test_only): duplicates merge only when all four agree.
     let mut resolved: BTreeMap<Merge, BTreeSet<Symbol>> = BTreeMap::new();
     let mut unresolved = BTreeSet::new();
+    let mut skipped = BTreeSet::new();
     let mut cursor = QueryCursor::new();
     let mut matches = cursor.matches(&query, tree.root_node(), source.as_bytes());
     while let Some(found) = matches.next() {
@@ -124,6 +128,17 @@ pub fn extract_in(
                         specifier: specifier.to_owned(),
                     });
                 }
+                Resolution::Embedded { target } => {
+                    let merge = (at.clone(), target, ImportKind::Embed, flags.test_only);
+                    resolved.entry(merge).or_default();
+                }
+                Resolution::Skipped(reason) => {
+                    skipped.insert(Skipped {
+                        at: at.clone(),
+                        specifier: specifier.to_owned(),
+                        reason,
+                    });
+                }
                 Resolution::Ignored => {}
             }
         }
@@ -143,16 +158,36 @@ pub fn extract_in(
     Ok(FileImports {
         resolved,
         unresolved: unresolved.into_iter().collect(),
+        skipped: skipped.into_iter().collect(),
     })
 }
 
-/// The text of a captured specifier: the contents of a string literal, or the source text of any
-/// other node, such as a Python module path.
+/// The text of a captured specifier: the contents of a plain literal, else the source text of the
+/// node, such as a Python module path or the computed argument of `require(..)`.
 fn specifier_text<'s>(node: Node<'_>, source: &'s str) -> Option<&'s str> {
-    if node.kind() == "string" {
-        plain_string(node, source)
-    } else {
-        node.utf8_text(source.as_bytes()).ok()
+    literal_text(node, source).or_else(|| node.utf8_text(source.as_bytes()).ok())
+}
+
+/// The contents of `node` when it is a plain literal: a string, a template without
+/// substitutions, or a Rust string, written without escapes. `None` for anything else, which is
+/// computed or cannot be read without unescaping.
+pub(super) fn literal_text<'s>(node: Node<'_>, source: &'s str) -> Option<&'s str> {
+    let content = match node.kind() {
+        "string" | "template_string" => "string_fragment",
+        "string_literal" => "string_content",
+        _ => return None,
+    };
+    match node.named_child_count() {
+        0 => Some(""),
+        1 => {
+            let fragment = node.named_child(0)?;
+            if fragment.kind() == content {
+                fragment.utf8_text(source.as_bytes()).ok()
+            } else {
+                None
+            }
+        }
+        _ => None,
     }
 }
 

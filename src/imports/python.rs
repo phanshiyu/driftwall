@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use super::{Environment, Reference, Resolution};
-use crate::model::Symbol;
+use crate::model::{SkipReason, Symbol};
 
 /// Directory prefixes that absolute imports are tried against, in order: the repository root, then
 /// `src/`.
@@ -19,6 +19,8 @@ const ABSOLUTE_ROOTS: [&str; 2] = ["", "src"];
 /// The symbols used follow what each name resolved to. A name that is a submodule file uses the
 /// submodule as a whole ([`Symbol::All`]); a name found inside the module uses that name. A
 /// statement without names uses the module as a whole.
+/// A call to `importlib.import_module(..)` or `__import__(..)` names its module at run time and is
+/// skipped as dynamic, whatever its argument.
 /// Absolute modules that match no file are third party or standard library and are ignored;
 /// relative ones that match nothing are unresolved.
 pub fn resolve(
@@ -26,6 +28,14 @@ pub fn resolve(
     importer: &Path,
     env: &Environment<'_>,
 ) -> Vec<Resolution> {
+    // why: the first argument of `importlib.import_module(..)` or `__import__(..)` is not a module path.
+    if reference
+        .node
+        .parent()
+        .is_some_and(|parent| parent.kind() == "argument_list")
+    {
+        return vec![Resolution::Skipped(SkipReason::DynamicSpecifier)];
+    }
     let known = env.known;
     let written: String = reference
         .specifier

@@ -14,3 +14,8 @@
 - Rust module bindings (`use crate::gitlab;`, `as gl`, `self` in a group) use no symbol; only a
   glob uses `*`, and `*` is always `private-symbol` for a node with a surface.
 - An import is located at the line its statement starts on, not at its specifier.
+- Every resolved import records its `kind` (`runtime`, `typeonly`, `embed`) and `test_only`. Rust
+  `include_str!`, `include_bytes!` and `include!` of a source file are `embed` imports that use no
+  symbol, and surfaces do not restrict them.
+- Skipped references: undeclared packages, computed specifiers and embeds of non-source files are
+  listed in `FileImports.skipped` instead of being dropped. A malformed `package.json` is ignored.

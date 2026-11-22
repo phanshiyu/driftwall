@@ -3,7 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use super::*;
-use crate::model::Location;
+use crate::model::{Location, SkipReason};
 
 fn known(paths: &[&str]) -> BTreeSet<PathBuf> {
     paths.iter().map(PathBuf::from).collect()
@@ -27,6 +27,18 @@ fn targets(imports: &FileImports) -> Vec<String> {
 
 fn lines(imports: &FileImports) -> Vec<u32> {
     imports.resolved.iter().map(|r| r.at.line).collect()
+}
+
+const DYNAMIC: SkipReason = SkipReason::DynamicSpecifier;
+const UNDECLARED: SkipReason = SkipReason::UndeclaredPackage;
+
+/// Every skipped reference as (line, specifier, reason).
+fn skips(imports: &FileImports) -> Vec<(u32, &str, SkipReason)> {
+    imports
+        .skipped
+        .iter()
+        .map(|s| (s.at.line, s.specifier.as_str(), s.reason))
+        .collect()
 }
 
 fn unresolved_specifiers(imports: &FileImports) -> Vec<&str> {
@@ -115,9 +127,13 @@ fn other_call_with_string_argument_is_not_require() {
 }
 
 #[test]
-fn require_with_non_literal_argument_ignored() {
+fn require_with_non_literal_argument_is_skipped_as_dynamic() {
     let got = ts("require(name); require('./a' + b);", &["src/a.ts"]);
-    assert_eq!(got, FileImports::default());
+    assert_eq!(got.resolved, Vec::new());
+    assert_eq!(
+        skips(&got),
+        [(1, "'./a' + b", DYNAMIC), (1, "name", DYNAMIC)]
+    );
 }
 
 #[test]
@@ -127,21 +143,24 @@ fn dynamic_import() {
 }
 
 #[test]
-fn dynamic_import_with_substituted_template_ignored() {
+fn dynamic_import_with_substituted_template_is_skipped_as_dynamic() {
     let got = ts("import(`./${name}`);", &["src/a.ts"]);
-    assert_eq!(got, FileImports::default());
+    assert_eq!(got.resolved, Vec::new());
+    assert_eq!(skips(&got), [(1, "`./${name}`", DYNAMIC)]);
 }
 
 #[test]
-fn dynamic_import_with_plain_template_ignored() {
+fn dynamic_import_with_plain_template_is_a_literal() {
     let got = ts("import(`./a`);", &["src/a.ts"]);
-    assert_eq!(got, FileImports::default());
+    assert_eq!(targets(&got), ["src/a.ts"]);
+    assert_eq!(got.skipped, Vec::new());
 }
 
 #[test]
-fn dynamic_import_with_variable_ignored() {
+fn dynamic_import_with_variable_is_skipped_as_dynamic() {
     let got = ts("import(path);", &["src/a.ts"]);
-    assert_eq!(got, FileImports::default());
+    assert_eq!(got.resolved, Vec::new());
+    assert_eq!(skips(&got), [(1, "path", DYNAMIC)]);
 }
 
 #[test]
@@ -191,11 +210,22 @@ fn string_contents_are_ignored() {
 }
 
 #[test]
-fn non_relative_specifiers_are_ignored() {
+fn non_relative_specifiers_are_never_unresolved_and_without_a_package_json_are_skipped() {
     let source = "import a from 'react';\nimport b from '@scope/pkg';\nimport c from 'node:fs';\n\
                   import d from '@/x';\nimport e from 'src/a';\nimport f from '.hidden';\n";
     let got = ts(source, &["src/a.ts", "@/x.ts"]);
-    assert_eq!(got, FileImports::default());
+    assert_eq!(got.resolved, Vec::new());
+    assert_eq!(got.unresolved, Vec::new());
+    assert_eq!(
+        skips(&got),
+        [
+            (1, "react", UNDECLARED),
+            (2, "@scope/pkg", UNDECLARED),
+            (4, "@/x", UNDECLARED),
+            (5, "src/a", UNDECLARED),
+            (6, ".hidden", UNDECLARED),
+        ]
+    );
 }
 
 #[test]

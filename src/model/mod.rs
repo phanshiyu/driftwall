@@ -295,6 +295,30 @@ pub struct UnresolvedImport {
     pub specifier: String,
 }
 
+/// Why a reference was recorded as skipped instead of resolved. Serialized in kebab-case.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SkipReason {
+    /// A TypeScript or JavaScript package that no alias maps and `package.json` does not declare.
+    UndeclaredPackage,
+    /// A module reference computed at run time, so it names no file: `import(expr)`,
+    /// `require(expr)`, Python `importlib.import_module(..)` and `__import__(..)`.
+    DynamicSpecifier,
+    /// A Rust `include_str!` or `include_bytes!` of a file that is not a known source file.
+    EmbedNonSource,
+}
+
+/// A reference driftwall saw and could not follow, kept so it is never silently dropped.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+pub struct Skipped {
+    /// Where the statement that holds the reference starts.
+    pub at: Location,
+    /// The specifier as written: the module name, the text of a computed argument, or an embed path.
+    pub specifier: String,
+    /// Why it was skipped.
+    pub reason: SkipReason,
+}
+
 /// Kinds of finding the linter can report.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -610,6 +634,27 @@ mod tests {
             tail(ImportKind::Embed),
             r#""kind":"embed","test_only":true}"#
         );
+    }
+
+    #[test]
+    fn skipped_references_serialize_their_reason_in_kebab_case() {
+        let json = |reason| {
+            serde_json::to_string(&Skipped {
+                at: Location {
+                    file: PathBuf::from("a.ts"),
+                    line: 2,
+                },
+                specifier: "x".to_owned(),
+                reason,
+            })
+            .unwrap()
+        };
+        assert_eq!(
+            json(SkipReason::UndeclaredPackage),
+            r#"{"at":{"file":"a.ts","line":2},"specifier":"x","reason":"undeclared-package"}"#
+        );
+        assert!(json(SkipReason::DynamicSpecifier).ends_with(r#""reason":"dynamic-specifier"}"#));
+        assert!(json(SkipReason::EmbedNonSource).ends_with(r#""reason":"embed-non-source"}"#));
     }
 
     #[test]

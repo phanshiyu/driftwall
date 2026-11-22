@@ -5,24 +5,29 @@
 //!
 //! TypeScript and JavaScript resolve relative specifiers, and aliases defined by `compilerOptions`
 //! `paths` and `baseUrl` of the nearest `tsconfig.json` or `jsconfig.json` (see `tsconfig`). A
-//! specifier that no alias maps to a repository file, such as a package, a scoped package or a
-//! `node:` builtin, is ignored, never reported unresolved. A `tsconfig` that cannot be parsed is
-//! skipped, like a malformed `Cargo.toml`. Import types (`typeof import('./a')`) are
-//! not extracted. For Python, `__import__`, `importlib.import_module`, `.pyi` stubs and import
-//! roots other than the repository root and `src/` are not supported. For Rust, see `rust`'s
-//! limitations: `#[path]` modules, `extern crate` renames and names that only a glob import brings
-//! in are not followed. A path that starts with a module name the same file brought into scope
-//! with `use` or `mod name;` is followed.
+//! specifier that no alias maps to a repository file is a package: ignored when it is a Node
+//! builtin or declared by the nearest `package.json` (see `package`), and otherwise recorded in
+//! `FileImports::skipped`, like every reference that cannot be followed (a computed `require(x)`
+//! or `importlib.import_module(x)`, an `include_str!` of a file that is not source), never reported
+//! unresolved. A `tsconfig` or `package.json` that cannot be parsed is skipped, like a malformed
+//! `Cargo.toml`. Import types (`typeof import('./a')`) are not extracted. For Python, `.pyi` stubs
+//! and import roots other than the repository root and `src/` are not supported. For Rust, see
+//! `rust`'s limitations: `#[path]` modules, `extern crate` renames and names that only a glob
+//! import brings in are not followed. A path that starts with a module name the same file brought
+//! into scope with `use` or `mod name;` is followed.
 //!
 //! Every resolved import also records the symbols it uses from its target, from syntax only (see
 //! `ResolvedImport::symbols`). Imports of one file on one line collapse by target and union their
-//! symbols; a side-effect import records none. Method calls on values are never resolved.
+//! symbols; a side-effect import records none. Method calls on values are never resolved. Each also
+//! records its kind (runtime, type-only, embed) and whether it is written in test code, see
+//! `statement`, and sits at the line its statement starts on.
 
 mod alias;
 mod ecmascript_symbols;
 mod error;
 mod extract;
 mod manifest;
+mod package;
 mod python;
 mod queries;
 mod resolve;
@@ -53,6 +58,8 @@ mod rust_symbols_tests;
 #[cfg(test)]
 mod rust_tests;
 #[cfg(test)]
+mod skipped_tests;
+#[cfg(test)]
 mod tests;
 #[cfg(test)]
 mod tsconfig_tests;
@@ -63,23 +70,27 @@ use std::path::{Path, PathBuf};
 
 use rayon::prelude::*;
 
-use crate::model::{Language, ResolvedImport, Symbol, UnresolvedImport};
+use crate::model::{Language, ResolvedImport, SkipReason, Skipped, Symbol, UnresolvedImport};
 
 pub use alias::{AliasConfig, Candidate, Pattern, TargetTemplate, nearest};
 pub use error::ImportsError;
 pub use extract::{extract, extract_in};
 pub use manifest::library_crates;
+pub use package::package_dependencies;
 pub use rust_scope::Bindings;
 pub use spec::{LanguageSpec, spec};
 pub use tsconfig::alias_configs;
 
-/// The imports found in one file. Both lists are sorted and free of duplicates.
+/// The imports found in one file. Every list is sorted and free of duplicates.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct FileImports {
     /// Imports that resolved to a repository file.
     pub resolved: Vec<ResolvedImport>,
     /// Relative imports that matched no repository file.
     pub unresolved: Vec<UnresolvedImport>,
+    /// References that cannot be followed: undeclared packages, computed specifiers and embeds of
+    /// non-source files. Never a lint finding, see `SkipReason`.
+    pub skipped: Vec<Skipped>,
 }
 
 /// What a resolver may consult besides the importing file: every known repository file and the
@@ -95,6 +106,11 @@ pub struct Environment<'a> {
     /// configuration it defines. A file is governed by the nearest directory at or above it, see
     /// [`nearest`]. Only TypeScript and JavaScript resolution reads it.
     pub aliases: &'a BTreeMap<PathBuf, AliasConfig>,
+    /// Repository-relative directory holding a readable `package.json` to the package names that
+    /// file declares in `dependencies`, `devDependencies`, `peerDependencies` and
+    /// `optionalDependencies`. A file is governed by the nearest directory at or above it. Only
+    /// TypeScript and JavaScript resolution reads it.
+    pub packages: &'a BTreeMap<PathBuf, BTreeSet<String>>,
 }
 
 /// One query match handed to a language resolver: the module reference as written and, for
@@ -126,8 +142,15 @@ pub enum Resolution {
     },
     /// The specifier points inside the repository but matches no file.
     Unresolved,
-    /// Not a repository import: a third party package, a builtin, or a non-source asset.
+    /// The specifier embeds this repository file as data or source, and uses no item of it.
+    Embedded {
+        /// The repository-relative file.
+        target: PathBuf,
+    },
+    /// Not a repository import: a declared third party package, a builtin, or a non-source asset.
     Ignored,
+    /// A reference that could not be followed, and is reported as such.
+    Skipped(SkipReason),
 }
 
 impl Resolution {
@@ -156,7 +179,8 @@ impl Resolution {
 /// The key set of `files` is the set of known repository files used for resolution. Library
 /// crates are discovered once from the `Cargo.toml` files next to the known `lib.rs` files, and
 /// import aliases once from the `tsconfig.json` and `jsconfig.json` files at or above the
-/// TypeScript and JavaScript files. When several files fail, the error for the first path in sorted order is returned.
+/// TypeScript and JavaScript files, and declared packages from the `package.json` files there.
+/// When several files fail, the error for the first path in sorted order is returned.
 ///
 /// # Errors
 /// Returns [`ImportsError::Io`] for a file that cannot be read or is not UTF-8, and the grammar
@@ -168,10 +192,12 @@ pub fn collect(
     let known: BTreeSet<PathBuf> = files.keys().cloned().collect();
     let crates = library_crates(root, &known);
     let aliases = alias_configs(root, files);
+    let packages = package_dependencies(root, files);
     let env = Environment {
         known: &known,
         crates: &crates,
         aliases: &aliases,
+        packages: &packages,
     };
     let entries: Vec<(&PathBuf, &Language)> = files.iter().collect();
     // why: collected into an indexed Vec so the reported error never depends on thread scheduling.

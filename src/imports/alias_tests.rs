@@ -216,5 +216,8 @@ fn nearest_prefers_the_closest_directory() {
     assert_eq!(at("pkg/web/a.ts"), Some(PathBuf::from("pkg/web")));
     assert_eq!(at("pkg/api/a.ts"), Some(PathBuf::new()));
     assert_eq!(at("a.ts"), Some(PathBuf::new()));
-    assert_eq!(nearest(&BTreeMap::new(), Path::new("a.ts")), None);
+    assert_eq!(
+        nearest::<AliasConfig>(&BTreeMap::new(), Path::new("a.ts")),
+        None
+    );
 }

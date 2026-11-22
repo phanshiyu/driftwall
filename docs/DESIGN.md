@@ -99,7 +99,8 @@ An import's line is the line where its statement starts, not the line of the spe
 and the `use` declaration of Rust (its `pub` when it has one, never the attributes above it). A
 statement that spans several lines is one location, its first line. A Rust qualified path written
 in code (`crate::gitlab::fetch(..)`, or a path inside a macro argument) is not a statement and keeps
-the line of the path itself.
+the line of the path itself. A skipped Python `importlib.import_module(..)` call is located at the
+call start, and a Rust embed at the start of its macro invocation.
 
 ### Import kind
 
