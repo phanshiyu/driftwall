@@ -37,6 +37,24 @@ subdirectories, until a nested `.arch` overrides it. Source files are found by w
 with the `ignore` crate, so `.gitignore` is honored. `.driftwallignore` (gitignore syntax) adds
 exclusions. Only files with a supported extension count as source.
 
+### Module nodes (`node: *`)
+
+A `.arch` file may contain `node: *` instead of an id. Then every module directly in that
+directory is its own node, named by a fixed rule, with no further tagging:
+
+- A source file is a module. Its node id is the file name up to the first `.`, so `gitlab.rs` is
+  `gitlab` and `gitlab.test.ts` joins `gitlab`.
+- Entry files (`mod.rs`, `lib.rs`, `main.rs`, `index.*`, `__init__.py`) are named by their file stem
+  too (`main`, `lib`), except `mod.rs`, `index.*` and `__init__.py`, which are named after their
+  directory.
+- A subdirectory whose name equals a sibling module's id (Rust `gitlab.rs` plus `gitlab/`) belongs to
+  that module's node. Any other subdirectory is one node named after the directory.
+- A nested `.arch` still overrides, as everywhere else.
+- A derived id that is not a valid node id is an error at the `.arch` file, never silently renamed.
+
+`init` writes `node: *` into the source root it descends to when that directory directly holds two
+or more modules, so a flat crate like `src/{gitlab,store,auth}.rs` yields one node per module.
+
 ## Import semantics
 
 - An import is an edge only when it resolves to a repository file owned by a different node.
@@ -53,6 +71,35 @@ exclusions. Only files with a supported extension count as source.
 - Extraction is tree-sitter based and driven by a per-language table (extensions, grammar, query),
   not a trait hierarchy. Adding a language means adding a table entry and a query.
 
+## Symbols and public surfaces
+
+Every resolved import records the symbols it uses, exactly as written in the code, never inferred:
+
+- Rust: names in `use` trees (`use crate::gitlab::{Client, fetch}` uses `Client`, `fetch`), the first
+  item segment of a qualified path (`crate::gitlab::fetch_mrs(..)` uses `fetch_mrs`), and paths that
+  start with a name the same file brought into scope with `use` or declared with `mod`
+  (`use crate::gitlab;` then `gitlab::Client` uses `Client`). A glob uses `*`.
+- TypeScript and JavaScript: named imports and re-exports by their exported name, `default` for a
+  default import, `*` for namespace imports, `require`, dynamic `import()` and `export *`.
+- Python: `from a import b, c` uses `b`, `c` when they resolve to names inside `a`. `import a.b` and
+  a name that resolves to a submodule use `*`.
+- A side-effect import (`import './x'`) uses no symbol.
+
+Method calls on values (`client.fetch()`) are not resolved: knowing which `fetch` needs type
+information. driftwall reports only what the syntax proves.
+
+A node may declare its public surface in the contract with a directive comment, which Mermaid
+renderers ignore:
+
+```
+%% exports gitlab: Client, fetch_mrs, post_note
+```
+
+At most one `exports` line per node, naming a declared node. When a node has a surface, an import
+from another node that uses a symbol outside it, or uses `*`, is a `private-symbol` error at the
+import. Nodes without an `exports` line are unrestricted. `diff` reports surface changes, and
+`neighbors` and `brief` list the symbols each edge uses.
+
 ## Rules (violation kinds)
 
 | Kind | Severity | When |
@@ -63,6 +110,7 @@ exclusions. Only files with a supported extension count as source.
 | `stale-edge` | warning | solid edge with no import backing it |
 | `planned-realized` | warning | dotted edge now backed by code, promote it to solid |
 | `unresolved-import` | warning | relative import resolves to nothing |
+| `private-symbol` | error | an import uses a symbol outside the target node's declared surface |
 
 A dotted edge permits the import. `--strict` turns every warning into a failure.
 
