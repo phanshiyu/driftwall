@@ -2,11 +2,11 @@
 //!
 //! The IO shell next to [`super::tsconfig`]: it finds the manifests at or above each TypeScript and
 //! JavaScript file and reads the names listed in `dependencies`, `devDependencies`,
-//! `peerDependencies` and `optionalDependencies`. Which manifest governs a file is the one in its
-//! own directory or, failing that, in the nearest ancestor directory (see [`super::nearest`]); an
-//! ancestor's manifest is never consulted as well. A manifest that cannot be read or parsed, or
-//! that lists a dependency table of the wrong type, is skipped silently, like a malformed
-//! `tsconfig.json`: the directory has no manifest and the ancestors apply.
+//! `peerDependencies` and `optionalDependencies`. A name counts as declared when any manifest in
+//! the file's own directory or an ancestor directory, up to the repository root, lists it, because
+//! Node searches every ancestor `node_modules`. A manifest that cannot be read or parsed, or that
+//! lists a dependency table of the wrong type, is skipped silently, like a malformed
+//! `tsconfig.json`: the directory has no manifest and the others still count.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;

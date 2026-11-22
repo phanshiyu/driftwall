@@ -132,22 +132,30 @@ fn a_bare_name_that_only_exists_with_the_node_prefix_is_a_package() {
 }
 
 #[test]
-fn only_the_nearest_package_json_counts() {
-    let packages = [("", &["react", "zod"][..]), ("packages/web", &["zod"][..])];
+fn a_dependency_declared_in_any_ancestor_package_json_counts() {
+    let packages = [
+        ("", &["react", "zod"][..]),
+        ("packages/web", &["lodash"][..]),
+    ];
     let got = run(
-        "import a from 'react';\nimport b from 'zod';",
+        "import a from 'react';\nimport b from 'lodash';\nimport c from 'left-pad';",
         Language::TypeScript,
         "packages/web/src/page.ts",
         &declared(&packages),
     );
-    assert_eq!(skips(&got), [(1, "react", UndeclaredPackage)]);
+    assert_eq!(skips(&got), [(3, "left-pad", UndeclaredPackage)]);
+}
+
+#[test]
+fn a_package_json_that_is_not_an_ancestor_declares_nothing() {
+    let packages = [("", &["react"][..]), ("packages/web", &["lodash"][..])];
     let got = run(
-        "import a from 'react';\nimport b from 'zod';",
+        "import a from 'react';\nimport b from 'lodash';",
         Language::TypeScript,
         "packages/other/page.ts",
         &declared(&packages),
     );
-    assert_eq!(got, FileImports::default());
+    assert_eq!(skips(&got), [(2, "lodash", UndeclaredPackage)]);
 }
 
 #[test]

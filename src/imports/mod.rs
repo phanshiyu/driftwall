@@ -6,7 +6,7 @@
 //! TypeScript and JavaScript resolve relative specifiers, and aliases defined by `compilerOptions`
 //! `paths` and `baseUrl` of the nearest `tsconfig.json` or `jsconfig.json` (see `tsconfig`). A
 //! specifier that no alias maps to a repository file is a package: ignored when it is a Node
-//! builtin or declared by the nearest `package.json` (see `package`), and otherwise recorded in
+//! builtin or declared by a `package.json` at or above the file (see `package`), and otherwise recorded in
 //! `FileImports::skipped`, like every reference that cannot be followed (a computed `require(x)`
 //! or `importlib.import_module(x)`, an `include_str!` of a file that is not source), never reported
 //! unresolved. A `tsconfig` or `package.json` that cannot be parsed is skipped, like a malformed
@@ -47,6 +47,8 @@ mod alias_tests;
 mod ecmascript_symbols_tests;
 #[cfg(test)]
 mod kind_tests;
+#[cfg(test)]
+mod probe_tests;
 #[cfg(test)]
 mod python_symbols_tests;
 #[cfg(test)]

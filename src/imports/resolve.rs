@@ -9,16 +9,19 @@ use super::package::{is_builtin, package_name};
 use super::{Environment, Reference, Resolution, ecmascript_symbols, nearest};
 use crate::model::SkipReason;
 
-/// Extensions tried, in order, for extension probing and directory index files.
-const SOURCE_EXTENSIONS: [&str; 8] = ["ts", "tsx", "mts", "cts", "js", "jsx", "mjs", "cjs"];
+/// Extensions tried, in order, for extension probing and directory index files. Declaration files
+/// come after the TypeScript files of their kind.
+const SOURCE_EXTENSIONS: [&str; 11] = [
+    "ts", "tsx", "d.ts", "mts", "cts", "d.mts", "d.cts", "js", "jsx", "mjs", "cjs",
+];
 
 /// The TypeScript ESM convention: a specifier written with a JavaScript extension refers to the
 /// TypeScript file that compiles to it.
 const JS_TO_TS: [(&str, &[&str]); 4] = [
-    ("js", &["ts", "tsx"]),
+    ("js", &["ts", "tsx", "d.ts"]),
     ("jsx", &["tsx"]),
-    ("mjs", &["mts"]),
-    ("cjs", &["cts"]),
+    ("mjs", &["mts", "d.mts"]),
+    ("cjs", &["cts", "d.cts"]),
 ];
 
 /// The table entry: an ECMAScript match carries one specifier and no names. The symbols it uses
@@ -36,13 +39,23 @@ pub fn ecmascript(
     if literal_text(reference.node, reference.source).is_none() {
         return vec![Resolution::Skipped(SkipReason::DynamicSpecifier)];
     }
-    let specifier = reference.specifier;
+    let specifier = strip_suffix(reference.specifier);
     let resolution = if is_relative(specifier) {
         resolve(specifier, importer, env.known)
     } else {
         resolve_bare(specifier, importer, env)
     };
     vec![resolution.using(ecmascript_symbols::used(reference.node, reference.source))]
+}
+
+/// The specifier without a bundler query or fragment: everything from the first `?`, or from the
+/// first `#` that is not the first character (a leading `#` marks a package `imports` key).
+fn strip_suffix(specifier: &str) -> &str {
+    let end = specifier
+        .char_indices()
+        .find(|&(index, c)| c == '?' || (c == '#' && index > 0))
+        .map_or(specifier.len(), |(index, _)| index);
+    specifier.get(..end).unwrap_or(specifier)
 }
 
 /// Resolves the relative `specifier`, written in `importer`, to a file in `known`. A specifier
@@ -72,7 +85,7 @@ pub fn resolve(specifier: &str, importer: &Path, known: &BTreeSet<PathBuf>) -> R
 /// relative import: exact, appended extensions, the JavaScript to TypeScript mapping and directory
 /// index files. The first that names a known file wins. A specifier that a `paths` pattern matches
 /// is an alias and is ignored when no file backs it. Anything else is a package: ignored when it
-/// is a Node builtin or declared by the nearest `package.json`, skipped otherwise.
+/// is a Node builtin or declared by a `package.json` at or above the importer, skipped otherwise.
 fn resolve_bare(specifier: &str, importer: &Path, env: &Environment<'_>) -> Resolution {
     if let Some(config) = nearest(env.aliases, importer) {
         let found = config
@@ -86,8 +99,13 @@ fn resolve_bare(specifier: &str, importer: &Path, env: &Environment<'_>) -> Reso
             return Resolution::Ignored;
         }
     }
-    let declared = nearest(env.packages, importer)
-        .is_some_and(|names| names.contains(package_name(specifier)));
+    let declared = importer.parent().is_some_and(|dir| {
+        dir.ancestors().any(|ancestor| {
+            env.packages
+                .get(ancestor)
+                .is_some_and(|names| names.contains(package_name(specifier)))
+        })
+    });
     if is_builtin(specifier) || declared {
         Resolution::Ignored
     } else {
