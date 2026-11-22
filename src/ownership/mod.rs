@@ -4,6 +4,7 @@ mod arch;
 mod error;
 mod exclude;
 mod language;
+mod lookup;
 mod module;
 
 #[cfg(test)]
@@ -21,6 +22,7 @@ use ignore::gitignore::{Gitignore, GitignoreBuilder};
 pub use error::{ArchProblem, OwnershipError};
 pub use exclude::exclusion_of;
 pub use language::language_of;
+pub use lookup::owner_in;
 pub use module::module_name;
 
 pub use crate::model::{DirTag, Scope, Tag};
