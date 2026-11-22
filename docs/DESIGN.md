@@ -91,6 +91,86 @@ declare at the `node: *` line of its `.arch` file.
 - Extraction is tree-sitter based and driven by a per-language table (extensions, grammar, query),
   not a trait hierarchy. Adding a language means adding a table entry and a query.
 
+### Import location
+
+An import's line is the line where its statement starts, not the line of the specifier string: the
+`import` or `export` keyword of a TypeScript or JavaScript statement, the first token of a
+`require(..)` or `import(..)` call expression, the `import` or `from` keyword of a Python statement,
+and the `use` declaration of Rust (its `pub` when it has one, never the attributes above it). A
+statement that spans several lines is one location, its first line. A Rust qualified path written
+in code (`crate::gitlab::fetch(..)`, or a path inside a macro argument) is not a statement and keeps
+the line of the path itself.
+
+### Import kind
+
+Every resolved import carries a `kind` (`Runtime`, `TypeOnly` or `Embed`, serialized as the
+lower-case strings `runtime`, `typeonly`, `embed`) and a `test_only` flag. Neither changes which
+edges exist: the linter treats every kind and test import like any other. They are recorded so that
+callers can decide what a type-only or test import is worth.
+
+`typeonly`:
+
+- TypeScript and JavaScript: `import type ...`, `export type ... from`, an import or re-export where
+  every specifier is written `type X` (`import { type A, type B } from`), and every import in a
+  declaration file (`.d.ts`, `.d.mts`, `.d.cts`). `import { type A, B }` is `runtime`, as is a
+  default or namespace import beside type specifiers, `import {} from`, and `require(..)` or
+  `import(..)`.
+- Python: an import anywhere inside the body of `if TYPE_CHECKING:` or `if typing.TYPE_CHECKING:`
+  (any nesting depth below it). Its `else` and `elif` branches and any other condition are `runtime`.
+
+`test_only`:
+
+- Rust: an import written inside an item or module annotated `#[cfg(test)]`, at any nesting depth
+  (`#[cfg(test)] mod tests { fn f() { use crate::a::B; } }`), including a `use` that is itself
+  annotated, and inside a module whose body starts with the inner attribute `#![cfg(test)]`. Only
+  the exact predicate `test` counts: `cfg(any(test, ..))`, `cfg(all(test, ..))` and `cfg(not(test))`
+  do not. An import in a file under a `tests/` directory or named `*_test.rs` or `*_tests.rs` is
+  `test_only` whatever it is written in. A file that a `#[cfg(test)] mod tests;` declaration pulls in
+  is not followed: its own name has to say it is a test file.
+- TypeScript and JavaScript: files named `*.test.*` or `*.spec.*` (a middle name segment equal to
+  `test` or `spec`, so `a.test.ts`, `a.spec.tsx`), or under a `__tests__`, `test` or `tests`
+  directory at any depth.
+- Python: files named `test_*.py`, `*_test.py` or `conftest.py`, or under a `tests` or `test`
+  directory at any depth.
+
+Duplicates merge on (location, target) only when their kind and `test_only` agree. Imports that
+reach the same file from the same location with different kinds (`import type { A } from './a';
+import { b } from './a';` on one line) stay two entries, so a type-only use is never recorded as
+runtime or the other way round. Entries are sorted by location, target, symbols, kind, `test_only`.
+
+### Embeds
+
+A Rust `include_str!("..")`, `include_bytes!("..")` or `include!("..")` (also written `std::..`) with
+a plain string literal embeds a file. The path is relative to the directory of the file that holds
+the macro. When it is a known repository source file, the embed is a resolved import of kind
+`embed` that uses no symbol: an embed is not a use of named items, so it is never `private-symbol`,
+and surfaces do not restrict embeds. It still counts as a dependency on that file's node, like any
+import. When the target is not a known source file (`.html`, `.css`, `.png`, a missing file, a path
+that leaves the repository), it is a skipped reference with reason `embed-non-source`.
+
+### Skipped references
+
+A reference driftwall cannot follow is never silently dropped. `FileImports.skipped` lists each as
+a location, the specifier as written and a typed reason (kebab-case in serialization):
+
+| Reason | When |
+| --- | --- |
+| `undeclared-package` | TypeScript or JavaScript specifier that is not relative, matches no `tsconfig` or `jsconfig` `paths` alias, is not a Node builtin and is not a declared dependency |
+| `dynamic-specifier` | `import(expr)` or `require(expr)` whose argument is not a string literal or a template without substitutions; Python `importlib.import_module(..)` and `__import__(..)` |
+| `embed-non-source` | a Rust embed whose target is not a known source file |
+
+For `undeclared-package`, a specifier that a `paths` pattern matches is an alias and never skipped,
+even when no file backs it (that stays silent, as before). `baseUrl` alone is not an alias: a bare
+specifier it cannot resolve falls through to the package check. A builtin is a `node:` specifier or
+one whose first path segment is a Node builtin module name (`fs`, `path`, `fs/promises`, ..). A
+declared dependency is a name listed in `dependencies`, `devDependencies`, `peerDependencies` or
+`optionalDependencies` of the nearest `package.json` at or above the file (only that one, never an
+ancestor's); `@a/b/sub` is the package `@a/b` and `pkg/sub` is `pkg`. A file with no readable
+`package.json` above it declares nothing. A malformed `package.json` is skipped silently, as a
+malformed `tsconfig` is, so the next ancestor applies. Declared third party packages stay silently
+ignored: they are not repository imports and nothing is wrong. `skipped` is not a lint finding.
+For a Python call the specifier is the text of its first argument.
+
 ## Symbols and public surfaces
 
 Every resolved import records the symbols it uses, exactly as written in the code, never inferred:
@@ -98,7 +178,10 @@ Every resolved import records the symbols it uses, exactly as written in the cod
 - Rust: names in `use` trees (`use crate::gitlab::{Client, fetch}` uses `Client`, `fetch`), the first
   item segment of a qualified path (`crate::gitlab::fetch_mrs(..)` uses `fetch_mrs`), and paths that
   start with a name the same file brought into scope with `use` or declared with `mod`
-  (`use crate::gitlab;` then `gitlab::Client` uses `Client`). A glob uses `*`.
+  (`use crate::gitlab;` then `gitlab::Client` uses `Client`). A glob (`use crate::gitlab::*;`) uses
+  `*`. A module binding (`use crate::gitlab;`, `use crate::gitlab as gl;` or `self` in a group,
+  `use crate::gitlab::{self, Client}`) uses no symbol on its own line: it is a dependency on the module file,
+  and the items reached through its name are recorded at their own sites.
 - TypeScript and JavaScript: named imports and re-exports by their exported name, `default` for a
   default import, `*` for namespace imports, `require`, dynamic `import()` and `export *`.
 - Python: `from a import b, c` uses `b`, `c` when they resolve to names inside `a`. `import a.b` and
@@ -127,16 +210,11 @@ owners never cascade) that uses a symbol outside it, or uses `*`, is a `private-
 import, one per symbol. An import that uses no symbol (side-effect) is never private, and imports
 inside one node are never checked. Nodes without an `exports` line are unrestricted.
 
-`*` in Rust is the one case that needs a decision. `use crate::gitlab;` (and `{self}`) records `*`
-on the module file, exactly like the glob `use crate::gitlab::*;`, but they differ in what the code
-can then reach: through a module name every item is written `gitlab::item` and recorded as its own
-import, which is checked against the surface at its own line, so the `*` adds nothing. A glob
-brings in names that are never seen. Syntax alone cannot tell them apart, so a `*` from a Rust file
-is allowed only when that same file also names an item of the same target file through another
-import (the evidence that the module name is in use and its items are being checked), and is a
-violation otherwise. Everywhere else (TypeScript `import * as`, `export *`, Python `import a.b`)
-`*` is a violation. Known gap: a glob in a file that also names an item of the same target by a
-qualified path is allowed, and its unqualified names go unseen.
+`*` is always a violation for a node with a surface: the importer reaches names that are never seen,
+so it cannot be checked. A Rust glob (`use crate::gitlab::*;`), TypeScript `import * as` and
+`export *`, and Python `import a.b` all record `*`. A Rust module binding records nothing, so
+`use crate::gitlab;` is not private by itself, and each `gitlab::item` used through it is checked
+against the surface at its own line, one per item.
 
 `diff` reports surface changes as `+ exports gitlab: X` and `- exports gitlab: Y`, one line per
 name; a node that loses its whole surface shows only `-` lines and is unrestricted from then on.
