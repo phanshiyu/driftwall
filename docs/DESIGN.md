@@ -36,7 +36,9 @@ A `.arch` file contains `node: <id>` and, optionally, `scope: here` (comments st
 directive at most once, `node:` is required). It tags its directory and all subdirectories, until a
 nested `.arch` overrides it. Source files are found by walking the repo with the `ignore` crate, so
 `.gitignore` is honored. `.driftwallignore` (gitignore syntax) adds exclusions. Only files with a
-supported extension count as source.
+supported extension count as source. One exception: an HTML file
+(`.html`, `.htm`) counts as source only when it holds a `<script` element, see "Svelte and HTML";
+any other HTML file is an asset, so documentation and fixture pages never become unmapped files.
 
 `scope: here` limits the tag to the files directly in its directory: it is not inherited by any
 subdirectory, so a source file added below it finds the next `.arch` further up, or none and is
@@ -124,7 +126,8 @@ declare at the `node: *` line of its `.arch` file.
   import into a first-party package that holds no such module, see "Python resolution".
 - Files with no owner never produce edge findings (no cascade from `unmapped-file`).
 - Resolution per language: TypeScript and JavaScript are described under "TypeScript and JavaScript
-  resolution" below. Python handles relative imports, `__init__.py`, and absolute imports against
+  resolution" below, Svelte and HTML under "Svelte and HTML" (their scripts resolve exactly like
+  TypeScript and JavaScript). Python handles relative imports, `__init__.py`, and absolute imports against
   an ordered list of import roots, see "Python resolution" below. Rust handles `use crate::`, `use super::`, and `mod` declarations are
   containment, not edges.
 - Extraction is tree-sitter based and driven by a per-language table (extensions, grammar, query),
@@ -161,12 +164,20 @@ the scan knows. The first that exists wins, in this order:
 1. the path itself as a source file, then the path itself as an asset (see "Asset files"). A candidate
    written with a trailing `/` is a directory and skips this step and the next two;
 2. the path with an extension appended, in this order: `ts`, `tsx`, `d.ts`, `mts`, `cts`, `d.mts`,
-   `d.cts`, `js`, `jsx`, `mjs`, `cjs`. The extension is appended, so `user.service` finds
-   `user.service.ts`;
+   `d.cts`, `js`, `jsx`, `mjs`, `cjs`, `svelte`. The extension is appended, so `user.service` finds
+   `user.service.ts`. `svelte` comes last, so a specifier that resolves without it never changes
+   meaning when a component of that name is added. Neither TypeScript nor Vite appends `.svelte`
+   themselves (the Svelte tooling expects the extension written out), so this step is a leniency of
+   driftwall and not a mirrored behaviour: `import X from './X'` finds `X.svelte` only when no
+   TypeScript or JavaScript file of that name exists;
 3. when the path is written with a JavaScript extension, the TypeScript files that compile to it:
    `.js` finds `.ts`, `.tsx`, `.d.ts`; `.jsx` finds `.tsx`; `.mjs` finds `.mts`, `.d.mts`; `.cjs` finds
    `.cts`, `.d.cts`;
 4. `index.<ext>` in that directory, with the extensions of step 2.
+
+Step 1 is why an existing file always wins over an appended extension: `../b/both.svelte` is the
+component `both.svelte` even when `both.svelte.ts` (a Svelte 5 module) exists next to it, and
+`../b/both` finds `both.ts` or another listed extension before `both.svelte`.
 
 A declaration file (`decl.d.ts`) is a source file like any other, so
 `import type { D } from '../types/decl'` resolves to it. A probe never adds an asset extension: `./data`
@@ -358,6 +369,86 @@ Every other argument (a name, a call, an f-string, a concatenation, a bytes or e
 literal that is not a dotted name) stays `dynamic-specifier` with the source text of the argument as
 specifier.
 
+### Svelte and HTML
+
+Two more source languages carry TypeScript or JavaScript inside markup. Their scripts are resolved,
+typed (`kind`, `test_only`), recorded (`symbols`) and skipped exactly like the imports of a
+TypeScript or JavaScript file: aliases, workspace packages, package `imports`, assets, probing and
+the declared-package check all apply, governed by the config and `package.json` files above the
+Svelte or HTML file. Everything outside the script elements is ignored: markup, text, `<style>`, and
+text that merely looks like an import.
+
+**Svelte** (`.svelte`, always source). Every `<script ...>` element is read, whatever its
+attributes, so the instance script, `context="module"` and the Svelte 5 `module` attribute all
+count. Its text, the characters between the end of the start tag and the end tag, is parsed as
+TypeScript when the `lang` attribute is `ts` or `typescript` (ASCII case-insensitive) and as
+JavaScript otherwise. Lines are lines of the `.svelte` file, not of the script: a statement on the
+third line of the file is reported at line 3. A `src` attribute on a Svelte script is not an import.
+
+**HTML** (`.html`, `.htm`). A file is source when its markup holds a `<script` element, a start tag
+whose name is `script` (ASCII case-insensitive) outside comments, whatever its `type`, `src` or
+content. A file without one is an asset. A file that cannot be read as UTF-8 is an asset too, so the
+check cannot fail a scan. These are read, in source order, each at the line where its start tag
+begins:
+
+- A script with no `src` whose `type` is absent, empty, `module`, `text/javascript` or
+  `application/javascript` (ASCII case-insensitive): its text is parsed as JavaScript, lines being
+  lines of the HTML file. Other types (`importmap`, `application/json`, templates) hold no
+  imports and are ignored.
+- A script with a `src` and one of those types: an import of that path, see below.
+- `<link rel="modulepreload" href="...">`, `rel` being a whitespace separated list of tokens
+  (ASCII case-insensitive): an import of the `href`. Other `<link>` elements (stylesheets, icons) are
+  not read.
+
+An import of a path (`src`, `href`) is of kind `runtime` and uses no symbol: it loads the whole file.
+Its value is trimmed and resolved as a document-relative URL: `main.js` means `./main.js`, `../x.js`
+and `./x.js` are relative to the directory of the HTML file, and a query or fragment is dropped as
+for any specifier. The file is probed like every relative path (see "Probing"), and a path that
+finds nothing is an `unresolved-import`.
+
+**Vite root.** A root-absolute specifier is one that starts with a single `/`. In an HTML file, in a
+`src` or `href` and in an `import`, `export ... from`, `import()` or `require()` of its inline
+scripts, it names a path below the Vite project root: the nearest ancestor directory of the HTML
+file, the file's own directory first, that holds a `package.json`, else the repository root. So
+`/src/forest-paint.ts` in `dev/index.html` is `<root>/src/forest-paint.ts`, with `<root>` the
+directory of `dev/package.json` or, when `dev` has none, of the nearest `package.json` above it. A
+root-absolute specifier is probed like a relative path, and one that finds no file is ignored, never
+unresolved: it may be served from Vite's `public` directory or by the dev server, which the scan
+cannot tell. Root-absolute specifiers are not special in TypeScript, JavaScript or Svelte files.
+
+A remote URL is ignored: a specifier that starts with `//` or with a scheme (`https:`, `http:`,
+`data:`, `blob:`, ..: a letter, then letters, digits, `+`, `-` or `.`, then `:`). In an HTML file
+this holds for `src`, `href` and for the specifiers of inline scripts, which are not skipped as
+undeclared packages either.
+
+#### The markup scanner
+
+Svelte and HTML are read by a small scanner, not a parser. It walks the text for `<` and handles:
+
+- comments `<!-- ... -->` (to the first `-->`, or the end of the file when unterminated): nothing
+  inside is read, so a commented-out script is ignored. `<!doctype ...>` and `<? ... ?>` are skipped
+  to their `>`, end tags are skipped, and a `<` not followed by a letter, `/`, `!` or `?` is text;
+- start tags, with attributes in any order and any case of the name: a name, optionally `=` and a
+  value written in double quotes, single quotes or unquoted (up to whitespace or `>`). A quoted
+  value may span lines and contain `>`. A repeated attribute counts once, the first. In Svelte
+  a value may also be a `{ ... }` expression, read to its matching brace with quoted strings inside
+  skipped, so `on:click={() => run()}` ends where it should. A tag with no closing `>` ends the scan;
+- the raw text elements `<script>` and `<style>`: the content runs to the first `</script` or
+  `</style` (ASCII case-insensitive) followed by whitespace, `/` or `>`, or to the end of the file.
+  So a string holding `</script>` ends the script as it does in a browser, and a `<script` inside a
+  `<style>` is not an element;
+- a start tag written `<script ... />` has no content and consumes no text after it, in HTML as in
+  Svelte. HTML itself does not treat `/>` on a script as self-closing; driftwall does, because it
+  is how such tags are written and the alternative would swallow the rest of the file;
+- CRLF and LF line endings: a line is counted at each `\n`, so `\r\n` files report the same lines
+  as `\n` files.
+
+It does not handle character references (`&amp;` in a `src` is read as written), `<template>`
+content as separate from the document, CDATA sections, `<textarea>` or `<title>` raw text, Svelte
+`{...}` expressions in text (`{@html '<script>..</script>'}` is read as a script), conditional
+comments, or an unquoted attribute value that contains `>`. A script inside any element, such as
+`<svelte:head>`, is found like one at the top level.
+
 ### Import location
 
 An import's line is the line where its statement starts, not the line of the specifier string: the
@@ -367,7 +458,9 @@ and the `use` declaration of Rust (its `pub` when it has one, never the attribut
 statement that spans several lines is one location, its first line. A Rust qualified path written
 in code (`crate::gitlab::fetch(..)`, or a path inside a macro argument) is not a statement and keeps
 the line of the path itself. A skipped Python `importlib.import_module(..)` call is located at the
-call start, and a Rust embed at the start of its macro invocation.
+call start, and a Rust embed at the start of its macro invocation. In a Svelte or HTML file every
+line is a line of that file, not of the script, and a `src` or `href` is located at the start of its
+tag (see "Svelte and HTML").
 
 ### Import kind
 
@@ -395,9 +488,9 @@ callers can decide what a type-only or test import is worth.
   do not. An import in a file under a `tests/` directory or named `*_test.rs` or `*_tests.rs` is
   `test_only` whatever it is written in. A file that a `#[cfg(test)] mod tests;` declaration pulls in
   is not followed: its own name has to say it is a test file.
-- TypeScript and JavaScript: files named `*.test.*` or `*.spec.*` (a middle name segment equal to
-  `test` or `spec`, so `a.test.ts`, `a.spec.tsx`), or under a `__tests__`, `test` or `tests`
-  directory at any depth.
+- TypeScript, JavaScript, Svelte and HTML: files named `*.test.*` or `*.spec.*` (a middle name segment
+  equal to `test` or `spec`, so `a.test.ts`, `a.spec.tsx`, `a.test.svelte`), or under a `__tests__`,
+  `test` or `tests` directory at any depth.
 - Python: files named `test_*.py`, `*_test.py` or `conftest.py`, or under a `tests` or `test`
   directory at any depth.
 
