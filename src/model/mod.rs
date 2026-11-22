@@ -226,8 +226,10 @@ pub struct DirTag {
     pub scope: Scope,
 }
 
-/// Why the scan left a source file out of the repository's own source.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+/// Why the scan left a source file out of the repository's own source. Serialized as the word
+/// [`Exclusion::as_str`] gives.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Exclusion {
     /// The file is below a directory named `vendor` or `third_party`.
     Vendored,
@@ -271,6 +273,12 @@ pub struct Ownership {
     /// Assets with no inherited tag, or whose module name under `node: *` is not a node id. Never
     /// a finding: they only let an import of them resolve.
     pub asset_unmapped: BTreeSet<PathBuf>,
+    /// Walked code files driftwall has no language for, by key: the extension (`swift`, `sh`) or
+    /// `shebang` for an extensionless script. Neither owned nor unmapped, and never a finding.
+    pub unread: BTreeMap<String, BTreeSet<PathBuf>>,
+    /// Source files that only `.driftwallignore` hides. Never owned or unmapped, and never a
+    /// finding.
+    pub ignored: BTreeSet<PathBuf>,
 }
 
 /// A symbol an import uses from its target file, exactly as the importing code writes it.

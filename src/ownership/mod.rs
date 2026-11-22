@@ -1,6 +1,7 @@
 //! Walks the repository and maps every file to its owning node via `.arch` files.
 
 mod arch;
+mod census;
 mod error;
 mod exclude;
 mod language;
@@ -9,6 +10,8 @@ mod module;
 
 #[cfg(test)]
 mod asset_tests;
+#[cfg(test)]
+mod census_tests;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsStr;
@@ -19,6 +22,7 @@ use std::path::{Component, Path, PathBuf};
 use ignore::WalkBuilder;
 use ignore::gitignore::{Gitignore, GitignoreBuilder};
 
+pub use census::{SHEBANG, line_count};
 pub use error::{ArchProblem, OwnershipError};
 pub use exclude::{HEADER_LINES, announces_generated, exclusion_of};
 pub use language::language_of;
@@ -97,6 +101,9 @@ impl Decision {
 /// [`Ownership::asset_owners`] or [`Ownership::asset_unmapped`]. Assets never appear in
 /// [`Ownership::owners`], [`Ownership::unmapped`], [`Ownership::tags`] or [`Ownership::excluded`].
 ///
+/// The census of what is not read (see "Blind spots" in `docs/DESIGN.md`) is [`Ownership::unread`]
+/// and [`Ownership::ignored`]. It never changes the maps above.
+///
 /// Honors `.gitignore` (with or without a `.git` directory) and `.driftwallignore`. Machine
 /// specific ignore sources (global git config, `.git/info/exclude`, parent directories) are
 /// deliberately not consulted so the result depends only on the contents of `root`.
@@ -110,6 +117,8 @@ pub fn scan(root: &Path) -> Result<Ownership, OwnershipError> {
         assets,
         arch_files,
         excluded,
+        unread,
+        ignored,
     } = discover(root)?;
 
     let mut decisions: BTreeMap<PathBuf, Decision> = BTreeMap::new();
@@ -139,6 +148,8 @@ pub fn scan(root: &Path) -> Result<Ownership, OwnershipError> {
 
     let mut ownership = Ownership {
         excluded,
+        unread,
+        ignored,
         ..Ownership::default()
     };
     let mut derived: BTreeSet<(Location, String)> = BTreeSet::new();
@@ -285,6 +296,8 @@ struct Discovered {
     assets: Vec<PathBuf>,
     arch_files: Vec<PathBuf>,
     excluded: BTreeMap<Exclusion, BTreeSet<PathBuf>>,
+    unread: BTreeMap<String, BTreeSet<PathBuf>>,
+    ignored: BTreeSet<PathBuf>,
 }
 
 /// The patterns of the root `.driftwallignore` that whitelist (`!pattern`) files.
@@ -312,7 +325,9 @@ fn read_head(path: &Path) -> String {
     String::from_utf8_lossy(&head).into_owned()
 }
 
-fn discover(root: &Path) -> Result<Discovered, OwnershipError> {
+/// The walker over `root`. With `driftwallignore` off it still honors `.gitignore`, so the files it
+/// finds beyond the normal walk are exactly the ones only `.driftwallignore` hides.
+fn walker(root: &Path, driftwallignore: bool) -> WalkBuilder {
     let mut builder = WalkBuilder::new(root);
     builder
         .hidden(false)
@@ -321,17 +336,17 @@ fn discover(root: &Path) -> Result<Discovered, OwnershipError> {
         .git_global(false)
         .git_exclude(false)
         .require_git(false)
-        .add_custom_ignore_filename(IGNORE_FILE)
         .filter_entry(|entry| entry.file_name() != OsStr::new(".git"));
-    let opted_in = opt_ins(root);
+    if driftwallignore {
+        builder.add_custom_ignore_filename(IGNORE_FILE);
+    }
+    builder
+}
 
-    let mut found = Discovered {
-        sources: Vec::new(),
-        assets: Vec::new(),
-        arch_files: Vec::new(),
-        excluded: BTreeMap::new(),
-    };
-    for entry in builder.build() {
+/// The walked files below `root`, relative and in walk order.
+fn walked_files(root: &Path, driftwallignore: bool) -> Result<Vec<PathBuf>, OwnershipError> {
+    let mut files = Vec::new();
+    for entry in walker(root, driftwallignore).build() {
         let entry = entry.map_err(|source| OwnershipError::Walk {
             root: root.to_path_buf(),
             source,
@@ -339,16 +354,34 @@ fn discover(root: &Path) -> Result<Discovered, OwnershipError> {
         if !entry.file_type().is_some_and(|kind| kind.is_file()) {
             continue;
         }
-        let Ok(relative) = entry.path().strip_prefix(root) else {
-            continue;
-        };
-        let relative: PathBuf = relative.components().collect();
+        if let Ok(relative) = entry.path().strip_prefix(root) {
+            files.push(relative.components().collect());
+        }
+    }
+    Ok(files)
+}
+
+fn discover(root: &Path) -> Result<Discovered, OwnershipError> {
+    let opted_in = opt_ins(root);
+
+    let mut found = Discovered {
+        sources: Vec::new(),
+        assets: Vec::new(),
+        arch_files: Vec::new(),
+        excluded: BTreeMap::new(),
+        unread: BTreeMap::new(),
+        ignored: BTreeSet::new(),
+    };
+    let mut has_ignore_file = false;
+    for relative in walked_files(root, true)? {
+        has_ignore_file |= relative.file_name() == Some(OsStr::new(IGNORE_FILE));
         if relative.file_name() == Some(OsStr::new(ARCH_FILE)) {
             found.arch_files.push(relative);
         } else if language::is_source(root, &relative) {
             let reason = exclusion_of(&relative)
                 .or_else(|| {
-                    announces_generated(&read_head(entry.path())).then_some(Exclusion::Generated)
+                    announces_generated(&read_head(&root.join(&relative)))
+                        .then_some(Exclusion::Generated)
                 })
                 .filter(|_| {
                     !opted_in
@@ -362,13 +395,34 @@ fn discover(root: &Path) -> Result<Discovered, OwnershipError> {
                 None => found.sources.push(relative),
             }
         } else {
+            if let Some(key) = census::unread_key(root, &relative) {
+                found
+                    .unread
+                    .entry(key)
+                    .or_default()
+                    .insert(relative.clone());
+            }
             found.assets.push(relative);
         }
     }
     found.sources.sort();
     found.assets.sort();
     found.arch_files.sort();
+    if has_ignore_file {
+        found.ignored = hidden_sources(root, &found)?;
+    }
     Ok(found)
+}
+
+/// The source files that only `.driftwallignore` hides: the ones a second walk without it finds
+/// (with `.gitignore` still honored) and the first walk did not.
+fn hidden_sources(root: &Path, seen: &Discovered) -> Result<BTreeSet<PathBuf>, OwnershipError> {
+    let seen_excluded = |file: &PathBuf| seen.excluded.values().any(|files| files.contains(file));
+    Ok(walked_files(root, false)?
+        .into_iter()
+        .filter(|file| language_of(file).is_some())
+        .filter(|file| seen.sources.binary_search(file).is_err() && !seen_excluded(file))
+        .collect())
 }
 
 #[cfg(test)]
