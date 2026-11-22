@@ -8,7 +8,7 @@ use super::ReportError;
 use super::common::counts;
 
 /// Bumped on any breaking change to the JSON shape.
-const SCHEMA_VERSION: u32 = 1;
+pub(super) const SCHEMA_VERSION: u32 = 1;
 
 #[derive(Serialize)]
 struct Document<'a> {

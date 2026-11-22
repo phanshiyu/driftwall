@@ -4,7 +4,7 @@ use std::fmt::Write as _;
 
 use crate::model::LintReport;
 
-use super::common::{counts, kind_str, severity_str, slash_path};
+use super::common::{counts, kind_str, plural, severity_str, slash_path};
 
 /// Renders `report` as uncoloured text, one block per violation plus a summary line.
 #[must_use]
@@ -41,14 +41,6 @@ fn summary(report: &LintReport) -> String {
         plural(errors, "error"),
         plural(warnings, "warning")
     )
-}
-
-fn plural(n: usize, noun: &str) -> String {
-    if n == 1 {
-        format!("{n} {noun}")
-    } else {
-        format!("{n} {noun}s")
-    }
 }
 
 #[cfg(test)]
