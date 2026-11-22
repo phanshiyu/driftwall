@@ -26,7 +26,7 @@ use ignore::gitignore::{Gitignore, GitignoreBuilder};
 pub use census::{SHEBANG, line_count};
 pub use error::{ArchProblem, OwnershipError};
 pub use exclude::{HEADER_LINES, announces_generated, exclusion_of};
-pub use language::language_of;
+pub use language::{language_in, language_of};
 pub use locate::{FileKind, Located, locate};
 pub use lookup::owner_in;
 pub use module::module_name;

@@ -165,6 +165,10 @@ pub enum Language {
     Svelte,
     /// HTML pages that hold a `<script` element: their inline scripts, `src` and module preloads.
     Html,
+    /// Swift: `import` declarations, resolved through the targets of `Package.swift`.
+    Swift,
+    /// Shell scripts (`sh`, `bash`, `zsh`, `dash`): `source` and `.` commands.
+    Shell,
 }
 
 impl Language {

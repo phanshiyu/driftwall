@@ -182,6 +182,7 @@ pub fn spec(language: Language) -> Option<&'static LanguageSpec> {
         Language::Rust => Some(&RUST),
         Language::Svelte => Some(&SVELTE),
         Language::Html => Some(&HTML),
+        Language::Swift | Language::Shell => None,
     }
 }
 

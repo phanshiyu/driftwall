@@ -148,7 +148,7 @@ pub fn observe(root: &Path, options: &LintOptions) -> Result<Observation, LintEr
         .owners
         .keys()
         .chain(&ownership.unmapped)
-        .filter_map(|path| Some((path.clone(), ownership::language_of(path)?)))
+        .filter_map(|path| Some((path.clone(), ownership::language_in(root, path)?)))
         .collect();
     let assets: BTreeSet<PathBuf> = ownership
         .asset_owners

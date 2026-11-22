@@ -131,7 +131,7 @@ pub fn run(
         .owners
         .keys()
         .chain(&ownership.unmapped)
-        .filter_map(|path| Some((path.clone(), ownership::language_of(path)?)))
+        .filter_map(|path| Some((path.clone(), ownership::language_in(root, path)?)))
         .collect();
     if files.is_empty() {
         return Err(InitError::NoSources);
