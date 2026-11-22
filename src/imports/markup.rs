@@ -117,7 +117,8 @@ pub fn resolve_inline(
     }
     if is_root_absolute(specifier) {
         let symbols = ecmascript_symbols::used(reference.node, reference.source);
-        return vec![root_absolute(specifier, importer, env).using(symbols)];
+        let resolution = root_absolute(specifier, importer, env);
+        return vec![resolve::with_query_kind(specifier, resolution).using(symbols)];
     }
     resolve::ecmascript(reference, importer, env)
 }

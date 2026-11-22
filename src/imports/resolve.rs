@@ -48,7 +48,31 @@ pub fn ecmascript(
     } else {
         resolve_bare(specifier, importer, env)
     };
+    let resolution = with_query_kind(reference.specifier, resolution);
     vec![resolution.using(ecmascript_symbols::used(reference.node, reference.source))]
+}
+
+/// `resolution` for a specifier written as `specifier`, with a source file target turned into an
+/// embed when the query asks for its text or URL: a `raw`, `url` or `inline` parameter and no
+/// `worker` or `sharedworker` one. Anything else is returned unchanged.
+pub(super) fn with_query_kind(specifier: &str, resolution: Resolution) -> Resolution {
+    let query = specifier
+        .split_once('?')
+        .map_or("", |(_, query)| query.split('#').next().unwrap_or_default());
+    let names: Vec<&str> = query
+        .split('&')
+        .map(|parameter| parameter.split('=').next().unwrap_or_default())
+        .collect();
+    let loads_data = names
+        .iter()
+        .any(|name| matches!(*name, "raw" | "url" | "inline"))
+        && !names
+            .iter()
+            .any(|name| matches!(*name, "worker" | "sharedworker"));
+    match resolution {
+        Resolution::Resolved { target, .. } if loads_data => Resolution::Embedded { target },
+        other => other,
+    }
 }
 
 /// The specifier without a bundler query or fragment: everything from the first `?`, or from the

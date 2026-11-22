@@ -83,6 +83,8 @@ mod python_symbols_tests;
 #[cfg(test)]
 mod python_tests;
 #[cfg(test)]
+mod query_tests;
+#[cfg(test)]
 mod references_tests;
 #[cfg(test)]
 mod rust_dogfood_tests;

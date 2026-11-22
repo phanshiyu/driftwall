@@ -237,7 +237,8 @@ A specifier is resolved in this order, the first step that applies deciding.
 
 1. **Suffix.** A bundler query or fragment is not part of the file name: everything from the first
    `?`, or from the first `#` that is not the first character, is removed before resolution
-   (`./a.svg?raw`, `./w.ts?worker`, `./a.css?inline`, `./x.png?url&v=2`, `./a#frag`). Messages
+   (`./a.svg?raw`, `./w.ts?worker`, `./a.css?inline`, `./x.png?url&v=2`, `./a#frag`); a `raw`, `url`
+   or `inline` query decides the kind of the import, see "Import kind". Messages
    (`unresolved-import`, skipped references) keep the specifier as written. A specifier that starts
    with `#` is a package `imports` key.
 2. **Relative** (`.`, `..`, `./x`, `../x`): the path is joined onto the directory of the importer and
@@ -749,6 +750,16 @@ runtime or the other way round. Entries are sorted by location, target, symbols,
 `private-symbol`, it is a dependency on the node that owns the asset, and it is `asset` even inside a
 declaration file. As for every import, an asset owned by nobody or by the importer's own node is no
 edge.
+
+`embed` by query: a bundler query makes an import of a source file a load of its text or URL, not of
+its code. A TypeScript, JavaScript, Svelte or HTML import (also a root-absolute one, see "Svelte and
+HTML") whose specifier has a query with a parameter named `raw`, `url` or `inline` (`./a.ts?raw`,
+`./a.ts?url&v=2`, `./a.ts?inline`; the parameter name is what precedes any `=`) and that resolves to a
+source file is `embed`: a resolved import that uses no symbol, so it is never `private-symbol`, and
+still a dependency on that file's node. Any other query, `?worker` and `?sharedworker` included,
+leaves the import `runtime`, and so does any query that holds `worker` or `sharedworker` beside
+`inline` (`?worker&inline` is a worker). An import of an asset with such a query stays `asset`, and
+one that resolves to nothing is as unresolved as without the query.
 
 ### Embeds
 
