@@ -1,0 +1,40 @@
+%% driftwall architecture contract (dogfooded).
+%% Grammar: flowchart subset. See docs/DESIGN.md#contract-format.
+%% Solid arrow  = implemented dependency, enforced.
+%% Dotted arrow = planned dependency, tolerated until built.
+flowchart LR
+  subgraph entry["Entry"]
+    cli["cli: args, exit codes"]
+  end
+
+  subgraph engine["Engine"]
+    lint["lint: reconcile code graph vs diagram"]
+    init["init: baseline generator"]
+  end
+
+  subgraph sources["Sources"]
+    diagram["diagram: parse + render contract"]
+    ownership["ownership: walk, .arch, ignores"]
+    imports["imports: tree-sitter extract + resolve"]
+  end
+
+  subgraph shared["Shared"]
+    model["model: ids, edges, violations"]
+    report["report: text, json, sarif"]
+  end
+
+  cli -.-> lint
+  cli -.-> init
+  cli -.-> report
+  lint -.-> diagram
+  lint -.-> ownership
+  lint -.-> imports
+  lint -.-> model
+  init -.-> diagram
+  init -.-> ownership
+  init -.-> imports
+  init -.-> model
+  diagram -.-> model
+  ownership -.-> model
+  imports -.-> model
+  report -.-> model
