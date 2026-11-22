@@ -6,7 +6,9 @@ use std::path::{Component, Path, PathBuf};
 
 use super::extract::literal_text;
 use super::package::{is_builtin, package_name};
-use super::{Candidate, Environment, Reference, Resolution, ecmascript_symbols, nearest};
+use super::{
+    AliasConfig, Candidate, Environment, Project, Reference, Resolution, ecmascript_symbols,
+};
 use crate::model::SkipReason;
 
 /// Extensions tried, in order, for extension probing and directory index files. Declaration files
@@ -89,7 +91,7 @@ pub fn resolve(specifier: &str, importer: &Path, known: &BTreeSet<PathBuf>) -> R
 /// alias and is ignored when no file backs it. Anything else is a package: ignored when it is a
 /// Node builtin or declared by a `package.json` at or above the importer, skipped otherwise.
 fn resolve_bare(specifier: &str, importer: &Path, env: &Environment<'_>) -> Resolution {
-    let config = nearest(env.aliases, importer);
+    let config = governing(env, importer);
     if let Some(target) = config.and_then(|config| first_known(&config.candidates(specifier), env))
     {
         return Resolution::resolved(target);
@@ -117,6 +119,20 @@ fn resolve_bare(specifier: &str, importer: &Path, env: &Environment<'_>) -> Reso
     } else {
         Resolution::Skipped(SkipReason::UndeclaredPackage)
     }
+}
+
+/// The alias configuration that governs `importer`: walking up from its directory, the first
+/// directory whose solution-style config references a project that includes `importer`, or that
+/// holds a config of its own.
+fn governing<'a>(env: &Environment<'a>, importer: &Path) -> Option<&'a AliasConfig> {
+    importer.parent()?.ancestors().find_map(|dir| {
+        let referenced = env
+            .projects
+            .get(dir)
+            .and_then(|projects| projects.iter().find(|project| project.includes(importer)))
+            .map(Project::config);
+        referenced.or_else(|| env.aliases.get(dir))
+    })
 }
 
 /// The first of `candidates`, in order, that probes to a known file.

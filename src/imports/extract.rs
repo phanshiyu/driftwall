@@ -47,6 +47,7 @@ pub fn extract(
             aliases: &aliases,
             packages: &BTreeMap::new(),
             workspaces: &Workspaces::default(),
+            projects: &BTreeMap::new(),
         },
     )
 }

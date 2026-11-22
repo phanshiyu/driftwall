@@ -3,14 +3,17 @@
 //! Extraction is driven by the per-language table in [`spec`]: a grammar, a query capturing import
 //! specifiers, and a resolver. TypeScript, JavaScript, Python and Rust are filled in.
 //!
-//! TypeScript and JavaScript resolve relative specifiers, and aliases defined by `compilerOptions`
-//! `paths` and `baseUrl` of the nearest `tsconfig.json` or `jsconfig.json` (see `tsconfig`). A
-//! specifier that no alias maps to a repository file is a package: ignored when it is a Node
-//! builtin or declared by a `package.json` at or above the file (see `package`), and otherwise recorded in
-//! `FileImports::skipped`, like every reference that cannot be followed (a computed `require(x)`
-//! or `importlib.import_module(x)`, an `include_str!` of a file that is not source), never reported
-//! unresolved. A `tsconfig` or `package.json` that cannot be parsed is skipped, like a malformed
-//! `Cargo.toml`. Import types (`typeof import('./a')`) are not extracted. For Python, `.pyi` stubs
+//! TypeScript and JavaScript resolve relative specifiers, aliases defined by `compilerOptions`
+//! `paths` and `baseUrl` of the governing `tsconfig.json` or `jsconfig.json` (see `tsconfig`, and
+//! `project` for solution configs that `references` other configs), workspace packages imported by
+//! name and package `imports` (see `workspace`). Bundler query suffixes are dropped first and
+//! declaration files are probed like source. A specifier that none of these maps to a repository
+//! file is a package: ignored when it is a Node builtin or declared by a `package.json` at or above
+//! the file (see `package`), and otherwise recorded in `FileImports::skipped`, like every reference
+//! that cannot be followed (a computed `require(x)` or `importlib.import_module(x)`, an
+//! `include_str!` of a file that is not source), never reported unresolved. A `tsconfig` or
+//! `package.json` that cannot be parsed is skipped, like a malformed `Cargo.toml`. Import types
+//! (`typeof import('./a')`) are not extracted. For Python, `.pyi` stubs
 //! and import roots other than the repository root and `src/` are not supported. For Rust, see
 //! `rust`'s limitations: `#[path]` modules, `extern crate` renames and names that only a glob
 //! import brings in are not followed. A path that starts with a module name the same file brought
@@ -29,6 +32,7 @@ mod extract;
 mod glob;
 mod manifest;
 mod package;
+mod project;
 mod python;
 mod queries;
 mod resolve;
@@ -59,6 +63,8 @@ mod python_symbols_tests;
 #[cfg(test)]
 mod python_tests;
 #[cfg(test)]
+mod references_tests;
+#[cfg(test)]
 mod rust_dogfood_tests;
 #[cfg(test)]
 mod rust_symbols_tests;
@@ -86,9 +92,10 @@ pub use error::ImportsError;
 pub use extract::{extract, extract_in};
 pub use manifest::library_crates;
 pub use package::package_dependencies;
+pub use project::Project;
 pub use rust_scope::Bindings;
 pub use spec::{LanguageSpec, spec};
-pub use tsconfig::alias_configs;
+pub use tsconfig::{alias_configs, project_configs};
 pub use workspace::{Workspaces, discover as workspaces};
 
 /// The imports found in one file. Every list is sorted and free of duplicates.
@@ -124,6 +131,9 @@ pub struct Environment<'a> {
     /// The workspace members of the repository by package name, and the `imports` of its
     /// `package.json` files. Only TypeScript and JavaScript resolution reads it.
     pub workspaces: &'a Workspaces,
+    /// Repository-relative directory holding a solution-style `tsconfig.json` to the projects its
+    /// `references` name, in the order written. Only TypeScript and JavaScript resolution reads it.
+    pub projects: &'a BTreeMap<PathBuf, Vec<Project>>,
 }
 
 /// One query match handed to a language resolver: the module reference as written and, for
@@ -207,12 +217,14 @@ pub fn collect(
     let aliases = alias_configs(root, files);
     let packages = package_dependencies(root, files);
     let workspaces = workspaces(root, files);
+    let projects = project_configs(root, files);
     let env = Environment {
         known: &known,
         crates: &crates,
         aliases: &aliases,
         packages: &packages,
         workspaces: &workspaces,
+        projects: &projects,
     };
     let entries: Vec<(&PathBuf, &Language)> = files.iter().collect();
     // why: collected into an indexed Vec so the reported error never depends on thread scheduling.

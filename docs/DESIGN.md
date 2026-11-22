@@ -172,9 +172,10 @@ A referenced config includes a file when
 `include`, `exclude` and `files` are read from the config or, when it does not set one, from the
 nearest config of its `extends` chain that does, relative to the directory of the file that sets it.
 Patterns are relative to that directory: `*` matches any characters inside one path segment, `?` one
-character, `**` any number of directories (also none). A pattern also matches everything below it, so
-`src` includes `src/a/b.ts`. A leading `./` is ignored and a pattern that leaves its directory matches
-nothing. `exclude` does not apply to `files`. `compilerOptions` such as `rootDir` and the file
+character, `**` any number of directories (also none). A pattern whose last segment has no `.`, `*`
+or `?` names a directory and everything below it, so `src` includes `src/a/b.ts`; any other pattern
+names files, so `src/*` includes `src/b.ts` and not `src/a/b.ts`. A leading `./` is ignored and a
+pattern that leaves its directory matches nothing. `exclude` does not apply to `files`. `compilerOptions` such as `rootDir` and the file
 extensions TypeScript would compile do not decide inclusion.
 
 #### Workspace packages

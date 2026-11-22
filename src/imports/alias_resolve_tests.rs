@@ -33,6 +33,7 @@ fn run(source: &str, repo: &[&str], config: AliasConfig) -> FileImports {
         aliases: &aliases,
         packages: &BTreeMap::new(),
         workspaces: &Workspaces::default(),
+        projects: &BTreeMap::new(),
     };
     extract_in(
         source,
@@ -205,6 +206,7 @@ fn files_without_a_governing_config_see_no_aliases_and_the_specifier_is_a_packag
         aliases: &aliases,
         packages: &BTreeMap::new(),
         workspaces: &Workspaces::default(),
+        projects: &BTreeMap::new(),
     };
     let got = extract_in(
         "import a from '@/a';",

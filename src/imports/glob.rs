@@ -34,6 +34,31 @@ pub fn matches(pattern: &str, path: &Path) -> bool {
         .is_some_and(|segments| match_segments(&pattern_segments(pattern), &segments))
 }
 
+/// Whether `pattern`, written as an `include` entry, selects the file `path`.
+///
+/// A pattern whose last segment has no `.`, `*` or `?` names a directory, and selects everything
+/// below it, as TypeScript reads `src`. Any other pattern names files, so `src/*` selects only the
+/// files directly in `src`. The empty pattern names everything.
+#[must_use]
+pub fn covers(pattern: &str, path: &Path) -> bool {
+    let Some(segments) = path_segments(path) else {
+        return false;
+    };
+    let pattern = pattern_segments(pattern);
+    let names_directory = pattern
+        .last()
+        .is_none_or(|last| !last.contains(['.', '*', '?']));
+    if !names_directory {
+        return match_segments(&pattern, &segments);
+    }
+    pattern.is_empty()
+        || (1..=segments.len()).any(|length| {
+            segments
+                .get(..length)
+                .is_some_and(|head| match_segments(&pattern, head))
+        })
+}
+
 fn match_segments(pattern: &[&str], path: &[&str]) -> bool {
     match pattern.split_first() {
         None => path.is_empty(),
@@ -113,5 +138,23 @@ mod tests {
     #[test]
     fn a_pattern_that_leaves_its_directory_matches_nothing() {
         assert!(!is("../a", "a"));
+        assert!(!covers("../a", Path::new("a/b.ts")));
+    }
+
+    #[test]
+    fn covers_includes_everything_below_a_match() {
+        assert!(covers("src", Path::new("src/a/b.ts")));
+        assert!(covers("src/*", Path::new("src/b.ts")));
+        assert!(!covers("src/*", Path::new("src/a/b.ts")));
+        assert!(covers("src/**", Path::new("src/a/b.ts")));
+        assert!(covers("vite.config.ts", Path::new("vite.config.ts")));
+        assert!(!covers("vite.config.ts", Path::new("vite.config.ts/x.ts")));
+        assert!(!covers("app.v2", Path::new("app.v2/a.ts")));
+        assert!(covers("src/*.ts", Path::new("src/a.ts")));
+        assert!(!covers("src/*.ts", Path::new("src/a/b.ts")));
+        assert!(!covers("src", Path::new("lib/a.ts")));
+        assert!(!covers("src", Path::new("srcs/a.ts")));
+        assert!(covers("", Path::new("anything/at/all.ts")));
+        assert!(covers("**/*", Path::new("a/b.ts")));
     }
 }

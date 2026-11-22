@@ -21,17 +21,17 @@
 //!   after [`MAX_EXTENDS_DEPTH`] files.
 //! - A solution-style config (`"files": []` next to non-empty `references`) that defines neither
 //!   `paths` nor `baseUrl` after `extends` is not a config for the files below it: it is skipped,
-//!   so the nearest ancestor config still applies. `references` are not followed. Any other
-//!   config without `paths` or `baseUrl` is kept as an empty config and hides ancestor aliases,
-//!   as it does in TypeScript.
+//!   so the nearest ancestor config still applies, except for the files a referenced project
+//!   includes (see [`super::project`]). Any other config without `paths` or `baseUrl` is kept as an
+//!   empty config and hides ancestor aliases, as it does in TypeScript.
 //! - A config that cannot be parsed, or whose `compilerOptions.baseUrl` or `paths` has the wrong
 //!   type, is skipped silently, like a malformed `Cargo.toml` in [`super::library_crates`]: the
 //!   directory has no config and ancestors apply. It is never fatal. A directory whose
 //!   `tsconfig.json` is broken does not fall back to its `jsconfig.json`.
 //! - A `baseUrl` that points outside the repository gives an empty config, since no alias can
 //!   name a repository file.
-//! - `include`, `exclude` and `files` do not decide which files a config governs. Only the
-//!   directory does.
+//! - `include`, `exclude` and `files` do not decide which files a config governs, except for a
+//!   referenced project (see [`super::project`]). Otherwise only the directory does.
 //!
 //! The files are JSONC. Comments, trailing commas and a leading byte order mark are accepted.
 
@@ -46,6 +46,7 @@ use serde::de::{Deserializer, MapAccess, Visitor};
 use serde_json::Value;
 
 use super::alias::{AliasConfig, Pattern};
+use super::project::{self, Project};
 use super::resolve::join_normalised;
 use crate::model::Language;
 
@@ -56,7 +57,7 @@ const CONFIG_FILES: [&str; 2] = ["tsconfig.json", "jsconfig.json"];
 pub const MAX_EXTENDS_DEPTH: usize = 16;
 
 /// Reads a repository-relative file. `None` when it does not exist or cannot be read.
-type Reader<'a> = &'a dyn Fn(&Path) -> Option<String>;
+pub(super) type Reader<'a> = &'a dyn Fn(&Path) -> Option<String>;
 
 /// Maps each directory that holds a usable `tsconfig.json` or `jsconfig.json` to the aliases it
 /// defines, reading from under `root`.
@@ -73,6 +74,22 @@ pub fn alias_configs(
         .filter(|(_, language)| matches!(language, Language::TypeScript | Language::JavaScript))
         .map(|(path, _)| path.as_path());
     discover(&directories(sources), &|path| {
+        fs::read_to_string(root.join(path)).ok()
+    })
+}
+
+/// Maps each directory that holds a solution-style `tsconfig.json` to the projects its `references`
+/// name, reading from under `root`. A file is governed by the first project that includes it.
+#[must_use]
+pub fn project_configs(
+    root: &Path,
+    files: &BTreeMap<PathBuf, Language>,
+) -> BTreeMap<PathBuf, Vec<Project>> {
+    let sources = files
+        .iter()
+        .filter(|(_, language)| matches!(language, Language::TypeScript | Language::JavaScript))
+        .map(|(path, _)| path.as_path());
+    project::discover(&directories(sources), &|path| {
         fs::read_to_string(root.join(path)).ok()
     })
 }
@@ -97,37 +114,54 @@ pub(super) fn discover(
         .collect()
 }
 
-fn load_directory(dir: &Path, read: Reader<'_>) -> Option<AliasConfig> {
-    let (path, text) = CONFIG_FILES
+/// The config file of `dir` with its text: `tsconfig.json`, else `jsconfig.json`.
+pub(super) fn find_config(dir: &Path, read: Reader<'_>) -> Option<(PathBuf, String)> {
+    CONFIG_FILES
         .iter()
         .map(|name| dir.join(name))
-        .find_map(|path| read(&path).map(|text| (path, text)))?;
+        .find_map(|path| read(&path).map(|text| (path, text)))
+}
+
+fn load_directory(dir: &Path, read: Reader<'_>) -> Option<AliasConfig> {
+    let (path, text) = find_config(dir, read)?;
     let leaf = parse(&text)?;
     let solution_style = leaf.is_solution_style();
     effective(&layers(path, leaf, read), solution_style)
 }
 
 /// The options of one config file in an `extends` chain.
-struct Layer {
+pub(super) struct Layer {
     /// Repository-relative directory of the file.
-    dir: PathBuf,
+    pub(super) dir: PathBuf,
     base_url: Option<String>,
     paths: Option<Paths>,
+    /// The `files`, `include` and `exclude` lists the file sets, each relative to `dir`.
+    pub(super) files: Option<Vec<String>>,
+    pub(super) include: Option<Vec<String>>,
+    pub(super) exclude: Option<Vec<String>>,
 }
 
 /// The config file at `path` followed by the files it extends, nearest first.
-fn layers(path: PathBuf, leaf: RawConfig, read: Reader<'_>) -> Vec<Layer> {
+pub(super) fn layers(path: PathBuf, leaf: RawConfig, read: Reader<'_>) -> Vec<Layer> {
     let mut layers = Vec::new();
     let mut seen = vec![path.clone()];
     let mut current = Some((path, leaf));
     while let Some((file, raw)) = current.take() {
         let dir = file.parent().map(Path::to_path_buf).unwrap_or_default();
         let next = extends_target(raw.extends.as_ref(), &dir);
+        let (files, include, exclude) = (
+            string_list(raw.files.as_ref()),
+            string_list(raw.include.as_ref()),
+            string_list(raw.exclude.as_ref()),
+        );
         let options = raw.compiler_options.unwrap_or_default();
         layers.push(Layer {
             dir,
             base_url: options.base_url,
             paths: options.paths,
+            files,
+            include,
+            exclude,
         });
         current = next
             .filter(|target| layers.len() < MAX_EXTENDS_DEPTH && !seen.contains(target))
@@ -159,7 +193,7 @@ fn extends_target(extends: Option<&Value>, dir: &Path) -> Option<PathBuf> {
 
 /// Merges a chain, nearest first, into the aliases it defines. `None` for a solution-style config
 /// that defines none.
-fn effective(layers: &[Layer], solution_style: bool) -> Option<AliasConfig> {
+pub(super) fn effective(layers: &[Layer], solution_style: bool) -> Option<AliasConfig> {
     let base_url = layers
         .iter()
         .find_map(|layer| layer.base_url.as_deref().map(|text| (layer, text)));
@@ -199,10 +233,12 @@ fn effective(layers: &[Layer], solution_style: bool) -> Option<AliasConfig> {
 /// The parts of a config file that matter here. Unknown fields are ignored.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct RawConfig {
+pub(super) struct RawConfig {
     extends: Option<Value>,
     compiler_options: Option<RawOptions>,
     files: Option<Value>,
+    include: Option<Value>,
+    exclude: Option<Value>,
     references: Option<Value>,
 }
 
@@ -213,8 +249,32 @@ struct RawOptions {
     paths: Option<Paths>,
 }
 
+/// The strings of a JSON array. `None` when the value is absent or not an array.
+fn string_list(value: Option<&Value>) -> Option<Vec<String>> {
+    match value? {
+        Value::Array(items) => Some(
+            items
+                .iter()
+                .filter_map(|item| item.as_str().map(str::to_owned))
+                .collect(),
+        ),
+        _ => None,
+    }
+}
+
 impl RawConfig {
-    const fn is_solution_style(&self) -> bool {
+    /// The `path` of each entry of `references`, in the order written.
+    pub(super) fn reference_paths(&self) -> Vec<String> {
+        match &self.references {
+            Some(Value::Array(entries)) => entries
+                .iter()
+                .filter_map(|entry| Some(entry.get("path")?.as_str()?.to_owned()))
+                .collect(),
+            _ => Vec::new(),
+        }
+    }
+
+    pub(super) const fn is_solution_style(&self) -> bool {
         let no_files = matches!(&self.files, Some(Value::Array(files)) if files.is_empty());
         let references = matches!(&self.references, Some(Value::Array(refs)) if !refs.is_empty());
         no_files && references
@@ -253,7 +313,7 @@ impl<'de> Visitor<'de> for PathsVisitor {
 }
 
 /// Parses JSONC, tolerating a byte order mark. `None` for anything that is not a config object.
-fn parse(text: &str) -> Option<RawConfig> {
+pub(super) fn parse(text: &str) -> Option<RawConfig> {
     let text = text.strip_prefix('\u{feff}').unwrap_or(text);
     jsonc_parser::parse_to_serde_value(text, &ParseOptions::default()).ok()
 }
