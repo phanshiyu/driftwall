@@ -328,8 +328,10 @@ A literal that starts with dots is relative to a package. The package is the sec
 positionally or as `package=`, and must be a plain string literal, an absolute dotted name. The module
 is that name with `dots - 1` trailing segments removed, then the rest of the literal appended, and it
 resolves as an absolute import (roots, probing, misses). When the package is missing, not a literal,
-or has too few segments, the call stays `dynamic-specifier`. Every other argument (a name, a call, an
-f-string, a concatenation) stays `dynamic-specifier` with the text of the argument as specifier.
+or has too few segments, the call stays `dynamic-specifier`, with the string contents as specifier.
+Every other argument (a name, a call, an f-string, a concatenation, a bytes or escaped string, a
+literal that is not a dotted name) stays `dynamic-specifier` with the source text of the argument as
+specifier.
 
 ### Import location
 

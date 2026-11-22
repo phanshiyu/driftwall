@@ -15,8 +15,10 @@
 //! that cannot be followed (a computed `require(x)` or `importlib.import_module(x)`, an
 //! `include_str!` of a file that is not source), never reported unresolved. A `tsconfig` or
 //! `package.json` that cannot be parsed is skipped, like a malformed `Cargo.toml`. Import types
-//! (`typeof import('./a')`) are not extracted. For Python, `.pyi` stubs
-//! and import roots other than the repository root and `src/` are not supported. For Rust, see
+//! (`typeof import('./a')`) are not extracted. Python absolute imports are tried against an ordered
+//! list of import roots: the importer's own directory when it is not a package, the roots a project
+//! configures (see `python_config`), the repository root and `src/`; see `python`. `.pyi` stubs are
+//! not supported. For Rust, see
 //! `rust`'s limitations: `#[path]` modules, `extern crate` renames and names that only a glob
 //! import brings in are not followed. A path that starts with a module name the same file brought
 //! into scope with `use` or `mod name;` is followed.
@@ -36,6 +38,7 @@ mod manifest;
 mod package;
 mod project;
 mod python;
+mod python_call;
 mod python_config;
 mod python_layout;
 mod queries;
@@ -64,6 +67,8 @@ mod fixtures;
 mod kind_tests;
 #[cfg(test)]
 mod probe_tests;
+#[cfg(test)]
+mod python_roots_tests;
 #[cfg(test)]
 mod python_symbols_tests;
 #[cfg(test)]

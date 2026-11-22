@@ -134,8 +134,18 @@ fn import_inside_type_checking_block_counts() {
 }
 
 #[test]
-fn dynamic_imports_are_skipped_not_resolved() {
+fn literal_dynamic_imports_resolve_like_imports_and_a_bare_call_is_not_one() {
     let source = "__import__('a')\nimportlib.import_module('a')\nimport_module('a')\n";
+    let got = py(source, &["a.py"]);
+    assert_eq!(targets(&got), ["a.py", "a.py"]);
+    assert_eq!(lines(&got), [1, 2]);
+    assert_eq!(got.unresolved, Vec::new());
+    assert_eq!(got.skipped, Vec::new());
+}
+
+#[test]
+fn computed_dynamic_imports_are_skipped_not_resolved() {
+    let source = "__import__(a)\nimportlib.import_module(a + 'b')\nimport_module(a)\n";
     let got = py(source, &["a.py"]);
     assert_eq!(got.resolved, Vec::new());
     assert_eq!(got.unresolved, Vec::new());
@@ -144,7 +154,7 @@ fn dynamic_imports_are_skipped_not_resolved() {
         .iter()
         .map(|s| (s.at.line, s.specifier.as_str()))
         .collect();
-    assert_eq!(skipped, [(1, "'a'"), (2, "'a'")]);
+    assert_eq!(skipped, [(1, "a"), (2, "a + 'b'")]);
 }
 
 #[test]
@@ -181,7 +191,8 @@ fn module_file_beats_package() {
 #[test]
 fn import_resolves_the_full_dotted_path_only() {
     let got = py("import a.b.c", &["a/b.py", "a/__init__.py", "a.py"]);
-    assert_eq!(got, FileImports::default());
+    assert_eq!(targets(&got), Vec::<String>::new());
+    assert_eq!(unresolved_specifiers(&got), ["a.b.c"]);
 }
 
 #[test]

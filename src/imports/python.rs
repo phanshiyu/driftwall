@@ -3,15 +3,13 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
+use super::python_call::module_of;
 use super::{Environment, Reference, Resolution};
 use crate::model::{SkipReason, Symbol};
 
-/// Directory prefixes that absolute imports are tried against, in order: the repository root, then
-/// `src/`.
-const ABSOLUTE_ROOTS: [&str; 2] = ["", "src"];
-
 /// The table entry. `reference.specifier` is the module as written (`a.b`, `.a`, `..`) and
-/// `reference.names` the names a `from` statement imports from it.
+/// `reference.names` the names a `from` statement imports from it. See "Python resolution" in
+/// `docs/DESIGN.md` for the rules.
 ///
 /// With names, each name resolves on its own: the submodule `<module>/<name>` first, then the
 /// module itself. Without names (`import a.b`, `from a import *`) only the module resolves.
@@ -19,24 +17,28 @@ const ABSOLUTE_ROOTS: [&str; 2] = ["", "src"];
 /// The symbols used follow what each name resolved to. A name that is a submodule is a module
 /// binding and uses no symbol; a name found inside the module uses that name. `import a.b` is a
 /// module binding too. Only `from a import *` uses [`Symbol::All`].
-/// A call to `importlib.import_module(..)` or `__import__(..)` names its module at run time and is
-/// skipped as dynamic, whatever its argument.
-/// Absolute modules that match no file are third party or standard library and are ignored;
-/// relative ones that match nothing are unresolved.
+///
+/// An absolute module is looked up under the import roots of the importer. One that no root
+/// resolves is unresolved when its top-level name is a first-party module or package under a root,
+/// unreachable when the name matches a repository path no root reaches, and otherwise a third
+/// party or standard library module, which is ignored. A relative module that matches nothing is
+/// unresolved.
+///
+/// A call to `importlib.import_module(..)` or `__import__(..)` with a plain string literal
+/// resolves like `import <literal>`, see [`module_of`]; any other call is skipped as dynamic.
 pub fn resolve(
     reference: &Reference<'_>,
     importer: &Path,
     env: &Environment<'_>,
 ) -> Vec<Resolution> {
-    // why: the first argument of `importlib.import_module(..)` or `__import__(..)` is not a module path.
+    // why: the first argument of `importlib.import_module(..)` or `__import__(..)` is not a statement's module path.
     if reference
         .node
         .parent()
         .is_some_and(|parent| parent.kind() == "argument_list")
     {
-        return vec![Resolution::Skipped(SkipReason::DynamicSpecifier)];
+        return call(reference, importer, env);
     }
-    let known = env.known;
     let written: String = reference
         .specifier
         .chars()
@@ -48,7 +50,6 @@ pub fn resolve(
         .split('.')
         .filter(|segment| !segment.is_empty())
         .collect();
-    let star = is_star(reference);
     let names: Vec<Vec<&str>> = if reference.names.is_empty() {
         vec![Vec::new()]
     } else {
@@ -58,44 +59,98 @@ pub fn resolve(
             .map(|name| vec![name.trim()])
             .collect()
     };
-
-    let roots: Vec<PathBuf> = if dots == 0 {
-        ABSOLUTE_ROOTS.iter().map(PathBuf::from).collect()
-    } else {
-        match relative_root(importer, dots) {
-            Some(dir) => vec![dir],
-            None => return vec![Resolution::Unresolved],
-        }
+    let star = is_star(reference);
+    if dots == 0 {
+        return absolute(&module, &names, star, importer, env);
+    }
+    let Some(dir) = relative_root(importer, dots) else {
+        return vec![Resolution::Unresolved];
     };
+    let base = join(&dir, &module);
     names
         .iter()
         .map(|name| {
-            let hit = roots.iter().find_map(|root| {
-                let base = join(root, &module);
-                first_known(&candidates(&base, name, !module.is_empty(), star), known)
-            });
-            match hit {
-                Some((target, _)) if target == importer => Resolution::Ignored,
-                Some((target, symbol)) => {
-                    Resolution::resolved(target).using(symbol.into_iter().collect())
-                }
-                None if dots == 0 => Resolution::Ignored,
-                None => Resolution::Unresolved,
-            }
+            let hit = first_known(
+                &candidates(&base, name, !module.is_empty(), star),
+                env.known,
+            );
+            hit.map_or(Resolution::Unresolved, |hit| found(hit, importer))
         })
         .collect()
 }
 
-/// The directory a relative import counts from: the importer's directory, climbed `dots - 1`
-/// levels. `None` means it climbs above the repository root.
-fn relative_root(importer: &Path, dots: usize) -> Option<PathBuf> {
-    let mut dir = importer.parent()?.to_path_buf();
-    for _ in 1..dots {
-        if !dir.pop() {
-            return None;
-        }
+/// Resolves the call around `reference`: like `import <literal>` when the call names its module
+/// with a plain literal, dynamic otherwise.
+fn call(reference: &Reference<'_>, importer: &Path, env: &Environment<'_>) -> Vec<Resolution> {
+    let Some(module) = module_of(reference) else {
+        return vec![Resolution::Skipped(SkipReason::DynamicSpecifier)];
+    };
+    let segments: Vec<&str> = module.split('.').collect();
+    absolute(&segments, &[Vec::new()], false, importer, env)
+}
+
+/// Resolves the absolute `module` (dotted segments) with each of `names` under the import roots
+/// of `importer`.
+fn absolute(
+    module: &[&str],
+    names: &[Vec<&str>],
+    star: bool,
+    importer: &Path,
+    env: &Environment<'_>,
+) -> Vec<Resolution> {
+    let roots = env.python.roots(importer);
+    names
+        .iter()
+        .map(|name| {
+            let hit = roots.iter().find_map(|root| {
+                let candidates = candidates(&join(root, module), name, !module.is_empty(), star);
+                first_known(&candidates, env.known)
+            });
+            hit.map_or_else(
+                || miss(module, &roots, importer, env),
+                |hit| found(hit, importer),
+            )
+        })
+        .collect()
+}
+
+/// What an absolute `module` that no root resolves is: see [`resolve`].
+fn miss(module: &[&str], roots: &[PathBuf], importer: &Path, env: &Environment<'_>) -> Resolution {
+    let Some(first) = module.first() else {
+        return Resolution::Ignored;
+    };
+    if roots
+        .iter()
+        .any(|root| env.python.is_directory(&join(root, module)))
+    {
+        return Resolution::Ignored;
     }
-    Some(dir)
+    let first_party = roots.iter().any(|root| {
+        let base = join(root, &[first]);
+        env.known.contains(&base.with_extension("py")) || env.python.is_directory(&base)
+    });
+    if first_party {
+        return Resolution::Unresolved;
+    }
+    env.python
+        .matching(first)
+        .map_or(Resolution::Ignored, |path| Resolution::Unreachable {
+            message: format!(
+                "`{first}` matches `{}`, which no import root of `{}` reaches",
+                path.display(),
+                importer.display()
+            ),
+        })
+}
+
+/// The resolution of a hit: the target with the symbol it uses, or ignored when it is the importer
+/// itself.
+fn found((target, symbol): (PathBuf, Option<Symbol>), importer: &Path) -> Resolution {
+    if target == importer {
+        Resolution::Ignored
+    } else {
+        Resolution::resolved(target).using(symbol.into_iter().collect())
+    }
 }
 
 /// Whether the reference is the module of `from m import *`.
@@ -108,6 +163,18 @@ fn is_star(reference: &Reference<'_>) -> bool {
                 .any(|child| child.kind() == "wildcard_import")
         }
     })
+}
+
+/// The directory a relative import counts from: the importer's directory, climbed `dots - 1`
+/// levels. `None` means it climbs above the repository root.
+fn relative_root(importer: &Path, dots: usize) -> Option<PathBuf> {
+    let mut dir = importer.parent()?.to_path_buf();
+    for _ in 1..dots {
+        if !dir.pop() {
+            return None;
+        }
+    }
+    Some(dir)
 }
 
 fn join(root: &Path, segments: &[&str]) -> PathBuf {

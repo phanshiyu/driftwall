@@ -251,7 +251,7 @@ fn literal_arguments_are_resolved_not_skipped() {
 #[test]
 fn python_dynamic_imports_are_skipped_with_their_first_argument() {
     let got = run(
-        "import importlib\nx = importlib.import_module(name)\ny = __import__('a.b')\nimport_module(name)\nobj.__import__(z)\n",
+        "import importlib\nx = importlib.import_module(name)\ny = __import__(f'a.{b}')\nimport_module(name)\nobj.__import__(z)\n",
         Language::Python,
         "main.py",
         &BTreeMap::new(),
@@ -260,7 +260,7 @@ fn python_dynamic_imports_are_skipped_with_their_first_argument() {
         skips(&got),
         [
             (2, "name", DynamicSpecifier),
-            (3, "'a.b'", DynamicSpecifier)
+            (3, "f'a.{b}'", DynamicSpecifier)
         ]
     );
     assert_eq!(got.resolved, Vec::new());

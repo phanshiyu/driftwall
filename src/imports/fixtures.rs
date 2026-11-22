@@ -16,8 +16,8 @@ pub struct Repo {
     assets: BTreeSet<PathBuf>,
 }
 
-/// Writes `files` (relative path, contents). TypeScript and JavaScript files are source and every
-/// other file is an asset.
+/// Writes `files` (relative path, contents). TypeScript, JavaScript and Python files are source and
+/// every other file is an asset.
 pub fn repo(files: &[(&str, &str)]) -> Repo {
     let dir = TempDir::new().expect("tempdir");
     let mut known = BTreeMap::new();
@@ -29,6 +29,7 @@ pub fn repo(files: &[(&str, &str)]) -> Repo {
         let language = match Path::new(path).extension().and_then(|e| e.to_str()) {
             Some("ts" | "tsx" | "mts" | "cts") => Some(Language::TypeScript),
             Some("js" | "jsx" | "mjs" | "cjs") => Some(Language::JavaScript),
+            Some("py") => Some(Language::Python),
             _ => None,
         };
         match language {
