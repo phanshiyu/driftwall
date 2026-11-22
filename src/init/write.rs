@@ -10,11 +10,10 @@ use super::{InitError, InitPlan, InitSummary, WriteOptions};
 /// Name of the file that tags a directory with a node.
 const ARCH_FILE: &str = ".arch";
 
-/// Checks every conflict, then writes the contract followed by the tags in directory order.
+/// Checks every conflict (a path `init` would write that already exists), then writes the contract followed by the tags in directory order.
 pub fn apply(
     root: &Path,
     baseline: &InitPlan,
-    existing_tags: &[PathBuf],
     write: &WriteOptions,
 ) -> Result<InitSummary, InitError> {
     let rendered = diagram::render(&baseline.contract);
@@ -31,25 +30,6 @@ pub fn apply(
     } else {
         Vec::new()
     };
-
-    if write.write_tags {
-        let mut shadowing: Vec<PathBuf> = existing_tags
-            .iter()
-            .filter(|tag| {
-                let at = tag.parent().unwrap_or_else(|| Path::new(""));
-                !baseline.tags.contains_key(at)
-                    && baseline
-                        .tags
-                        .keys()
-                        .any(|dir| at.starts_with(dir) && at != dir)
-            })
-            .cloned()
-            .collect();
-        shadowing.sort();
-        if !shadowing.is_empty() {
-            return Err(InitError::Shadowed { paths: shadowing });
-        }
-    }
 
     if !write.force {
         let mut conflicts: Vec<PathBuf> = std::iter::once(&write.contract)

@@ -1,31 +1,9 @@
 //! Parsing of `.arch` files.
 
-use std::fmt;
 use std::path::Path;
 
 use super::error::{ArchProblem, OwnershipError};
-use crate::model::{Location, NodeId};
-
-/// The `node:` value that asks for one node per module.
-const MODULES_MARK: &str = "*";
-
-/// What a `.arch` file says about its directory.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Tag {
-    /// `node: <id>`: the directory and everything below it is one node.
-    Node(NodeId),
-    /// `node: *`: every module directly in the directory is its own node, named by its position.
-    Modules,
-}
-
-impl fmt::Display for Tag {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Node(id) => id.fmt(f),
-            Self::Modules => f.write_str(MODULES_MARK),
-        }
-    }
-}
+use crate::model::{Location, MODULES_MARK, NodeId, Tag};
 
 /// The tag a `.arch` file declares, with where it was written.
 #[derive(Debug, Clone, PartialEq, Eq)]

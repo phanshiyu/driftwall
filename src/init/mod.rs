@@ -4,9 +4,16 @@
 //! shell that discovers files, extracts imports and writes the result. A repository initialised
 //! this way lints clean, because the contract is the observed import graph.
 
+mod claims;
+mod existing;
+mod ids;
+mod layout;
 mod plan;
+mod units;
 mod write;
 
+#[cfg(test)]
+mod plan_tests;
 #[cfg(test)]
 mod tests;
 
@@ -21,7 +28,9 @@ use crate::imports::{self, ImportsError};
 use crate::model::{DEFAULT_CONTRACT, Language};
 use crate::ownership::{self, OwnershipError};
 
+pub use existing::Existing;
 pub use plan::{InitOptions, InitPlan, plan};
+pub use units::{Unit, UnitKind, detect_units};
 
 /// Where and what [`run`] writes.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -80,15 +89,6 @@ pub enum InitError {
         /// Every existing path `init` would write, sorted.
         paths: Vec<PathBuf>,
     },
-    /// Existing `.arch` files below a baseline node would override the tags `init` writes.
-    #[error(
-        "existing .arch files would override the baseline tags, remove them or use --no-tags: {}",
-        list(paths)
-    )]
-    Shadowed {
-        /// The overriding `.arch` files, sorted.
-        paths: Vec<PathBuf>,
-    },
     /// The repository has no supported source files, so there is nothing to baseline.
     #[error("no supported source files found")]
     NoSources,
@@ -114,15 +114,15 @@ fn list(paths: &[PathBuf]) -> String {
 ///
 /// # Errors
 /// Fails with [`InitError::NoSources`] on a repository without source files,
-/// [`InitError::Conflict`] or [`InitError::Shadowed`] when it would clobber existing files, and
-/// the scan, extraction and IO errors otherwise.
+/// [`InitError::Conflict`] when it would clobber existing files, and the scan, extraction and IO
+/// errors otherwise.
 pub fn run(
     root: &Path,
     options: &InitOptions,
     write: &WriteOptions,
 ) -> Result<InitSummary, InitError> {
     let ownership = ownership::scan(root)?;
-    // why: tagged files are re-planned like unmapped ones; the plan owns the whole baseline.
+    // why: tagged files are known files too: they resolve as import targets and get edges.
     let files: BTreeMap<PathBuf, Language> = ownership
         .owners
         .keys()
@@ -133,12 +133,7 @@ pub fn run(
         return Err(InitError::NoSources);
     }
     let imports = imports::collect(root, &files)?;
-    let baseline = plan(&files, &imports, options);
-
-    let existing_tags: Vec<PathBuf> = ownership
-        .tags
-        .iter()
-        .map(|(at, _)| at.file.clone())
-        .collect();
-    write::apply(root, &baseline, &existing_tags, write)
+    let units = detect_units(root, &files);
+    let baseline = plan(&files, &imports, options, &units, &Existing::of(&ownership));
+    write::apply(root, &baseline, write)
 }

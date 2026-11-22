@@ -83,7 +83,6 @@ mod witness {
         Ownership,
         Imports,
         Conflict,
-        Shadowed,
         NoSources,
         Diagram,
         RoundTrip,
@@ -297,9 +296,6 @@ mod witness {
                 Self::Ownership(ownership_error()),
                 Self::Imports(imports_error()),
                 Self::Conflict {
-                    paths: vec![path()],
-                },
-                Self::Shadowed {
                     paths: vec![path()],
                 },
                 Self::NoSources,

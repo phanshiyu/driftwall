@@ -118,6 +118,27 @@ pub struct Location {
     pub line: u32,
 }
 
+/// The `node:` value of a `.arch` file that asks for one node per module.
+pub const MODULES_MARK: &str = "*";
+
+/// What a `.arch` file says about its directory.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Tag {
+    /// `node: <id>`: the directory and everything below it is one node.
+    Node(NodeId),
+    /// `node: *`: every module directly in the directory is its own node, named by its position.
+    Modules,
+}
+
+impl fmt::Display for Tag {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Node(id) => id.fmt(f),
+            Self::Modules => f.write_str(MODULES_MARK),
+        }
+    }
+}
+
 /// Why the scan left a source file out of the repository's own source.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Exclusion {
@@ -147,6 +168,9 @@ pub struct Ownership {
     pub unmapped: BTreeSet<PathBuf>,
     /// `.arch` tags, as (tag file, line, raw node name), for validating against the contract.
     pub tags: Vec<(Location, String)>,
+    /// What each `.arch` file the scan saw says, by the repository-relative directory it is in
+    /// (empty for the root).
+    pub tag_dirs: BTreeMap<PathBuf, Tag>,
     /// Source files the scan left out, by reason. They are neither owned nor unmapped.
     pub excluded: BTreeMap<Exclusion, BTreeSet<PathBuf>>,
 }

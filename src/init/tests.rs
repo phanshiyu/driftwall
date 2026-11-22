@@ -34,7 +34,13 @@ fn import(from: &str, to: &str) -> (PathBuf, FileImports) {
 }
 
 fn plan_of(paths: &[&str], depth: Option<usize>) -> InitPlan {
-    plan(&files(paths), &BTreeMap::new(), &InitOptions { depth })
+    plan(
+        &files(paths),
+        &BTreeMap::new(),
+        &InitOptions { depth },
+        &[],
+        &Existing::default(),
+    )
 }
 
 /// The tagged directories (as `/` strings) with their ids.
@@ -149,7 +155,13 @@ fn module_nodes_get_edges_between_modules_and_directories() {
     ]
     .into_iter()
     .collect();
-    let p = plan(&all, &imports, &InitOptions::default());
+    let p = plan(
+        &all,
+        &imports,
+        &InitOptions::default(),
+        &[],
+        &Existing::default(),
+    );
     let edges: Vec<String> = p
         .contract
         .edges
@@ -274,7 +286,13 @@ fn edges_are_solid_deduplicated_and_cross_owner_only() {
     ]
     .into_iter()
     .collect();
-    let p = plan(&all, &imports, &InitOptions::default());
+    let p = plan(
+        &all,
+        &imports,
+        &InitOptions::default(),
+        &[],
+        &Existing::default(),
+    );
     let edges: Vec<(&Edge, &EdgeKind)> = p.contract.edges.iter().collect();
     assert_eq!(edges.len(), 1);
     assert_eq!(edges[0].0.from.as_str(), "a");
@@ -355,6 +373,8 @@ fn no_sources_is_an_error() {
 fn conflicts_list_every_path_sorted_and_write_nothing() {
     let dir = two_dirs();
     fs::write(dir.path().join("architecture.mmd"), "keep").unwrap();
+    // why: an `.arch` the scan cannot see (it is gitignored) still blocks a tag init would write.
+    fs::write(dir.path().join(".gitignore"), "src/b/.arch\n").unwrap();
     fs::write(dir.path().join("src/b/.arch"), "node: keep\n").unwrap();
     let result = run(
         dir.path(),
@@ -404,18 +424,24 @@ fn no_tags_writes_only_the_contract() {
 }
 
 #[test]
-fn a_nested_arch_that_would_override_a_baseline_tag_is_refused() {
+fn a_nested_arch_below_a_baseline_tag_is_kept_and_declared() {
     let dir = two_dirs();
     fs::create_dir_all(dir.path().join("src/a/deep")).unwrap();
     fs::write(dir.path().join("src/a/deep/.arch"), "node: other\n").unwrap();
     fs::write(dir.path().join("src/a/deep/z.ts"), "export const z = 1;\n").unwrap();
-    let write = WriteOptions {
-        force: true,
-        ..WriteOptions::default()
-    };
-    let result = run(dir.path(), &InitOptions::default(), &write);
-    assert!(matches!(result, Err(InitError::Shadowed { .. })));
-    assert!(!dir.path().join("architecture.mmd").exists());
+    let summary = run(
+        dir.path(),
+        &InitOptions::default(),
+        &WriteOptions::default(),
+    )
+    .unwrap();
+    assert_eq!((summary.nodes, summary.tag_files), (3, 2));
+    assert_eq!(
+        fs::read_to_string(dir.path().join("src/a/deep/.arch")).unwrap(),
+        "node: other\n"
+    );
+    let contract = fs::read_to_string(dir.path().join("architecture.mmd")).unwrap();
+    assert!(contract.contains("other[\"src/a/deep\"]"), "{contract}");
 }
 
 #[test]

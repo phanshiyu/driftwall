@@ -438,33 +438,55 @@ fn second_run_without_force_exits_2_and_changes_nothing() {
     assert_eq!(stdout(&output), "");
     let err = stderr(&output);
     assert!(err.contains("architecture.mmd"), "{err}");
-    assert!(err.contains("src/auth/.arch"), "{err}");
+    assert!(
+        !err.contains(".arch"),
+        "existing tags are decisions, not conflicts: {err}"
+    );
     assert_eq!(snapshot(dir.path()), before);
 }
 
 #[test]
-fn a_conflict_leaves_the_repo_untouched_even_when_only_a_tag_exists() {
+fn an_existing_tag_is_honored_not_a_conflict() {
     let mut files = ts_src_root();
     files.push(("src/db/.arch", "node: mine\n"));
     let dir = repo(&files);
-    let before = snapshot(dir.path());
     let output = init(&dir, &[]);
-    assert_eq!(code(&output), 2);
-    assert!(stderr(&output).contains("src/db/.arch"));
-    assert_eq!(snapshot(dir.path()), before);
+    assert_eq!(code(&output), 0, "{}", stderr(&output));
+    assert_eq!(read(&dir, "src/db/.arch"), "node: mine\n");
+    assert_eq!(
+        arch_files(&dir),
+        ["src/auth/.arch", "src/billing/.arch", "src/db/.arch"]
+    );
+    assert_eq!(node_ids(&dir), ["auth", "billing", "mine"]);
+    assert_eq!(
+        edge_pairs(&dir),
+        ["auth mine", "billing auth", "billing mine"]
+    );
+    let lint = run_on("lint", dir.path(), &["--strict"]);
+    assert_eq!(stdout(&lint), "driftwall: clean\n");
 }
 
 #[test]
-fn force_overwrites() {
+fn force_overwrites_the_contract_but_never_an_existing_tag() {
     let mut files = ts_src_root();
     files.push(("architecture.mmd", "stale\n"));
     files.push(("src/db/.arch", "node: mine\n"));
     let dir = repo(&files);
     let output = init(&dir, &["--force"]);
     assert_eq!(code(&output), 0, "{}", stderr(&output));
-    assert_eq!(read(&dir, "src/db/.arch"), "node: db\n");
+    assert_eq!(read(&dir, "src/db/.arch"), "node: mine\n");
     let lint = run_on("lint", dir.path(), &[]);
     assert_eq!(stdout(&lint), "driftwall: clean\n");
+}
+
+#[test]
+fn running_init_again_with_force_rewrites_the_same_contract() {
+    let dir = repo(&rust_flat());
+    init(&dir, &[]);
+    let before = snapshot(dir.path());
+    let output = init(&dir, &["--force"]);
+    assert_eq!(code(&output), 0, "{}", stderr(&output));
+    assert_eq!(snapshot(dir.path()), before);
 }
 
 #[test]

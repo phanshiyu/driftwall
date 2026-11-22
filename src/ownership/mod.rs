@@ -15,12 +15,12 @@ use std::path::{Component, Path, PathBuf};
 use ignore::WalkBuilder;
 use ignore::gitignore::{Gitignore, GitignoreBuilder};
 
-pub use arch::Tag;
 pub use error::{ArchProblem, OwnershipError};
 pub use exclude::exclusion_of;
 pub use language::language_of;
 pub use module::module_name;
 
+pub use crate::model::Tag;
 use crate::model::{Exclusion, Location, NodeId, Ownership};
 
 /// Name of the file that tags a directory with a node.
@@ -143,6 +143,10 @@ pub fn scan(root: &Path) -> Result<Ownership, OwnershipError> {
     tags.extend(derived);
     tags.sort();
     ownership.tags = tags;
+    ownership.tag_dirs = decisions
+        .into_iter()
+        .map(|(dir, decision)| (dir, decision.tag))
+        .collect();
     Ok(ownership)
 }
 
