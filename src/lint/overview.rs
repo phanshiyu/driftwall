@@ -4,8 +4,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use crate::model::{
-    Contract, Edge, EdgeSummary, LintReport, NodeSummary, NodeView, Overview, Ownership, Site,
-    Symbol,
+    BlindSpots, Contract, Edge, EdgeSummary, LintReport, NodeSummary, NodeView, Overview,
+    Ownership, Site, Symbol,
 };
 
 /// Combines the contract, ownership, observed edges, the symbols they use and the lint report
@@ -15,7 +15,9 @@ use crate::model::{
 /// observed edges, sorted by `(from, to)`: a declared edge nothing uses has `realised == 0`, and
 /// an observed edge the contract lacks has no kind. A node's directories are those holding a
 /// `.arch` file that names it; its files are the source files it owns; its exports are its
-/// declared surface. An edge keeps every site, with its kind and test flag.
+/// declared surface. An edge keeps every site, with its kind and test flag. Every node carries the
+/// tally of its blind spots, and the overview the summary of all of them and the tally of the ones
+/// no node owns.
 #[must_use]
 pub fn overview(
     contract: &Contract,
@@ -23,6 +25,7 @@ pub fn overview(
     observed: &BTreeMap<Edge, Vec<Site>>,
     symbols: &BTreeMap<Edge, BTreeSet<Symbol>>,
     report: &LintReport,
+    blind: &BlindSpots,
 ) -> Overview {
     let nodes = contract
         .nodes
@@ -44,6 +47,7 @@ pub fn overview(
                     .filter(|owner| *owner == id)
                     .count(),
                 exports: contract.surfaces.get(id).cloned(),
+                blind_spots: blind.tally(Some(id)),
             }
         })
         .collect();
@@ -71,13 +75,20 @@ pub fn overview(
         edges,
         errors,
         warnings,
+        blind_spots: blind.summary(),
+        unmapped: blind.tally(None),
     }
 }
 
-/// The node named `id` with every edge that leaves or enters it, or `None` when the overview
-/// has no such node. Pure.
+/// The node named `id` with every edge that leaves or enters it, the source files it owns and
+/// everything it is blind to, or `None` when the overview has no such node. Pure.
 #[must_use]
-pub fn node_view(overview: &Overview, id: &str) -> Option<NodeView> {
+pub fn node_view(
+    overview: &Overview,
+    ownership: &Ownership,
+    blind: &BlindSpots,
+    id: &str,
+) -> Option<NodeView> {
     let node = overview.nodes.iter().find(|node| node.id.as_str() == id)?;
     let touching = |keep: fn(&EdgeSummary, &str) -> bool| -> Vec<EdgeSummary> {
         overview
@@ -91,6 +102,13 @@ pub fn node_view(overview: &Overview, id: &str) -> Option<NodeView> {
         node: node.clone(),
         outgoing: touching(|edge, id| edge.from.as_str() == id),
         incoming: touching(|edge, id| edge.to.as_str() == id),
+        files: ownership
+            .owners
+            .iter()
+            .filter(|(_, owner)| owner.as_str() == id)
+            .map(|(file, _)| file.clone())
+            .collect(),
+        blind_spots: blind.of_node(&node.id),
     })
 }
 
@@ -106,13 +124,17 @@ fn tagged_dir(arch_file: &Path) -> PathBuf {
 mod tests {
     use super::*;
     use crate::lint::fixtures::{at, contract, edge, ownership, with_surface};
-    use crate::model::{EdgeKind, Severity, Violation, ViolationKind};
+    use crate::model::{EdgeKind, NodeId, Severity, SkipReason, Skipped, Violation, ViolationKind};
 
     fn sites(file: &str, lines: &[u32]) -> Vec<Site> {
         lines
             .iter()
             .map(|&line| Site::plain(at(file, line)))
             .collect()
+    }
+
+    fn view_of(overview: &Overview, id: &str) -> Option<NodeView> {
+        node_view(overview, &Ownership::default(), &BlindSpots::default(), id)
     }
 
     fn report(severities: &[Severity]) -> LintReport {
@@ -155,6 +177,7 @@ mod tests {
             &observed,
             &BTreeMap::new(),
             &report(&[Severity::Error, Severity::Warning]),
+            &BlindSpots::default(),
         )
     }
 
@@ -185,6 +208,7 @@ mod tests {
             &BTreeMap::new(),
             &BTreeMap::new(),
             &LintReport::default(),
+            &BlindSpots::default(),
         );
         assert_eq!(view.nodes[0].dirs, vec![PathBuf::from(".")]);
     }
@@ -199,6 +223,7 @@ mod tests {
             &BTreeMap::new(),
             &BTreeMap::new(),
             &LintReport::default(),
+            &BlindSpots::default(),
         );
         assert_eq!(view.nodes.len(), 1);
     }
@@ -252,6 +277,7 @@ mod tests {
             &observed,
             &symbols,
             &LintReport::default(),
+            &BlindSpots::default(),
         );
         assert_eq!(view.edges[0].sites.len(), 5);
         assert_eq!(view.edges[0].symbols, used(&["a", "z", "*"]));
@@ -273,6 +299,7 @@ mod tests {
             &BTreeMap::new(),
             &BTreeMap::new(),
             &LintReport::default(),
+            &BlindSpots::default(),
         );
         assert_eq!(view.nodes[0].exports, None);
         assert_eq!(
@@ -295,13 +322,14 @@ mod tests {
             &BTreeMap::new(),
             &BTreeMap::new(),
             &LintReport::default(),
+            &BlindSpots::default(),
         );
         assert_eq!(view, Overview::default());
     }
 
     #[test]
     fn node_view_splits_edges_by_direction() {
-        let view = node_view(&sample(), "b").unwrap();
+        let view = view_of(&sample(), "b").unwrap();
         assert_eq!(view.node.id.as_str(), "b");
         let out: Vec<_> = view.outgoing.iter().map(|e| e.to.as_str()).collect();
         let inc: Vec<_> = view.incoming.iter().map(|e| e.from.as_str()).collect();
@@ -311,7 +339,7 @@ mod tests {
 
     #[test]
     fn node_view_includes_undeclared_observed_edges() {
-        let view = node_view(&sample(), "a").unwrap();
+        let view = view_of(&sample(), "a").unwrap();
         assert_eq!(view.outgoing.len(), 1);
         assert_eq!(view.incoming.len(), 1);
         assert_eq!(view.incoming[0].from.as_str(), "c");
@@ -327,15 +355,82 @@ mod tests {
             &BTreeMap::new(),
             &BTreeMap::new(),
             &LintReport::default(),
+            &BlindSpots::default(),
         );
-        let found = node_view(&view, "a").unwrap();
+        let found = view_of(&view, "a").unwrap();
         assert!(found.outgoing.is_empty() && found.incoming.is_empty());
     }
 
     #[test]
     fn node_view_of_an_unknown_node_is_none() {
-        assert_eq!(node_view(&sample(), "ghost"), None);
-        assert_eq!(node_view(&sample(), ""), None);
+        assert_eq!(view_of(&sample(), "ghost"), None);
+        assert_eq!(view_of(&sample(), ""), None);
+    }
+
+    fn blind() -> BlindSpots {
+        let ownership = Ownership {
+            unread: BTreeMap::from([(
+                "swift".to_owned(),
+                [PathBuf::from("a/V.swift"), PathBuf::from("loose.swift")].into(),
+            )]),
+            ..Ownership::default()
+        };
+        let skipped = [Skipped {
+            at: at("b/z.ts", 1),
+            specifier: "left-pad".to_owned(),
+            reason: SkipReason::UndeclaredPackage,
+            message: None,
+        }];
+        BlindSpots::build(
+            &ownership,
+            |path| path.starts_with("a").then(|| NodeId::new("a").unwrap()),
+            |_| Some(2),
+            &skipped,
+            &[],
+        )
+    }
+
+    #[test]
+    fn nodes_carry_their_blind_tally_and_the_overview_the_summary_and_the_unmapped_tally() {
+        let c = contract(&["a", "b"], &[]);
+        let view = overview(
+            &c,
+            &Ownership::default(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &LintReport::default(),
+            &blind(),
+        );
+        assert_eq!(view.nodes[0].blind_spots.unread, 1);
+        assert_eq!(view.nodes[1].blind_spots.unread, 0);
+        assert_eq!(view.unmapped.unread, 1);
+        assert_eq!(view.blind_spots.unread["swift"].count, 2);
+        assert_eq!(view.blind_spots.unread["swift"].lines, 4);
+    }
+
+    #[test]
+    fn a_node_view_lists_the_files_of_its_node_and_only_its_blind_items() {
+        let c = contract(&["a", "b"], &[]);
+        let own = ownership(
+            &[("a/x.ts", "a"), ("a/y.ts", "a"), ("b/z.ts", "b")],
+            &[("a/.arch", 1, "a"), ("b/.arch", 1, "b")],
+        );
+        let spots = blind();
+        let all = overview(
+            &c,
+            &own,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &LintReport::default(),
+            &spots,
+        );
+        let a = node_view(&all, &own, &spots, "a").unwrap();
+        assert_eq!(a.files, [PathBuf::from("a/x.ts"), PathBuf::from("a/y.ts")]);
+        assert_eq!(a.blind_spots.unread["swift"].files.len(), 1);
+        assert!(a.blind_spots.skipped.is_empty());
+        let b = node_view(&all, &own, &spots, "b").unwrap();
+        assert_eq!(b.files, [PathBuf::from("b/z.ts")]);
+        assert!(b.blind_spots.unread.is_empty());
     }
 
     #[test]
@@ -347,8 +442,22 @@ mod tests {
         let observed: BTreeMap<_, _> = [(edge("a", "b"), sites("a/x.ts", &[1]))].into();
         let none = LintReport::default();
         assert_eq!(
-            overview(&c, &own, &observed, &BTreeMap::new(), &none),
-            overview(&c, &own2, &observed, &BTreeMap::new(), &none)
+            overview(
+                &c,
+                &own,
+                &observed,
+                &BTreeMap::new(),
+                &none,
+                &BlindSpots::default()
+            ),
+            overview(
+                &c,
+                &own2,
+                &observed,
+                &BTreeMap::new(),
+                &none,
+                &BlindSpots::default()
+            )
         );
     }
 }

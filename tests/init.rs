@@ -324,6 +324,14 @@ fn fixtures() -> Vec<(&'static str, Files)> {
     ]
 }
 
+/// The stdout of a lint without its blind spots note, which is not a finding.
+fn findings(output: &Output) -> String {
+    stdout(output)
+        .lines()
+        .filter(|line| !line.starts_with("note: "))
+        .fold(String::new(), |out, line| out + line + "\n")
+}
+
 fn init(dir: &TempDir, extra: &[&str]) -> Output {
     run_on("init", dir.path(), extra)
 }
@@ -338,7 +346,7 @@ fn baseline_lints_clean_on_every_fixture() {
 
         let lint = run_on("lint", dir.path(), &[]);
         assert_eq!(
-            (code(&lint), stdout(&lint)),
+            (code(&lint), findings(&lint)),
             (0, "driftwall: clean\n".to_owned()),
             "{name}\n{}",
             read(&dir, "architecture.mmd")
@@ -360,7 +368,7 @@ fn baseline_lints_clean_under_strict_at_every_depth() {
             );
             let lint = run_on("lint", dir.path(), &["--strict"]);
             assert_eq!(
-                stdout(&lint),
+                findings(&lint),
                 "driftwall: clean\n",
                 "{name} depth {depth}\n{}",
                 read(&dir, "architecture.mmd")
@@ -697,7 +705,7 @@ fn this_repository_baselines_clean_without_its_contract() {
     assert_eq!(code(&output), 0, "{}", stderr(&output));
     let lint = run_on("lint", dir.path(), &["--strict"]);
     assert_eq!(
-        (code(&lint), stdout(&lint)),
+        (code(&lint), findings(&lint)),
         (0, "driftwall: clean\n".to_owned()),
         "{}",
         read(&dir, "architecture.mmd")

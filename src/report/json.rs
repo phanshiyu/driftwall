@@ -2,7 +2,7 @@
 
 use serde::Serialize;
 
-use crate::model::{LintReport, Violation};
+use crate::model::{BlindSummary, LintReport, Violation};
 
 use super::ReportError;
 use super::common::counts;
@@ -15,6 +15,7 @@ struct Document<'a> {
     version: u32,
     summary: Summary,
     violations: &'a [Violation],
+    blind_spots: &'a BlindSummary,
 }
 
 #[derive(Serialize)]
@@ -23,17 +24,19 @@ struct Summary {
     warnings: usize,
 }
 
-/// Renders `report` as pretty-printed JSON ending in a newline.
+/// Renders `report` as pretty-printed JSON ending in a newline. `blind_spots` is the last key: the
+/// counts of what the scan could not see, which change no finding and no exit code.
 ///
 /// # Errors
 /// Returns [`ReportError::Serialize`] when a value cannot be serialised, such as a path that is
 /// not valid UTF-8.
-pub fn render_json(report: &LintReport) -> Result<String, ReportError> {
+pub fn render_json(report: &LintReport, blind_spots: &BlindSummary) -> Result<String, ReportError> {
     let (errors, warnings) = counts(report);
     let document = Document {
         version: SCHEMA_VERSION,
         summary: Summary { errors, warnings },
         violations: &report.violations,
+        blind_spots,
     };
     let mut out = serde_json::to_string_pretty(&document)?;
     out.push('\n');
@@ -47,7 +50,7 @@ mod tests {
     use serde_json::{Value, json};
 
     fn parse(report: &LintReport) -> Value {
-        serde_json::from_str(&render_json(report).unwrap()).unwrap()
+        serde_json::from_str(&render_json(report, &BlindSummary::default()).unwrap()).unwrap()
     }
 
     #[test]
@@ -93,19 +96,34 @@ mod tests {
 
     #[test]
     fn output_ends_with_newline_and_is_byte_identical_across_runs() {
-        let first = render_json(&mixed()).unwrap();
-        let second = render_json(&mixed()).unwrap();
+        let first = render_json(&mixed(), &BlindSummary::default()).unwrap();
+        let second = render_json(&mixed(), &BlindSummary::default()).unwrap();
         assert!(first.ends_with("}\n"));
         assert_eq!(first, second);
     }
 
     #[test]
     fn top_level_keys_are_in_stable_order() {
-        let out = render_json(&mixed()).unwrap();
+        let out = render_json(&mixed(), &BlindSummary::default()).unwrap();
         let version = out.find("\"version\"").unwrap();
         let summary = out.find("\"summary\"").unwrap();
         let violations = out.find("\"violations\"").unwrap();
         assert!(version < summary && summary < violations);
+    }
+
+    #[test]
+    fn blind_spots_are_the_last_key_and_carry_the_summary() {
+        let blind = BlindSummary {
+            ignored: 2,
+            ..BlindSummary::default()
+        };
+        let text = render_json(&mixed(), &blind).unwrap();
+        assert!(text.rfind("\"blind_spots\"") > text.rfind("\"violations\""));
+        let value: Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(
+            value["blind_spots"],
+            json!({ "unread": {}, "excluded": {}, "ignored": 2, "skipped": {}, "unresolved": 0 })
+        );
     }
 
     #[test]

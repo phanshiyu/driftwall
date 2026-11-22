@@ -28,7 +28,7 @@ use thiserror::Error;
 use crate::diagram::{self, DiagramError};
 use crate::imports::{self, ImportsError};
 use crate::model::{
-    Contract, DEFAULT_CONTRACT, Edge, Language, LintReport, Ownership, Site, Symbol,
+    BlindSpots, Contract, DEFAULT_CONTRACT, Edge, Language, LintReport, Ownership, Site, Symbol,
 };
 use crate::ownership::{self, OwnershipError};
 
@@ -106,6 +106,9 @@ pub struct Observation {
     pub symbols: BTreeMap<Edge, BTreeSet<Symbol>>,
     /// The lint result for the same scan.
     pub report: LintReport,
+    /// Everything the scan could not see: unread, excluded and ignored files, skipped references
+    /// and unresolved imports, each with the node it belongs to.
+    pub blind_spots: BlindSpots,
 }
 
 /// Reads and parses the contract at `contract`, relative to the repository root `root`.
@@ -158,11 +161,19 @@ pub fn observe(root: &Path, options: &LintOptions) -> Result<Observation, LintEr
     let report = reconcile(&contract, &ownership, &imports, &options.contract);
     let observed = observed_edges(&contract, &ownership, &imports);
     let symbols = observed_symbols(&contract, &ownership, &imports);
+    let blind_spots = BlindSpots::build(
+        &ownership,
+        |path| ownership::owner_in(&ownership.tag_dirs, path),
+        |path| Some(ownership::line_count(root, path)),
+        imports.values().flat_map(|found| &found.skipped),
+        imports.values().flat_map(|found| &found.unresolved),
+    );
     Ok(Observation {
         contract,
         ownership,
         observed,
         symbols,
         report,
+        blind_spots,
     })
 }

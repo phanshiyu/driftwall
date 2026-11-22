@@ -46,7 +46,6 @@ fn code_files_without_a_language_are_unread_by_extension() {
         vec![
             ("c", set(&["lib/x.c"])),
             ("h", set(&["lib/x.h"])),
-            ("html", set(&["page.html"])),
             ("sh", set(&["build.sh"])),
             ("swift", set(&["App.swift", "ios/View.swift"])),
         ]

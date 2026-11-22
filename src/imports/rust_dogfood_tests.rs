@@ -111,7 +111,11 @@ fn model_depends_on_no_other_node() {
             );
         }
     }
-    assert!(dependencies(&all, "src/model/mod.rs").is_empty());
+    // why: model/mod.rs declares and re-exports its one submodule, blind.rs, and nothing else.
+    assert_eq!(
+        dependencies(&all, "src/model/mod.rs"),
+        BTreeSet::from(["src/model/blind.rs".to_owned()])
+    );
 }
 
 /// Every symbol `file` uses from `target`, across all of its import lines, as serialized.
@@ -153,13 +157,13 @@ fn lint_uses_the_diagram_parser_by_name() {
 }
 
 #[test]
-fn the_binary_uses_lint_run_through_the_bound_module_name() {
-    // why: `use driftwall::lint::{self, LintOptions};` and `lint::run(&args.path, &options)`.
+fn the_binary_uses_lint_observe_through_the_bound_module_name() {
+    // why: `use driftwall::lint::{self, LintOptions};` and `lint::observe(&args.path, &options)`.
     assert_uses(
         &dogfood(),
         "src/cli/commands.rs",
         "src/lint/mod.rs",
-        &["LintOptions", "run"],
+        &["LintOptions", "observe"],
     );
 }
 

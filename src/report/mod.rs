@@ -3,6 +3,7 @@
 //! Every renderer is a pure function over [`LintReport`](crate::model::LintReport) that returns
 //! a string. Nothing here prints: the CLI owns all output.
 
+mod blind;
 mod common;
 mod diff;
 mod error;
@@ -14,6 +15,7 @@ mod text;
 #[cfg(test)]
 mod fixtures;
 
+pub use blind::render_blind_note;
 pub use diff::{render_diff_json, render_diff_text};
 pub use error::ReportError;
 pub use json::render_json;

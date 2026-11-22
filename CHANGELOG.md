@@ -37,3 +37,12 @@
   `<link rel="modulepreload">` are imports, root-absolute paths resolve against the Vite root and
   remote URLs are ignored. An existing `.svelte` file wins over `x.svelte.ts`, and an
   extensionless specifier finds a component after every TypeScript and JavaScript extension.
+- Blind spots: the scan keeps a census of what it cannot see, the code files in a language it does
+  not read (by extension, with lines), the files only `.driftwallignore` hides, excluded files, skipped
+  references and unresolved imports, each attributed to its node. `brief` ends with a `blind spots`
+  block and node lines carry their counts, `neighbors` lists a node's items (and its files with
+  `--files`), `lint` and `init` print one `note:` line (and `lint --format json` gains `blind_spots`),
+  and none of it changes an exit code. Edges show `(type-only)`, `(test-only)`, `(embed)`, `(asset)`
+  or per-kind counts, imports of a module itself list `module` in `uses:`, and `neighbors --all-sites`
+  prints every site. `where` accepts `--contract`, fails with `no such file` for a missing path and
+  says what a non-source file is.

@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use crate::model::{EdgeKind, LintReport, Location, Severity, ViolationKind};
+use crate::model::{EdgeKind, LintReport, Location, Severity, SkipReason, ViolationKind};
 
 /// The kebab-case name of a kind. An exhaustive match so a new variant fails to compile here.
 pub(super) const fn kind_str(kind: ViolationKind) -> &'static str {
@@ -22,6 +22,16 @@ pub(super) const fn severity_str(severity: Severity) -> &'static str {
     match severity {
         Severity::Error => "error",
         Severity::Warning => "warning",
+    }
+}
+
+/// The kebab-case name of a skip reason, as the model serialises it. Exhaustive like [`kind_str`].
+pub(super) const fn skip_reason_str(reason: SkipReason) -> &'static str {
+    match reason {
+        SkipReason::UndeclaredPackage => "undeclared-package",
+        SkipReason::DynamicSpecifier => "dynamic-specifier",
+        SkipReason::EmbedNonSource => "embed-non-source",
+        SkipReason::UnreachableModule => "unreachable-module",
     }
 }
 
@@ -88,14 +98,29 @@ pub(super) fn slash_path(path: &Path) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{arrow, capped, edge_kind_str, kind_str, plural, severity_str, site_str};
-    use crate::model::{EdgeKind, Location, Severity};
+    use super::{
+        arrow, capped, edge_kind_str, kind_str, plural, severity_str, site_str, skip_reason_str,
+    };
+    use crate::model::{EdgeKind, Location, Severity, SkipReason};
 
     #[test]
     fn edge_kind_names_match_the_models_serde_names() {
         for kind in [EdgeKind::Implemented, EdgeKind::Planned] {
             let serde_name = serde_json::to_string(&kind).unwrap();
             assert_eq!(serde_name, format!("\"{}\"", edge_kind_str(kind)));
+        }
+    }
+
+    #[test]
+    fn skip_reason_names_match_the_models_serde_names() {
+        for reason in [
+            SkipReason::UndeclaredPackage,
+            SkipReason::DynamicSpecifier,
+            SkipReason::EmbedNonSource,
+            SkipReason::UnreachableModule,
+        ] {
+            let serde_name = serde_json::to_string(&reason).unwrap();
+            assert_eq!(serde_name, format!("\"{}\"", skip_reason_str(reason)));
         }
     }
 

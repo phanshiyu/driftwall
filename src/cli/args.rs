@@ -83,6 +83,9 @@ pub struct NeighborsArgs {
     /// Output format.
     #[arg(long, value_enum, default_value_t = ViewFormat::Text)]
     pub format: ViewFormat,
+    /// Text: list the source files of the node under the `files:` line. JSON always has them.
+    #[arg(long)]
+    pub files: bool,
     /// Text: list every import site of every edge, not just the first three. JSON always does.
     #[arg(long)]
     pub all_sites: bool,

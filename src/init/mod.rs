@@ -27,7 +27,7 @@ use thiserror::Error;
 
 use crate::diagram::DiagramError;
 use crate::imports::{self, ImportsError};
-use crate::model::{DEFAULT_CONTRACT, Language};
+use crate::model::{BlindSpots, BlindSummary, DEFAULT_CONTRACT, Language};
 use crate::ownership::{self, OwnershipError};
 
 pub use existing::Existing;
@@ -66,6 +66,8 @@ pub struct InitSummary {
     pub tag_files: usize,
     /// The contract path, as given in the options.
     pub contract: PathBuf,
+    /// What the scan could not see, as counts: the same census `lint` reports.
+    pub blind_spots: BlindSummary,
 }
 
 /// Everything that can stop [`run`]. Nothing is written when it fails before the write step.
@@ -145,5 +147,15 @@ pub fn run(
     let units = detect_units(root, &files);
     let existing = Existing::of(&ownership);
     let baseline = plan(&files, &assets, &imports, options, &units, &existing);
-    write::apply(root, &baseline, write)
+    let mut summary = write::apply(root, &baseline, write)?;
+    // why: init has no owners or line counts to give, and the note shows neither.
+    summary.blind_spots = BlindSpots::build(
+        &ownership,
+        |_| None,
+        |_| None,
+        imports.values().flat_map(|found| &found.skipped),
+        imports.values().flat_map(|found| &found.unresolved),
+    )
+    .summary();
+    Ok(summary)
 }

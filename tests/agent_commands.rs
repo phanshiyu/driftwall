@@ -147,6 +147,7 @@ nodes:
   b: b (1 file)
 edges:
   a --> b (1 import) uses: b
+blind spots: none
 ";
     assert_eq!(stdout(&output), expected);
     assert_eq!(stderr(&output), "");
@@ -281,6 +282,7 @@ outgoing:
 incoming:
   a --> b (1 import) uses: b
     a/main.ts:1
+blind spots: none
 ";
     assert_eq!(stdout(&output), expected);
 }
@@ -324,6 +326,7 @@ incoming:
     a/four.ts:1
     a/one.ts:1
     ... 2 more
+blind spots: none
 ";
     let out = stdout(&output);
     assert!(out.ends_with(expected_incoming), "{out}");

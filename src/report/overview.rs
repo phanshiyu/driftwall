@@ -6,10 +6,12 @@ use std::path::PathBuf;
 use serde::Serialize;
 
 use crate::model::{
-    EdgeKind, EdgeSummary, ImportKind, MAX_SITES, NodeSummary, NodeView, Overview, Site, Symbol,
+    BlindSpots, BlindSummary, BlindTally, EdgeKind, EdgeSummary, ImportKind, MAX_SITES,
+    NodeSummary, NodeView, Overview, Site, Symbol,
 };
 
 use super::ReportError;
+use super::blind;
 use super::common::{arrow, capped, plural, site_str, slash_path};
 use super::json::SCHEMA_VERSION;
 
@@ -17,7 +19,8 @@ use super::json::SCHEMA_VERSION;
 ///
 /// Planned edges use `-.->`, undeclared ones are marked `UNDECLARED`, and every edge carries its
 /// number of import sites and, when imports use any, the symbols they use (the first six, then
-/// `+N more`). A node with a declared surface lists it as `exports: ...`.
+/// `+N more`). A node with a declared surface lists it as `exports: ...`, and a node that is blind
+/// to anything ends with ` blind: ...`. The text ends with the blind spots block.
 #[must_use]
 pub fn render_overview_text(overview: &Overview) -> String {
     let count = |kind| {
@@ -46,10 +49,11 @@ pub fn render_overview_text(overview: &Overview) -> String {
         });
         let _ = writeln!(
             out,
-            "  {}: {} ({}){exports}",
+            "  {}: {} ({}){exports}{}",
             node.id,
             dirs_str(&node.dirs),
-            plural(node.files, "file")
+            plural(node.files, "file"),
+            blind::node_suffix(&node.blind_spots),
         );
     }
     out.push_str("edges:\n");
@@ -59,6 +63,10 @@ pub fn render_overview_text(overview: &Overview) -> String {
     for edge in &overview.edges {
         let _ = writeln!(out, "  {}", edge_line(edge));
     }
+    out.push_str(&blind::summary_block(
+        &overview.blind_spots,
+        &overview.unmapped,
+    ));
     out
 }
 
@@ -68,19 +76,24 @@ pub struct NodeViewOptions {
     /// List every import site of every edge instead of the first
     /// [`MAX_SITES`](crate::model::MAX_SITES).
     pub all_sites: bool,
+    /// List the source files the node owns under the `files:` line.
+    pub files: bool,
 }
 
 /// Renders `view` as uncoloured text: the node, then its outgoing and incoming edges.
 ///
 /// Each edge has up to [`MAX_SITES`](crate::model::MAX_SITES) example import sites, or all of
 /// them with `options.all_sites`. A declared surface is listed in full as `exports: ...` after the
-/// file count.
+/// file count, and the files themselves follow the `files:` line with `options.files`. The text
+/// ends with the node's blind spots, one item per line.
 #[must_use]
 pub fn render_node_view_text(view: &NodeView, options: NodeViewOptions) -> String {
     let NodeView {
         node,
         outgoing,
         incoming,
+        files,
+        blind_spots,
     } = view;
     let mut out = format!("node: {}\n", node.id);
     // why: fmt::Write into a String is infallible, so the discarded Results carry no error.
@@ -89,6 +102,11 @@ pub fn render_node_view_text(view: &NodeView, options: NodeViewOptions) -> Strin
     }
     let _ = writeln!(out, "dirs: {}", dirs_str(&node.dirs));
     let _ = writeln!(out, "files: {}", node.files);
+    if options.files {
+        for file in files {
+            let _ = writeln!(out, "  {}", slash_path(file));
+        }
+    }
     if let Some(names) = &node.exports {
         let names: Vec<&str> = names.iter().map(String::as_str).collect();
         let _ = writeln!(out, "exports: {}", names.join(", "));
@@ -113,6 +131,7 @@ pub fn render_node_view_text(view: &NodeView, options: NodeViewOptions) -> Strin
             }
         }
     }
+    out.push_str(&blind::items_block(blind_spots));
     out
 }
 
@@ -128,6 +147,14 @@ pub fn render_overview_json(overview: &Overview) -> Result<String, ReportError> 
         summary: Summary,
         nodes: &'a [NodeSummary],
         edges: &'a [EdgeSummary],
+        blind_spots: Blind<'a>,
+    }
+    /// The summary beside the tally of what no node owns.
+    #[derive(Serialize)]
+    struct Blind<'a> {
+        #[serde(flatten)]
+        summary: &'a BlindSummary,
+        unmapped: &'a BlindTally,
     }
     to_json(&Document {
         version: SCHEMA_VERSION,
@@ -137,6 +164,10 @@ pub fn render_overview_json(overview: &Overview) -> Result<String, ReportError> 
         },
         nodes: &overview.nodes,
         edges: &overview.edges,
+        blind_spots: Blind {
+            summary: &overview.blind_spots,
+            unmapped: &overview.unmapped,
+        },
     })
 }
 
@@ -151,12 +182,16 @@ pub fn render_node_view_json(view: &NodeView) -> Result<String, ReportError> {
         node: &'a NodeSummary,
         outgoing: &'a [EdgeSummary],
         incoming: &'a [EdgeSummary],
+        files: &'a [PathBuf],
+        blind_spots: &'a BlindSpots,
     }
     to_json(&Document {
         version: SCHEMA_VERSION,
         node: &view.node,
         outgoing: &view.outgoing,
         incoming: &view.incoming,
+        files: &view.files,
+        blind_spots: &view.blind_spots,
     })
 }
 
@@ -276,6 +311,7 @@ mod tests {
             dirs: dirs.iter().map(PathBuf::from).collect(),
             files,
             exports: None,
+            blind_spots: BlindTally::default(),
         }
     }
 
@@ -309,6 +345,8 @@ mod tests {
 
     fn sample() -> Overview {
         Overview {
+            blind_spots: BlindSummary::default(),
+            unmapped: BlindTally::default(),
             nodes: vec![
                 node("cli", &["src"], 3),
                 node("lint", &["src/lint", "src/lint2"], 1),
@@ -336,6 +374,7 @@ edges:
   cli --> lint (4 imports)
   lint -.-> model (0 imports)
   model --> cli (1 import) UNDECLARED
+blind spots: none
 ";
         assert_eq!(render_overview_text(&sample()), expected);
     }
@@ -348,6 +387,7 @@ nodes:
   (none)
 edges:
   (none)
+blind spots: none
 ";
         assert_eq!(render_overview_text(&Overview::default()), expected);
     }
@@ -355,6 +395,8 @@ edges:
     #[test]
     fn node_view_text_is_exact() {
         let view = NodeView {
+            files: Vec::new(),
+            blind_spots: BlindSpots::default(),
             node: node("lint", &["src/lint"], 5),
             outgoing: vec![
                 edge("lint", "model", Some(EdgeKind::Planned), &[3]),
@@ -377,6 +419,7 @@ outgoing:
     ... 2 more
 incoming:
   (none)
+blind spots: none
 ";
         assert_eq!(
             render_node_view_text(&view, NodeViewOptions::default()),
@@ -389,6 +432,8 @@ incoming:
         let mut summary = node("a", &[], 0);
         summary.label = None;
         let view = NodeView {
+            files: Vec::new(),
+            blind_spots: BlindSpots::default(),
             node: summary,
             outgoing: vec![],
             incoming: vec![],
@@ -401,6 +446,7 @@ outgoing:
   (none)
 incoming:
   (none)
+blind spots: none
 ";
         assert_eq!(
             render_node_view_text(&view, NodeViewOptions::default()),
@@ -411,6 +457,8 @@ incoming:
     #[test]
     fn edges_list_the_symbols_they_use_after_the_flags() {
         let overview = Overview {
+            blind_spots: BlindSummary::default(),
+            unmapped: BlindTally::default(),
             nodes: vec![],
             edges: vec![
                 using(
@@ -429,6 +477,7 @@ edges:
   a --> b (2 imports) uses: Client, fetch, *
   c --> a (1 import) UNDECLARED uses: x
   b -.-> c (0 imports)
+blind spots: none
 ";
         assert!(text.ends_with(expected), "{text}");
     }
@@ -485,6 +534,8 @@ nodes:
     #[test]
     fn neighbors_lists_the_whole_surface_and_the_edge_symbols() {
         let view = NodeView {
+            files: Vec::new(),
+            blind_spots: BlindSpots::default(),
             node: exporting(
                 node("b", &["src/b"], 2),
                 &["a", "b", "c", "d", "e", "f", "g", "h"],
@@ -506,6 +557,7 @@ outgoing:
 incoming:
   a --> b (1 import) uses: a, h
     src/x.ts:4
+blind spots: none
 ";
         assert_eq!(
             render_node_view_text(&view, NodeViewOptions::default()),
@@ -516,6 +568,8 @@ incoming:
     #[test]
     fn json_carries_symbols_always_and_exports_only_when_declared() {
         let overview = Overview {
+            blind_spots: BlindSummary::default(),
+            unmapped: BlindTally::default(),
             nodes: vec![
                 exporting(node("a", &[], 0), &["Client", "fetch"]),
                 node("b", &[], 0),
@@ -540,6 +594,8 @@ incoming:
         assert_eq!(value["edges"][1]["symbols"], json!([]));
 
         let view = NodeView {
+            files: Vec::new(),
+            blind_spots: BlindSpots::default(),
             node: overview.nodes[0].clone(),
             outgoing: overview.edges.clone(),
             incoming: vec![],
@@ -648,6 +704,8 @@ incoming:
     #[test]
     fn all_sites_lists_every_site_and_the_default_stops_at_three() {
         let view = NodeView {
+            files: Vec::new(),
+            blind_spots: BlindSpots::default(),
             node: node("a", &[], 0),
             outgoing: vec![marked(5, &[])],
             incoming: vec![],
@@ -657,7 +715,13 @@ incoming:
             capped.contains("    src/x.ts:3\n    ... 2 more\n"),
             "{capped}"
         );
-        let every = render_node_view_text(&view, NodeViewOptions { all_sites: true });
+        let every = render_node_view_text(
+            &view,
+            NodeViewOptions {
+                all_sites: true,
+                ..NodeViewOptions::default()
+            },
+        );
         assert!(every.contains("    src/x.ts:5\n"), "{every}");
         assert!(!every.contains("more"), "{every}");
     }
@@ -678,6 +742,7 @@ incoming:
                 "label": "lint: label",
                 "dirs": ["src/lint", "src/lint2"],
                 "files": 1,
+                "blind_spots": { "unread": 0, "excluded": 0, "ignored": 0, "skipped": 0, "unresolved": 0 },
             })
         );
         assert_eq!(
@@ -704,6 +769,8 @@ incoming:
     #[test]
     fn node_view_json_has_the_documented_shape() {
         let view = NodeView {
+            files: Vec::new(),
+            blind_spots: BlindSpots::default(),
             node: node("lint", &["src/lint"], 5),
             outgoing: vec![edge("lint", "model", Some(EdgeKind::Implemented), &[3])],
             incoming: vec![],

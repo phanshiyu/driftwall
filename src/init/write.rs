@@ -6,6 +6,8 @@ use std::path::{Path, PathBuf};
 use crate::diagram;
 use crate::model::{DirTag, SCOPE_HERE, Scope};
 
+use crate::model::BlindSummary;
+
 use super::{InitError, InitPlan, InitSummary, WriteOptions};
 
 /// Name of the file that tags a directory with a node.
@@ -53,6 +55,7 @@ pub fn apply(
         edges: baseline.contract.edges.len(),
         tag_files: tag_paths.len(),
         contract: write.contract.clone(),
+        blind_spots: BlindSummary::default(),
     })
 }
 

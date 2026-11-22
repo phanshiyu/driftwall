@@ -10,6 +10,12 @@ use std::path::PathBuf;
 use serde::{Serialize, Serializer};
 use thiserror::Error;
 
+mod blind;
+
+pub use blind::{
+    BlindFile, BlindRef, BlindSpots, BlindSummary, BlindTally, UnreadGroup, UnreadTotal,
+};
+
 /// Contract path used when none is given, relative to the repository root.
 pub const DEFAULT_CONTRACT: &str = "architecture.mmd";
 
@@ -572,6 +578,9 @@ pub struct NodeSummary {
     /// Omitted from JSON when `None`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub exports: Option<BTreeSet<String>>,
+    /// What the node is blind to: its unread, excluded and ignored files and its skipped and
+    /// unresolved references.
+    pub blind_spots: BlindTally,
 }
 
 /// One edge as the overview presents it: declared, observed in code, or both.
@@ -606,6 +615,10 @@ pub struct Overview {
     pub errors: usize,
     /// Findings of warning severity in the lint run behind this overview.
     pub warnings: usize,
+    /// Everything the analysis could not see, as counts.
+    pub blind_spots: BlindSummary,
+    /// The blind spots no node owns.
+    pub unmapped: BlindTally,
 }
 
 /// One node with the edges that touch it.
@@ -617,6 +630,10 @@ pub struct NodeView {
     pub outgoing: Vec<EdgeSummary>,
     /// Edges entering the node, sorted by source.
     pub incoming: Vec<EdgeSummary>,
+    /// The source files the node owns, sorted.
+    pub files: Vec<PathBuf>,
+    /// Every item the node is blind to.
+    pub blind_spots: BlindSpots,
 }
 
 /// What changed between two versions of the contract.

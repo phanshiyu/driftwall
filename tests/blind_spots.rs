@@ -1,5 +1,5 @@
-//! End-to-end tests of the blind spots: `where` for every kind of file, and (further down) the
-//! census in `brief`, `neighbors`, `lint` and `init`.
+//! End-to-end tests of `driftwall where` for every kind of file. The census in `brief`,
+//! `neighbors`, `lint` and `init` is tested in `blind_report.rs`.
 
 use serde_json::{Value, json};
 

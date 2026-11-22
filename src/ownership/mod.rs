@@ -422,7 +422,7 @@ fn hidden_sources(root: &Path, seen: &Discovered) -> Result<BTreeSet<PathBuf>, O
     let seen_excluded = |file: &PathBuf| seen.excluded.values().any(|files| files.contains(file));
     Ok(walked_files(root, false)?
         .into_iter()
-        .filter(|file| language_of(file).is_some())
+        .filter(|file| language::is_source(root, file))
         .filter(|file| seen.sources.binary_search(file).is_err() && !seen_excluded(file))
         .collect())
 }

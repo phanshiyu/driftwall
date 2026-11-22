@@ -85,11 +85,16 @@ fn init_ok(dir: &TempDir, extra: &[&str]) {
     assert_eq!(output.status.code(), Some(0), "{}", text(&output.stderr));
 }
 
-/// Asserts that `lint` on `dir` is exactly clean, under `--strict`.
+/// Asserts that `lint` on `dir` is exactly clean, under `--strict`. The blind spots note is not a
+/// finding, so its line is left out of the comparison.
 fn assert_lints_clean(dir: &TempDir) {
     let lint = run_on("lint", dir.path(), &["--strict"]);
+    let findings: String = text(&lint.stdout)
+        .lines()
+        .filter(|line| !line.starts_with("note: "))
+        .fold(String::new(), |out, line| out + line + "\n");
     assert_eq!(
-        (lint.status.code(), text(&lint.stdout)),
+        (lint.status.code(), findings),
         (Some(0), "driftwall: clean\n".to_owned()),
         "{}",
         read(dir, "architecture.mmd")

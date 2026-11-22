@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Result, anyhow, bail};
 use driftwall::init::{self, InitOptions, InitSummary, WriteOptions};
 use driftwall::lint::{self, LintOptions};
+use driftwall::model::BlindSummary;
 use driftwall::report;
 
 use crate::args::{Command, InitArgs, LintArgs, LintFormat};
@@ -50,15 +51,17 @@ pub fn lint_options(contract: Option<&PathBuf>) -> LintOptions {
 fn run_lint(args: &LintArgs) -> Result<Run> {
     require_directory(&args.path)?;
     let options = lint_options(args.contract.as_ref());
-    let lint_report = lint::run(&args.path, &options)?;
+    let observation = lint::observe(&args.path, &options)?;
+    let lint_report = &observation.report;
+    let blind = observation.blind_spots.summary();
     let stdout = match args.format {
-        LintFormat::Text => report::render_text(&lint_report),
-        LintFormat::Json => report::render_json(&lint_report)?,
-        LintFormat::Sarif => report::render_sarif(&lint_report)?,
+        LintFormat::Text => with_note(report::render_text(lint_report), &blind),
+        LintFormat::Json => report::render_json(lint_report, &blind)?,
+        LintFormat::Sarif => report::render_sarif(lint_report)?,
     };
     Ok(Run {
         stdout,
-        outcome: Outcome::of_lint(&lint_report, args.strict),
+        outcome: Outcome::of_lint(lint_report, args.strict),
     })
 }
 
@@ -75,9 +78,18 @@ fn run_init(args: &InitArgs) -> Result<Run> {
     }
     let summary = init::run(&args.path, &options, &write)?;
     Ok(Run {
-        stdout: render_init_summary(&summary),
+        stdout: with_note(render_init_summary(&summary), &summary.blind_spots),
         outcome: Outcome::Clean,
     })
+}
+
+/// `text` followed by the blind spots note line, when there is one.
+fn with_note(mut text: String, blind: &BlindSummary) -> String {
+    if let Some(note) = report::render_blind_note(blind) {
+        text.push_str(&note);
+        text.push('\n');
+    }
+    text
 }
 
 /// `driftwall: wrote <contract> (<n> nodes, <m> edges) and <k> .arch files`.
@@ -117,6 +129,7 @@ mod tests {
             edges,
             tag_files,
             contract: "architecture.mmd".into(),
+            blind_spots: BlindSummary::default(),
         }
     }
 

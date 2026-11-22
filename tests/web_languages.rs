@@ -83,8 +83,8 @@ mod support {
                         "{} -> {} at {}:{}",
                         edge.from,
                         edge.to,
-                        site.file.display(),
-                        site.line
+                        site.at.file.display(),
+                        site.at.line
                     )
                 })
             })

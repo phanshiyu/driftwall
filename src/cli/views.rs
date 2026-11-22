@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 
 use anyhow::{Result, bail};
-use driftwall::lint::{self, LintOptions};
+use driftwall::lint::{self, LintOptions, Observation};
 use driftwall::model::Overview;
 use driftwall::report;
 
@@ -16,7 +16,7 @@ use crate::outcome::Outcome;
 /// # Errors
 /// A root that is not a directory, or any failure of the scan.
 pub fn brief(args: &BriefArgs) -> Result<Run> {
-    let overview = scan(&args.path, args.contract.as_ref())?;
+    let (overview, _) = scan(&args.path, args.contract.as_ref())?;
     let stdout = match args.format {
         ViewFormat::Text => report::render_overview_text(&overview),
         ViewFormat::Json => report::render_overview_json(&overview)?,
@@ -33,8 +33,13 @@ pub fn brief(args: &BriefArgs) -> Result<Run> {
 /// A node the contract does not declare (the message lists the declared ones), a root that is
 /// not a directory, or any failure of the scan.
 pub fn neighbors(args: &NeighborsArgs) -> Result<Run> {
-    let overview = scan(&args.path, args.contract.as_ref())?;
-    let Some(view) = lint::node_view(&overview, &args.node) else {
+    let (overview, observation) = scan(&args.path, args.contract.as_ref())?;
+    let Some(view) = lint::node_view(
+        &overview,
+        &observation.ownership,
+        &observation.blind_spots,
+        &args.node,
+    ) else {
         bail!(
             "unknown node `{}`; declared nodes: {}",
             args.node,
@@ -45,6 +50,7 @@ pub fn neighbors(args: &NeighborsArgs) -> Result<Run> {
         ViewFormat::Text => {
             let options = report::NodeViewOptions {
                 all_sites: args.all_sites,
+                files: args.files,
             };
             report::render_node_view_text(&view, options)
         }
@@ -56,18 +62,20 @@ pub fn neighbors(args: &NeighborsArgs) -> Result<Run> {
     })
 }
 
-/// Scans `path` once and summarises it.
-fn scan(path: &std::path::Path, contract: Option<&PathBuf>) -> Result<Overview> {
+/// Scans `path` once and summarises it, keeping the observation the summary came from.
+fn scan(path: &std::path::Path, contract: Option<&PathBuf>) -> Result<(Overview, Observation)> {
     require_directory(path)?;
     let options: LintOptions = lint_options(contract);
     let observation = lint::observe(path, &options)?;
-    Ok(lint::overview(
+    let overview = lint::overview(
         &observation.contract,
         &observation.ownership,
         &observation.observed,
         &observation.symbols,
         &observation.report,
-    ))
+        &observation.blind_spots,
+    );
+    Ok((overview, observation))
 }
 
 /// The declared node ids, comma separated, or `(none)`.
@@ -85,7 +93,7 @@ fn declared_nodes(overview: &Overview) -> String {
 
 #[cfg(test)]
 mod tests {
-    use driftwall::model::{NodeId, NodeSummary};
+    use driftwall::model::{BlindTally, NodeId, NodeSummary};
 
     use super::*;
 
@@ -99,6 +107,7 @@ mod tests {
                     dirs: Vec::new(),
                     files: 0,
                     exports: None,
+                    blind_spots: BlindTally::default(),
                 })
                 .collect(),
             ..Overview::default()

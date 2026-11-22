@@ -143,6 +143,7 @@ nodes:
   b: b (1 file) exports: Client, fetch
 edges:
   a --> b (1 import) uses: Client, fetch
+blind spots: none
 ";
     assert_eq!(stdout(&output), expected);
 }
@@ -198,6 +199,7 @@ outgoing:
 incoming:
   a --> b (1 import) uses: fetch
     a/main.ts:1
+blind spots: none
 ";
     assert_eq!(stdout(&output), expected);
 }
