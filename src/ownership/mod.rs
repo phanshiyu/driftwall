@@ -6,6 +6,9 @@ mod exclude;
 mod language;
 mod module;
 
+#[cfg(test)]
+mod asset_tests;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsStr;
 use std::fs;
@@ -78,6 +81,10 @@ impl Decision {
 /// [`Ownership::excluded`] and nowhere else, unless the root `.driftwallignore` whitelists them
 /// with a negated pattern.
 ///
+/// Every other walked file is an asset, owned by the same tag rules and listed in
+/// [`Ownership::asset_owners`] or [`Ownership::asset_unmapped`]. Assets never appear in
+/// [`Ownership::owners`], [`Ownership::unmapped`], [`Ownership::tags`] or [`Ownership::excluded`].
+///
 /// Honors `.gitignore` (with or without a `.git` directory) and `.driftwallignore`. Machine
 /// specific ignore sources (global git config, `.git/info/exclude`, parent directories) are
 /// deliberately not consulted so the result depends only on the contents of `root`.
@@ -88,6 +95,7 @@ impl Decision {
 pub fn scan(root: &Path) -> Result<Ownership, OwnershipError> {
     let Discovered {
         sources,
+        assets,
         arch_files,
         excluded,
     } = discover(root)?;
@@ -122,12 +130,7 @@ pub fn scan(root: &Path) -> Result<Ownership, OwnershipError> {
     };
     let mut derived: BTreeSet<(Location, String)> = BTreeSet::new();
     for source in sources {
-        let owner = source
-            .parent()
-            .into_iter()
-            .flat_map(Path::ancestors)
-            .find_map(|dir| decisions.get(dir).map(|decision| (dir, decision)));
-        match owner {
+        match nearest_decision(&decisions, &source) {
             Some((dir, decision)) => {
                 let node = decision.node_for(dir, &source)?;
                 if decision.tag == Tag::Modules {
@@ -140,6 +143,19 @@ pub fn scan(root: &Path) -> Result<Ownership, OwnershipError> {
             }
         }
     }
+    for asset in assets {
+        // why: an asset must never fail the scan, so a name that is no node id leaves it unmapped.
+        let owner = nearest_decision(&decisions, &asset)
+            .and_then(|(dir, decision)| decision.node_for(dir, &asset).ok());
+        match owner {
+            Some(node) => {
+                ownership.asset_owners.insert(asset, node);
+            }
+            None => {
+                ownership.asset_unmapped.insert(asset);
+            }
+        }
+    }
     tags.extend(derived);
     tags.sort();
     ownership.tags = tags;
@@ -148,6 +164,18 @@ pub fn scan(root: &Path) -> Result<Ownership, OwnershipError> {
         .map(|(dir, decision)| (dir, decision.tag))
         .collect();
     Ok(ownership)
+}
+
+/// The decision of the nearest `.arch` at or above `file`, with the directory that holds it.
+fn nearest_decision<'a>(
+    decisions: &'a BTreeMap<PathBuf, Decision>,
+    file: &Path,
+) -> Option<(&'a Path, &'a Decision)> {
+    file.parent()
+        .into_iter()
+        .flat_map(Path::ancestors)
+        .find_map(|dir| decisions.get_key_value(dir))
+        .map(|(dir, decision)| (dir.as_path(), decision))
 }
 
 /// Explains which node owns `file` and which `.arch` file decided it.
@@ -227,6 +255,7 @@ fn read_tag(root: &Path, arch_file: &Path) -> Result<arch::ArchTag, OwnershipErr
 /// What the walk found, root-relative and sorted.
 struct Discovered {
     sources: Vec<PathBuf>,
+    assets: Vec<PathBuf>,
     arch_files: Vec<PathBuf>,
     excluded: BTreeMap<Exclusion, BTreeSet<PathBuf>>,
 }
@@ -254,6 +283,7 @@ fn discover(root: &Path) -> Result<Discovered, OwnershipError> {
 
     let mut found = Discovered {
         sources: Vec::new(),
+        assets: Vec::new(),
         arch_files: Vec::new(),
         excluded: BTreeMap::new(),
     };
@@ -283,9 +313,12 @@ fn discover(root: &Path) -> Result<Discovered, OwnershipError> {
                 }
                 None => found.sources.push(relative),
             }
+        } else {
+            found.assets.push(relative);
         }
     }
     found.sources.sort();
+    found.assets.sort();
     found.arch_files.sort();
     Ok(found)
 }

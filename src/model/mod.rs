@@ -173,6 +173,13 @@ pub struct Ownership {
     pub tag_dirs: BTreeMap<PathBuf, Tag>,
     /// Source files the scan left out, by reason. They are neither owned nor unmapped.
     pub excluded: BTreeMap<Exclusion, BTreeSet<PathBuf>>,
+    /// Owner per repository-relative asset: every other walked file (`data.json`, `style.css`),
+    /// by the same tag rules as source files. Assets are not source, so they are in no other field
+    /// and count in no file total.
+    pub asset_owners: BTreeMap<PathBuf, NodeId>,
+    /// Assets with no inherited tag, or whose module name under `node: *` is not a node id. Never
+    /// a finding: they only let an import of them resolve.
+    pub asset_unmapped: BTreeSet<PathBuf>,
 }
 
 /// A symbol an import uses from its target file, exactly as the importing code writes it.
