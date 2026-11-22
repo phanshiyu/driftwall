@@ -98,7 +98,7 @@ pub fn extract_in(
             .collect();
         let at = Location {
             file: file.to_path_buf(),
-            line: line_of(node),
+            line: line_of((spec.anchor)(node)),
         };
         let reference = Reference {
             specifier,

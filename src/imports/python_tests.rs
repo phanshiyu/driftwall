@@ -384,10 +384,17 @@ fn importing_the_importer_is_dropped() {
 }
 
 #[test]
-fn line_is_the_line_of_the_module_name() {
+fn line_is_the_line_the_statement_starts_on() {
     let source = "\n\nfrom \\\n    a.b import c\n";
     let got = py(source, &["a/b/c.py"]);
-    assert_eq!(lines(&got), [4]);
+    assert_eq!(lines(&got), [3]);
+}
+
+#[test]
+fn a_multi_line_from_import_and_a_multi_line_import_start_on_their_first_line() {
+    let source = "from a import (\n    b,\n)\nimport \\\n    a.b\n";
+    let got = py(source, &["a/__init__.py", "a/b.py"]);
+    assert_eq!(lines(&got), [1, 4]);
 }
 
 #[test]

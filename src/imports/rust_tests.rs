@@ -545,6 +545,15 @@ fn a_multi_line_use_reports_the_line_it_starts_on() {
 }
 
 #[test]
+fn a_use_reports_its_own_line_not_the_line_of_its_path() {
+    let got = rs(
+        "#[allow(unused)]\npub use\n    crate::model::Edge;\npub(crate)\nuse\n    crate::diagram::Node;\n",
+    );
+    assert_eq!(targets(&got), ["src/model/mod.rs", "src/diagram/mod.rs"]);
+    assert_eq!(lines(&got), [2, 4]);
+}
+
+#[test]
 fn a_path_in_a_multi_line_macro_reports_its_own_line() {
     let got =
         rs("fn f() {\n    println!(\n        \"{}\",\n        crate::model::show(),\n    );\n}\n");

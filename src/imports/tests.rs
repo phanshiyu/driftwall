@@ -355,10 +355,24 @@ fn line_numbers_are_one_indexed() {
 }
 
 #[test]
-fn multi_line_import_reports_the_specifier_line() {
-    let source = "import {\n  a,\n  b,\n} from\n  './a';\n";
+fn multi_line_import_reports_the_line_the_statement_starts_on() {
+    let source = "\nimport {\n  a,\n  b,\n} from\n  './a';\n";
     let got = ts(source, &["src/a.ts"]);
-    assert_eq!(lines(&got), [5]);
+    assert_eq!(lines(&got), [2]);
+}
+
+#[test]
+fn multi_line_export_from_reports_the_line_the_statement_starts_on() {
+    let source = "\n\nexport {\n  a,\n} from './a';\n";
+    let got = ts(source, &["src/a.ts"]);
+    assert_eq!(lines(&got), [3]);
+}
+
+#[test]
+fn multi_line_require_and_dynamic_import_report_the_call_start() {
+    let source = "const x =\n  require(\n    './a',\n  );\nconst y = await\n  import(\n './b');\n";
+    let got = ts(source, &["src/a.ts", "src/b.ts"]);
+    assert_eq!(lines(&got), [2, 6]);
 }
 
 #[test]

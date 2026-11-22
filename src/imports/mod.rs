@@ -31,6 +31,7 @@ mod rust_module;
 mod rust_scope;
 mod rust_syntax;
 mod spec;
+mod statement;
 mod tsconfig;
 
 #[cfg(test)]
