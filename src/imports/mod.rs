@@ -11,6 +11,7 @@
 //! limitations: `#[path]` modules, `extern crate` renames and relative paths that start with a
 //! local module name are not followed.
 
+mod alias;
 mod error;
 mod extract;
 mod manifest;
@@ -22,6 +23,8 @@ mod rust_module;
 mod rust_syntax;
 mod spec;
 
+#[cfg(test)]
+mod alias_tests;
 #[cfg(test)]
 mod python_tests;
 #[cfg(test)]
@@ -39,6 +42,7 @@ use rayon::prelude::*;
 
 use crate::model::{Language, ResolvedImport, UnresolvedImport};
 
+pub use alias::{AliasConfig, Candidate, Pattern, TargetTemplate, nearest};
 pub use error::ImportsError;
 pub use extract::{extract, extract_in};
 pub use manifest::library_crates;

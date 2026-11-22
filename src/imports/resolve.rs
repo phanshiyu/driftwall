@@ -65,7 +65,7 @@ fn has_non_source_extension(path: &Path) -> bool {
 
 /// Joins `specifier` onto `dir` and folds `.` and `..` lexically. `None` means the path leaves the
 /// repository root.
-fn join_normalised(dir: Option<&Path>, specifier: &str) -> Option<PathBuf> {
+pub(super) fn join_normalised(dir: Option<&Path>, specifier: &str) -> Option<PathBuf> {
     let mut joined = PathBuf::new();
     for component in dir.into_iter().flat_map(Path::components) {
         if let Component::Normal(part) = component {
