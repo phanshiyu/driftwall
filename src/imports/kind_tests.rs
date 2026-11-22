@@ -1,4 +1,4 @@
-//! Import kind (`runtime`, `typeonly`) and the `test_only` flag, per language.
+//! Import kind (`runtime`, `type-only`) and the `test_only` flag, per language.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};

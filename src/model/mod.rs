@@ -214,10 +214,10 @@ impl Serialize for Symbol {
 
 /// What an import statement is for.
 ///
-/// Serialized as the lower-case strings `runtime`, `typeonly` and `embed`. The order is the order
+/// Serialized in kebab-case as `runtime`, `type-only`, `embed` and `asset`. The order is the order
 /// entries of equal location and target are sorted in.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "kebab-case")]
 pub enum ImportKind {
     /// An import the program needs at run time. The default, and anything not known to be another.
     #[default]
@@ -228,6 +228,9 @@ pub enum ImportKind {
     /// A file the program embeds as data or source at build time, such as Rust `include_str!`. It
     /// uses no named item of its target.
     Embed,
+    /// A non-source repository file (`./data.json`, `./style.css`) a TypeScript or JavaScript
+    /// import depends on. It uses no named item of its target.
+    Asset,
 }
 
 /// One import statement resolved to a repository file.
@@ -606,7 +609,7 @@ mod tests {
     }
 
     #[test]
-    fn kinds_serialize_as_lower_case_strings() {
+    fn kinds_serialize_as_kebab_case_strings() {
         let import = |kind| {
             ResolvedImport::new(
                 Location {
@@ -628,11 +631,15 @@ mod tests {
         );
         assert_eq!(
             tail(ImportKind::TypeOnly),
-            r#""kind":"typeonly","test_only":true}"#
+            r#""kind":"type-only","test_only":true}"#
         );
         assert_eq!(
             tail(ImportKind::Embed),
             r#""kind":"embed","test_only":true}"#
+        );
+        assert_eq!(
+            tail(ImportKind::Asset),
+            r#""kind":"asset","test_only":true}"#
         );
     }
 
