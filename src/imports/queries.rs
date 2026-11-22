@@ -21,6 +21,23 @@ macro_rules! ecmascript_imports {
     };
 }
 
+/// Python: `import a.b`, `import a.b as c`, and `from a.b import c, d as e` or `import *`.
+///
+/// A `from` statement is a single match carrying every imported name, so the resolver can try
+/// submodules before the module itself. `from __future__` is its own node and never matches.
+pub const PYTHON: &str = r"
+(import_statement
+  name: (dotted_name) @specifier)
+(import_statement
+  name: (aliased_import name: (dotted_name) @specifier))
+(import_from_statement
+  module_name: (_) @specifier
+  [
+    name: (dotted_name) @name
+    name: (aliased_import name: (dotted_name) @name)
+  ]*)
+";
+
 /// JavaScript and JSX.
 pub const JAVASCRIPT: &str = ecmascript_imports!();
 

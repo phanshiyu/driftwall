@@ -400,17 +400,15 @@ fn output_is_sorted() {
 }
 
 #[test]
-fn python_and_rust_yield_nothing() {
-    for language in [Language::Python, Language::Rust] {
-        let got = run("import os\nuse crate::a;\n", language, "a.py", &["a.py"]);
-        assert_eq!(got, FileImports::default());
-        assert!(spec(language).is_none());
-    }
+fn rust_yields_nothing() {
+    let got = run("use crate::a;\n", Language::Rust, "a.rs", &["a.rs"]);
+    assert_eq!(got, FileImports::default());
+    assert!(spec(Language::Rust).is_none());
 }
 
 #[test]
 fn table_entries_match_their_language() {
-    for language in [Language::TypeScript, Language::JavaScript] {
+    for language in [Language::TypeScript, Language::JavaScript, Language::Python] {
         assert_eq!(spec(language).map(|s| s.language), Some(language));
     }
 }

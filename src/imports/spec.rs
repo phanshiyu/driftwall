@@ -3,7 +3,7 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use super::{Reference, Resolution, queries, resolve};
+use super::{Reference, Resolution, python, queries, resolve};
 use crate::model::Language;
 
 /// One tree-sitter grammar with a stable name that keys the compiled-query cache.
@@ -29,6 +29,11 @@ static JAVASCRIPT_GRAMMAR: Grammar = Grammar {
     language: || tree_sitter_javascript::LANGUAGE.into(),
 };
 
+static PYTHON_GRAMMAR: Grammar = Grammar {
+    name: "python",
+    language: || tree_sitter_python::LANGUAGE.into(),
+};
+
 /// Everything needed to extract and resolve imports for one language. Adding a language is adding
 /// one entry to [`spec`].
 pub struct LanguageSpec {
@@ -52,6 +57,13 @@ static TYPESCRIPT: LanguageSpec = LanguageSpec {
     resolve: resolve::ecmascript,
 };
 
+static PYTHON: LanguageSpec = LanguageSpec {
+    language: Language::Python,
+    grammar: python_grammar,
+    query: queries::PYTHON,
+    resolve: python::resolve,
+};
+
 static JAVASCRIPT: LanguageSpec = LanguageSpec {
     language: Language::JavaScript,
     grammar: javascript_grammar,
@@ -65,7 +77,8 @@ pub fn spec(language: Language) -> Option<&'static LanguageSpec> {
     match language {
         Language::TypeScript => Some(&TYPESCRIPT),
         Language::JavaScript => Some(&JAVASCRIPT),
-        Language::Python | Language::Rust => None,
+        Language::Python => Some(&PYTHON),
+        Language::Rust => None,
     }
 }
 
@@ -79,4 +92,8 @@ fn typescript_grammar(file: &Path) -> &'static Grammar {
 
 const fn javascript_grammar(_file: &Path) -> &'static Grammar {
     &JAVASCRIPT_GRAMMAR
+}
+
+const fn python_grammar(_file: &Path) -> &'static Grammar {
+    &PYTHON_GRAMMAR
 }

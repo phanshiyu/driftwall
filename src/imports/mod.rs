@@ -1,15 +1,18 @@
 //! Extracts imports with tree-sitter and resolves them to repository files.
 //!
 //! Extraction is driven by the per-language table in [`spec`]: a grammar, a query capturing import
-//! specifiers, and a resolver. TypeScript and JavaScript are filled in; other languages yield no
-//! imports until their table entries exist.
+//! specifiers, and a resolver. TypeScript, JavaScript and Python are filled in; other languages
+//! yield no imports until their table entries exist.
 //!
-//! Known limitation: only relative specifiers are resolved. Bare packages, scoped packages,
-//! `node:` builtins and aliases such as `@/x` are ignored, because `tsconfig` `paths` support is
-//! not implemented yet. Import types (`typeof import('./a')`) are not extracted.
+//! Known limitation: for TypeScript and JavaScript only relative specifiers are resolved. Bare
+//! packages, scoped packages, `node:` builtins and aliases such as `@/x` are ignored, because
+//! `tsconfig` `paths` support is not implemented yet. Import types (`typeof import('./a')`) are
+//! not extracted. For Python, `__import__`, `importlib.import_module`, `.pyi` stubs and import
+//! roots other than the repository root and `src/` are not supported.
 
 mod error;
 mod extract;
+mod python;
 mod queries;
 mod resolve;
 mod spec;
