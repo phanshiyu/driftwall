@@ -515,8 +515,8 @@ A Shell file is read with the bash grammar; zsh and dash scripts are read the sa
 `./x.sh` and `bash x.sh` are not imports), found anywhere in the file, in functions, conditionals and
 loops, but not in comments, strings or here-documents. Only the first argument is the path, later
 ones are ignored. The import is located at the line where the command starts, has kind `runtime`
-and uses no symbol. The path has a value, or the reference is skipped as `dynamic-specifier` with the
-source text of the argument as specifier.
+and uses no symbol. The path has a value, or the reference is skipped as `dynamic-specifier`. The
+specifier of a skipped or unresolved path is the text of the argument as written, quotes included.
 
 **The value of a path.** A word or string made of parts joined together. A part is
 
@@ -551,8 +551,10 @@ when it names an existing asset (a tracked `.env`, a config file), which is igno
 
 **Globs.** A path with `*` or `?` in its literal text is a pattern: matched against every known file
 (any language), `*` and `?` staying inside one `/` segment, and every match, in path order, is an
-import. A pattern that matches nothing is an `unresolved-import`. A path that holds `[`, `{`, or a
-segment `**` is dynamic.
+import, except the importing file itself. A pattern that matches nothing is an `unresolved-import`.
+A path that holds `[`, `{`, or a segment `**` is dynamic. Quoting is not looked at: a shell never
+expands a quoted `*`, but `source "$ROOT/lib/*.sh"` is written to load those files, and that is the
+dependency worth seeing.
 
 ### Svelte and HTML
 

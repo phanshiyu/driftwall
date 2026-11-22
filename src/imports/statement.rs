@@ -132,6 +132,22 @@ pub fn swift_flags(_anchor: Node<'_>, _source: &str, file: &Path) -> Flags {
     )
 }
 
+/// The shell command around a specifier: the `source` or `.` that holds it.
+pub fn shell_anchor(specifier: Node<'_>) -> Node<'_> {
+    enclosing(specifier, &["command"])
+}
+
+/// The flags of the shell command written in `file`: always runtime. Test code: a file whose name up
+/// to its first `.` starts with `test_` or ends with `_test`, or under a `test` or `tests` directory.
+pub fn shell_flags(_anchor: Node<'_>, _source: &str, file: &Path) -> Flags {
+    let stem = file
+        .file_name()
+        .and_then(|name| name.to_str())
+        .and_then(|name| name.split('.').next());
+    let test_file = stem.is_some_and(|stem| stem.starts_with("test_") || stem.ends_with("_test"));
+    Flags::new(false, test_file || in_directory(file, &["test", "tests"]))
+}
+
 /// The flags of the Rust `anchor` (see [`rust_anchor`]) written in `file`.
 ///
 /// Rust has no type-only import. Test code: a file under a `tests` directory or named `*_test.rs`

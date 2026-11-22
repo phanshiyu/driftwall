@@ -54,6 +54,15 @@ pub const PYTHON: &str = r#"
 /// Swift: the module path of every `import` declaration, whatever attribute or keyword it carries.
 pub const SWIFT: &str = "(import_declaration (identifier) @specifier)\n";
 
+/// Shell: the first argument of every `source` and `.` command. The resolver evaluates the path.
+pub const SHELL: &str = r#"
+(command
+  name: (command_name (word) @callee)
+  .
+  argument: (_) @specifier
+  (#any-of? @callee "source" "."))
+"#;
+
 /// JavaScript and JSX.
 pub const JAVASCRIPT: &str = ecmascript_imports!();
 

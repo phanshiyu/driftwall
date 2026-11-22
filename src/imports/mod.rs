@@ -48,6 +48,7 @@ mod rust;
 mod rust_module;
 mod rust_scope;
 mod rust_syntax;
+mod shell;
 mod spec;
 mod statement;
 mod subpath;
@@ -88,6 +89,8 @@ mod rust_dogfood_tests;
 mod rust_symbols_tests;
 #[cfg(test)]
 mod rust_tests;
+#[cfg(test)]
+mod shell_tests;
 #[cfg(test)]
 mod skipped_tests;
 #[cfg(test)]
