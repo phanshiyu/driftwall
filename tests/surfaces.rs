@@ -90,6 +90,16 @@ mod support {
         git(dir, &["commit", "-q", "-m", "base"]);
     }
 
+    /// The violations of `driftwall lint --format json` on `root`, with the exit code.
+    pub fn lint_json(root: &Path) -> (i32, Vec<serde_json::Value>) {
+        let output = driftwall(&["lint", "--format", "json"], root);
+        let value: serde_json::Value = serde_json::from_str(&stdout(&output)).unwrap();
+        (
+            code(&output),
+            value["violations"].as_array().unwrap().clone(),
+        )
+    }
+
     pub fn code(output: &Output) -> i32 {
         output.status.code().unwrap()
     }
@@ -99,7 +109,7 @@ mod support {
     }
 }
 
-use support::{code, commit_all, diff, driftwall, repo, stdout, write};
+use support::{code, commit_all, diff, driftwall, lint_json, repo, stdout, write};
 
 /// `a` imports `b`; `b` declares a surface.
 const SURFACE_CONTRACT: &str =
@@ -286,4 +296,205 @@ fn diff_without_surface_changes_stays_quiet_about_exports() {
     let output = diff(dir.path(), &["--exit-code"]);
     assert_eq!(code(&output), 0);
     assert_eq!(stdout(&output), "driftwall: no contract changes\n");
+}
+
+#[test]
+fn typescript_private_symbol_fails_the_lint_at_the_import_and_passes_once_fixed() {
+    let dir = repo(&ts_files(
+        SURFACE_CONTRACT,
+        "import { Client } from '../b/lib';\nimport { secret } from '../b/lib';\n",
+    ));
+    let (exit, violations) = lint_json(dir.path());
+    assert_eq!(exit, 1);
+    assert_eq!(violations.len(), 1, "{violations:?}");
+    let found = &violations[0];
+    assert_eq!(found["kind"], json!("private-symbol"));
+    assert_eq!(found["severity"], json!("error"));
+    assert_eq!(found["at"], json!({ "file": "a/main.ts", "line": 2 }));
+    let message = found["message"].as_str().unwrap();
+    assert!(
+        message.contains("`secret`") && message.contains("`a`") && message.contains("`b`"),
+        "{message}"
+    );
+    assert!(message.contains("Client, fetch"), "{message}");
+    assert!(found["hint"].as_str().unwrap().contains("approve"));
+
+    let text = driftwall(&["lint"], dir.path());
+    assert_eq!(code(&text), 1);
+    assert!(
+        stdout(&text).contains("a/main.ts:2: error[private-symbol]: "),
+        "{}",
+        stdout(&text)
+    );
+
+    write(
+        dir.path(),
+        &[(
+            "a/main.ts",
+            "import { Client } from '../b/lib';\nimport { fetch } from '../b/lib';\n",
+        )],
+    );
+    let (exit, violations) = lint_json(dir.path());
+    assert_eq!((exit, violations), (0, Vec::new()));
+}
+
+#[test]
+fn typescript_namespace_and_default_imports_need_the_surface_to_allow_them() {
+    let dir = repo(&ts_files(
+        SURFACE_CONTRACT,
+        "import * as lib from '../b/lib';\nimport def from '../b/lib';\n",
+    ));
+    let (exit, violations) = lint_json(dir.path());
+    assert_eq!(exit, 1);
+    let lines: Vec<(&str, i64)> = violations
+        .iter()
+        .map(|v| {
+            (
+                v["kind"].as_str().unwrap(),
+                v["at"]["line"].as_i64().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(lines, [("private-symbol", 1), ("private-symbol", 2)]);
+    assert!(violations[0]["message"].as_str().unwrap().contains("`*`"));
+    assert!(
+        violations[1]["message"]
+            .as_str()
+            .unwrap()
+            .contains("`default`")
+    );
+}
+
+#[test]
+fn typescript_side_effect_imports_and_unrestricted_nodes_pass() {
+    let dir = repo(&ts_files(SURFACE_CONTRACT, "import '../b/lib';\n"));
+    assert_eq!(lint_json(dir.path()), (0, Vec::new()));
+
+    let dir = repo(&ts_files(
+        "flowchart LR\n  a[\"a\"]\n  b[\"b\"]\n  a --> b\n",
+        "import * as lib from '../b/lib';\nimport { secret } from '../b/lib';\n",
+    ));
+    assert_eq!(lint_json(dir.path()), (0, Vec::new()));
+}
+
+#[test]
+fn typescript_imports_inside_one_node_are_never_private() {
+    let mut files = ts_files(SURFACE_CONTRACT, "import { Client } from '../b/lib';\n");
+    files.push(("b/more.ts", "import { secret } from './lib';\n"));
+    let dir = repo(&files);
+    assert_eq!(lint_json(dir.path()), (0, Vec::new()));
+}
+
+#[test]
+fn a_surface_naming_an_undeclared_node_is_a_tool_error_with_its_line() {
+    let dir = repo(&ts_files(
+        "flowchart LR\n  a\n  b\n  a --> b\n  %% exports ghost: X\n",
+        "import { Client } from '../b/lib';\n",
+    ));
+    let output = driftwall(&["lint"], dir.path());
+    assert_eq!(code(&output), 2);
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("line 5"), "{stderr}");
+    assert!(stderr.contains("ghost"), "{stderr}");
+}
+
+const RUST_CONTRACT: &str =
+    "flowchart LR\n  lib\n  app\n  gitlab\n  app --> gitlab\n  %% exports gitlab: Client, fetch\n";
+
+const RUST_GITLAB: &str = "pub struct Client;\npub fn fetch() {}\npub fn secret() {}\n";
+
+fn rust_files(app: &'static str) -> Vec<(&'static str, &'static str)> {
+    vec![
+        ("architecture.mmd", RUST_CONTRACT),
+        ("src/.arch", "node: *\n"),
+        ("src/lib.rs", "pub mod app;\npub mod gitlab;\n"),
+        ("src/app.rs", app),
+        ("src/gitlab.rs", RUST_GITLAB),
+    ]
+}
+
+#[test]
+fn rust_private_symbol_fails_the_lint_at_the_use_and_passes_once_fixed() {
+    let dir = repo(&rust_files(
+        "use crate::gitlab::Client;\nuse crate::gitlab::secret;\n",
+    ));
+    let (exit, violations) = lint_json(dir.path());
+    assert_eq!(exit, 1);
+    assert_eq!(violations.len(), 1, "{violations:?}");
+    assert_eq!(violations[0]["kind"], json!("private-symbol"));
+    assert_eq!(
+        violations[0]["at"],
+        json!({ "file": "src/app.rs", "line": 2 })
+    );
+    assert!(
+        violations[0]["message"]
+            .as_str()
+            .unwrap()
+            .contains("`secret`")
+    );
+
+    write(
+        dir.path(),
+        &[(
+            "src/app.rs",
+            "use crate::gitlab::Client;\nuse crate::gitlab::fetch;\n",
+        )],
+    );
+    assert_eq!(lint_json(dir.path()), (0, Vec::new()));
+}
+
+#[test]
+fn rust_qualified_paths_in_code_are_checked_too() {
+    let dir = repo(&rust_files(
+        "pub fn f() {\n    crate::gitlab::fetch();\n    crate::gitlab::secret();\n}\n",
+    ));
+    let (exit, violations) = lint_json(dir.path());
+    assert_eq!(exit, 1);
+    assert_eq!(violations.len(), 1, "{violations:?}");
+    assert_eq!(
+        violations[0]["at"],
+        json!({ "file": "src/app.rs", "line": 3 })
+    );
+}
+
+#[test]
+fn rust_module_name_use_is_allowed_and_the_items_used_through_it_are_checked() {
+    let dir = repo(&rust_files(
+        "use crate::gitlab;\npub fn f() {\n    gitlab::fetch();\n    gitlab::secret();\n}\n",
+    ));
+    let (exit, violations) = lint_json(dir.path());
+    assert_eq!(exit, 1);
+    assert_eq!(violations.len(), 1, "{violations:?}");
+    assert_eq!(
+        violations[0]["at"],
+        json!({ "file": "src/app.rs", "line": 4 })
+    );
+    assert!(
+        violations[0]["message"]
+            .as_str()
+            .unwrap()
+            .contains("`secret`")
+    );
+
+    write(
+        dir.path(),
+        &[(
+            "src/app.rs",
+            "use crate::gitlab;\npub fn f() {\n    gitlab::fetch();\n    let _ = gitlab::Client;\n}\n",
+        )],
+    );
+    assert_eq!(lint_json(dir.path()), (0, Vec::new()));
+}
+
+#[test]
+fn rust_glob_import_is_private() {
+    let dir = repo(&rust_files("use crate::gitlab::*;\n"));
+    let (exit, violations) = lint_json(dir.path());
+    assert_eq!(exit, 1);
+    assert_eq!(violations.len(), 1, "{violations:?}");
+    assert_eq!(
+        violations[0]["at"],
+        json!({ "file": "src/app.rs", "line": 1 })
+    );
+    assert!(violations[0]["message"].as_str().unwrap().contains("`*`"));
 }
