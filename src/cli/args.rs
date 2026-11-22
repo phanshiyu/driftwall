@@ -20,6 +20,33 @@ pub struct Cli {
 pub enum Command {
     /// Check the code against the architecture contract.
     Lint(LintArgs),
+    /// Show which node owns a file and which .arch file decided it.
+    ///
+    /// Exits 1 when the file is unmapped.
+    Where(WhereArgs),
+}
+
+/// Arguments of `driftwall where`.
+#[derive(Debug, Args)]
+pub struct WhereArgs {
+    /// File to look up, relative to the root or absolute inside it.
+    #[arg(value_name = "FILE")]
+    pub file: PathBuf,
+    /// Repository root.
+    #[arg(long, value_name = "DIR", default_value = ".")]
+    pub root: PathBuf,
+    /// Output format.
+    #[arg(long, value_enum, default_value_t = WhereFormat::Text)]
+    pub format: WhereFormat,
+}
+
+/// Output formats of `driftwall where`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum WhereFormat {
+    /// `<file>: <node> (via <arch file>)` or `<file>: unmapped`.
+    Text,
+    /// An object with `file`, `node` and `arch_file`.
+    Json,
 }
 
 /// Arguments of `driftwall lint`.

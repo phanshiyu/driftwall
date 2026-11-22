@@ -10,6 +10,7 @@ use driftwall::lint::{self, LintOptions};
 use driftwall::report;
 
 use crate::args::{Command, LintArgs, LintFormat};
+use crate::locate;
 use crate::outcome::Outcome;
 
 /// What a command produced.
@@ -28,6 +29,7 @@ pub struct Run {
 pub fn execute(command: &Command) -> Result<Run> {
     match command {
         Command::Lint(args) => run_lint(args),
+        Command::Where(args) => locate::run(args),
     }
 }
 
@@ -50,7 +52,10 @@ fn run_lint(args: &LintArgs) -> Result<Run> {
 }
 
 /// Fails unless `path` exists and is a directory.
-fn require_directory(path: &Path) -> Result<()> {
+///
+/// # Errors
+/// The path cannot be inspected or is not a directory.
+pub fn require_directory(path: &Path) -> Result<()> {
     let metadata =
         fs::metadata(path).map_err(|error| anyhow!("cannot access {}: {error}", path.display()))?;
     if !metadata.is_dir() {

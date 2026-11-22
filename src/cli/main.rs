@@ -5,6 +5,7 @@
 mod args;
 mod commands;
 mod error_chain;
+mod locate;
 mod outcome;
 mod output;
 

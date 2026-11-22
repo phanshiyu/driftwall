@@ -1,6 +1,7 @@
 //! How a command ended, and the exit code each ending maps to (see docs/DESIGN.md).
 
 use driftwall::model::LintReport;
+use driftwall::ownership::Explanation;
 
 /// The three ways a driftwall command can end.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -25,6 +26,16 @@ impl Outcome {
         }
     }
 
+    /// The outcome of `where`: a file nothing owns is a finding.
+    #[must_use]
+    pub const fn of_where(explanation: &Explanation) -> Self {
+        if explanation.node.is_some() {
+            Self::Clean
+        } else {
+            Self::Findings
+        }
+    }
+
     /// The process exit code: `0` clean, `1` findings, `2` tool error.
     #[must_use]
     pub const fn code(self) -> u8 {
@@ -38,7 +49,7 @@ impl Outcome {
 
 #[cfg(test)]
 mod tests {
-    use driftwall::model::{Severity, Violation, ViolationKind};
+    use driftwall::model::{NodeId, Severity, Violation, ViolationKind};
 
     use super::*;
 
@@ -83,6 +94,20 @@ mod tests {
         let warnings = report(&[Severity::Warning]);
         assert_eq!(Outcome::of_lint(&warnings, false), Outcome::Clean);
         assert_eq!(Outcome::of_lint(&warnings, true), Outcome::Findings);
+    }
+
+    #[test]
+    fn a_mapped_file_is_clean_and_an_unmapped_one_is_a_finding() {
+        let mapped = Explanation {
+            node: Some(NodeId::new("lint").unwrap()),
+            arch_file: Some("src/lint/.arch".into()),
+        };
+        let unmapped = Explanation {
+            node: None,
+            arch_file: None,
+        };
+        assert_eq!(Outcome::of_where(&mapped), Outcome::Clean);
+        assert_eq!(Outcome::of_where(&unmapped), Outcome::Findings);
     }
 
     #[test]
