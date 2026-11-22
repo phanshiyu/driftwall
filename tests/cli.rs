@@ -41,6 +41,14 @@ mod support {
         driftwall(&args)
     }
 
+    /// Runs `driftwall where <file> --root <dir> <extra...>`.
+    pub fn locate(dir: &TempDir, file: &str, extra: &[&str]) -> Output {
+        let root = dir.path().to_str().unwrap();
+        let mut args = vec!["where", file, "--root", root];
+        args.extend_from_slice(extra);
+        driftwall(&args)
+    }
+
     /// The exit code, which must exist (no signal death).
     pub fn code(output: &Output) -> i32 {
         output.status.code().unwrap()
@@ -55,7 +63,7 @@ mod support {
     }
 }
 
-use support::{code, driftwall, repo, run_on, stderr, stdout};
+use support::{code, driftwall, locate, repo, run_on, stderr, stdout};
 
 const TWO_NODES: &str = "flowchart LR\n  a[\"a\"]\n  b[\"b\"]\n  a --> b\n";
 
@@ -352,4 +360,151 @@ fn a_closed_stdout_pipe_is_quiet_and_keeps_the_exit_code() {
     let status = child.wait().unwrap();
     assert_eq!(err, "");
     assert_eq!(status.code(), Some(1));
+}
+
+/// Two nodes with a nested override, plus a source file nothing owns.
+fn where_files() -> Vec<(&'static str, &'static str)> {
+    vec![
+        ("architecture.mmd", TWO_NODES),
+        ("a/.arch", "node: a\n"),
+        ("a/main.ts", "export const a = 1;\n"),
+        ("a/inner/.arch", "node: b\n"),
+        ("a/inner/deep/lib.ts", "export const b = 1;\n"),
+        ("loose/free.ts", "export const c = 1;\n"),
+    ]
+}
+
+#[test]
+fn where_reports_the_owner_and_the_arch_file() {
+    let dir = repo(&where_files());
+    let output = locate(&dir, "a/main.ts", &[]);
+    assert_eq!(code(&output), 0);
+    assert_eq!(stdout(&output), "a/main.ts: a (via a/.arch)\n");
+    assert_eq!(stderr(&output), "");
+}
+
+#[test]
+fn where_follows_a_nested_override() {
+    let dir = repo(&where_files());
+    let output = locate(&dir, "a/inner/deep/lib.ts", &[]);
+    assert_eq!(code(&output), 0);
+    assert_eq!(
+        stdout(&output),
+        "a/inner/deep/lib.ts: b (via a/inner/.arch)\n"
+    );
+}
+
+#[test]
+fn where_on_an_unmapped_file_exits_1() {
+    let dir = repo(&where_files());
+    let output = locate(&dir, "loose/free.ts", &[]);
+    assert_eq!(code(&output), 1);
+    assert_eq!(stdout(&output), "loose/free.ts: unmapped\n");
+    assert_eq!(stderr(&output), "");
+}
+
+#[test]
+fn where_json_for_a_mapped_file() {
+    let dir = repo(&where_files());
+    let output = locate(&dir, "a/inner/deep/lib.ts", &["--format", "json"]);
+    assert_eq!(code(&output), 0);
+    let out = stdout(&output);
+    assert_eq!(
+        out,
+        "{\n  \"file\": \"a/inner/deep/lib.ts\",\n  \"node\": \"b\",\n  \"arch_file\": \"a/inner/.arch\"\n}\n"
+    );
+    let doc: Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(doc["node"], "b");
+}
+
+#[test]
+fn where_json_for_an_unmapped_file_has_nulls_and_exits_1() {
+    let dir = repo(&where_files());
+    let output = locate(&dir, "loose/free.ts", &["--format", "json"]);
+    assert_eq!(code(&output), 1);
+    let doc: Value = serde_json::from_str(&stdout(&output)).unwrap();
+    assert_eq!(doc["file"], "loose/free.ts");
+    assert!(doc["node"].is_null());
+    assert!(doc["arch_file"].is_null());
+}
+
+#[test]
+fn where_accepts_an_absolute_path_inside_the_root() {
+    let dir = repo(&where_files());
+    let absolute = dir.path().join("a/main.ts");
+    let output = locate(&dir, absolute.to_str().unwrap(), &[]);
+    assert_eq!(code(&output), 0);
+    assert!(stdout(&output).ends_with(": a (via a/.arch)\n"));
+}
+
+#[test]
+fn where_root_defaults_to_the_current_directory() {
+    let dir = repo(&where_files());
+    let output = Command::new(env!("CARGO_BIN_EXE_driftwall"))
+        .args(["where", "a/main.ts"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    assert_eq!(code(&output), 0);
+    assert_eq!(stdout(&output), "a/main.ts: a (via a/.arch)\n");
+}
+
+#[test]
+fn where_outside_the_root_exits_2() {
+    let dir = repo(&where_files());
+    let other = repo(&where_files());
+    let elsewhere = other.path().join("a/main.ts");
+    for file in ["../x.ts", "a/../../x.ts", elsewhere.to_str().unwrap()] {
+        let output = locate(&dir, file, &[]);
+        assert_eq!(code(&output), 2, "{file}");
+        assert_eq!(stdout(&output), "", "{file}");
+        let err = stderr(&output);
+        assert!(err.starts_with("driftwall: error: "), "{err}");
+        assert!(err.contains("not inside"), "{err}");
+    }
+}
+
+#[test]
+fn where_with_a_missing_root_exits_2() {
+    let dir = TempDir::new().unwrap();
+    let missing = dir.path().join("nope");
+    let output = driftwall(&["where", "a.ts", "--root", missing.to_str().unwrap()]);
+    assert_eq!(code(&output), 2);
+    assert!(stderr(&output).starts_with("driftwall: error: cannot access"));
+}
+
+#[test]
+fn where_with_an_invalid_arch_file_exits_2_with_its_line() {
+    let dir = repo(&[("a/.arch", "# tag\nnope\n"), ("a/main.ts", "")]);
+    let output = locate(&dir, "a/main.ts", &[]);
+    assert_eq!(code(&output), 2);
+    let err = stderr(&output);
+    assert!(err.contains("a/.arch:2"), "{err}");
+}
+
+#[test]
+fn where_requires_a_file() {
+    assert_eq!(code(&driftwall(&["where"])), 2);
+}
+
+#[test]
+fn where_rejects_the_sarif_format() {
+    let dir = repo(&where_files());
+    assert_eq!(code(&locate(&dir, "a/main.ts", &["--format", "sarif"])), 2);
+}
+
+#[test]
+fn where_help_exits_0() {
+    let output = driftwall(&["where", "--help"]);
+    assert_eq!(code(&output), 0);
+    let out = stdout(&output);
+    assert!(out.contains("--root") && out.contains("--format"), "{out}");
+}
+
+#[test]
+fn where_output_is_identical_across_runs() {
+    let dir = repo(&where_files());
+    let first = locate(&dir, "a/inner/deep/lib.ts", &["--format", "json"]);
+    let second = locate(&dir, "a/inner/deep/lib.ts", &["--format", "json"]);
+    assert_eq!(stdout(&first), stdout(&second));
 }
