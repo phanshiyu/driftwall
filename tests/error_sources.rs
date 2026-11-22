@@ -71,6 +71,9 @@ mod witness {
         NestedSubgraph,
         UnclosedSubgraph,
         StrayEnd,
+        MalformedExports,
+        DuplicateExports,
+        UndeclaredExportsNode,
     );
     witness!(OwnershipError: Io, InvalidArch, InvalidModule, Walk, OutsideRoot);
     witness!(ImportsError: Io, Grammar, Query);
@@ -200,6 +203,16 @@ mod witness {
                     id: "x".to_owned(),
                 },
                 Self::StrayEnd { line: 13 },
+                Self::MalformedExports {
+                    line: 14,
+                    reason: "x".to_owned(),
+                },
+                Self::DuplicateExports {
+                    line: 15,
+                    id: id(),
+                    first_line: 2,
+                },
+                Self::UndeclaredExportsNode { line: 16, id: id() },
             ]
         }
     }

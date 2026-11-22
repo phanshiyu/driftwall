@@ -1,6 +1,6 @@
 //! Line-oriented parser for the contract subset.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use super::error::DiagramError;
 use crate::model::{Contract, Edge, EdgeKind, NodeId, NodeInfo};
@@ -16,10 +16,15 @@ const DOTTED: &str = "-.->";
 /// labels (`-->|text|`) are accepted and discarded. Declaration order does not matter for edge
 /// endpoints, which are checked once the whole file has been read.
 ///
+/// A comment line `%% exports <node>: <Name>, <Name>` declares the public surface of a node and is
+/// stored in [`Contract::surfaces`]. Every other `%%` line is a plain comment. The node of an
+/// exports line is checked like an edge endpoint, once the whole file has been read.
+///
 /// # Errors
 /// Returns a [`DiagramError`] for the first problem found: anything outside the grammar in
 /// `docs/DESIGN.md`, a missing or repeated header, invalid or duplicate ids, undeclared edge
-/// endpoints, duplicate or self edges, and nested, unclosed or stray subgraph blocks.
+/// endpoints, duplicate or self edges, nested, unclosed or stray subgraph blocks, and malformed,
+/// duplicate or undeclared-node `%% exports` lines.
 pub fn parse(src: &str) -> Result<Contract, DiagramError> {
     let src = src.strip_prefix('\u{feff}').unwrap_or(src);
     let mut parser = Parser::default();
@@ -27,6 +32,10 @@ pub fn parse(src: &str) -> Result<Contract, DiagramError> {
     for raw in src.lines() {
         line = line.saturating_add(1);
         let text = raw.trim();
+        if let Some(directive) = exports_directive(text) {
+            parser.exports(directive, line)?;
+            continue;
+        }
         if text.is_empty() || text.starts_with("%%") {
             continue;
         }
@@ -42,6 +51,12 @@ struct PendingEdge {
     kind: EdgeKind,
 }
 
+struct PendingExports {
+    line: u32,
+    node: NodeId,
+    names: BTreeSet<String>,
+}
+
 #[derive(Default)]
 struct Parser {
     header_seen: bool,
@@ -50,6 +65,8 @@ struct Parser {
     boundaries: BTreeMap<String, u32>,
     open: Option<(String, u32)>,
     edges: Vec<PendingEdge>,
+    exports: Vec<PendingExports>,
+    exports_lines: BTreeMap<NodeId, u32>,
 }
 
 impl Parser {
@@ -146,6 +163,45 @@ impl Parser {
         Ok(())
     }
 
+    /// Records the `%% exports` directive whose text after the keyword is `rest`.
+    fn exports(&mut self, rest: &str, line: u32) -> Result<(), DiagramError> {
+        let malformed = |reason: String| DiagramError::MalformedExports { line, reason };
+        let (raw_node, list) = rest
+            .split_once(':')
+            .ok_or_else(|| malformed("expected `<node>: <Name>, <Name>`".to_owned()))?;
+        let raw_node = raw_node.trim();
+        if raw_node.is_empty() {
+            return Err(malformed("no node before the `:`".to_owned()));
+        }
+        let node = valid_id(raw_node, line)?;
+        if list.trim().is_empty() {
+            return Err(malformed(format!("`{node}` exports no names")));
+        }
+        let mut names = BTreeSet::new();
+        for raw in list.split(',') {
+            let name = raw.trim();
+            if name.is_empty() {
+                return Err(malformed("empty name in the list".to_owned()));
+            }
+            if !is_symbol_name(name) {
+                return Err(malformed(format!("`{name}` is not an identifier")));
+            }
+            if !names.insert(name.to_owned()) {
+                return Err(malformed(format!("`{name}` is listed twice")));
+            }
+        }
+        if let Some(first_line) = self.exports_lines.get(&node) {
+            return Err(DiagramError::DuplicateExports {
+                line,
+                id: node,
+                first_line: *first_line,
+            });
+        }
+        self.exports_lines.insert(node.clone(), line);
+        self.exports.push(PendingExports { line, node, names });
+        Ok(())
+    }
+
     fn declare(
         &mut self,
         raw_id: &str,
@@ -216,11 +272,41 @@ impl Parser {
             edge_lines.insert(edge.clone(), pending.line);
             edges.insert(edge, pending.kind);
         }
+        let mut surfaces = BTreeMap::new();
+        for pending in self.exports {
+            if !self.nodes.contains_key(&pending.node) {
+                return Err(DiagramError::UndeclaredExportsNode {
+                    line: pending.line,
+                    id: pending.node,
+                });
+            }
+            surfaces.insert(pending.node, pending.names);
+        }
         Ok(Contract {
             nodes: self.nodes,
             edges,
+            surfaces,
         })
     }
+}
+
+/// The text after the keyword when `text` is a `%% exports` directive: a comment whose first word
+/// is `exports`. Any other comment, and anything that is not a comment, is `None`.
+fn exports_directive(text: &str) -> Option<&str> {
+    let rest = text
+        .strip_prefix("%%")?
+        .trim_start()
+        .strip_prefix("exports")?;
+    (rest.is_empty() || rest.starts_with(char::is_whitespace)).then(|| rest.trim())
+}
+
+/// Whether `name` can be a symbol: a letter, `_` or `$`, then letters, digits, `_` or `$`.
+fn is_symbol_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    chars
+        .next()
+        .is_some_and(|c| c.is_alphabetic() || c == '_' || c == '$')
+        && chars.all(|c| c.is_alphanumeric() || c == '_' || c == '$')
 }
 
 fn check_header(text: &str, line: u32) -> Result<(), DiagramError> {
@@ -703,6 +789,131 @@ mod tests {
             );
             assert_eq!(line, Some(2));
         }
+    }
+
+    fn names(list: &[&str]) -> std::collections::BTreeSet<String> {
+        list.iter().map(|name| (*name).to_owned()).collect()
+    }
+
+    #[test]
+    fn exports_lines_declare_surfaces() {
+        let src = "flowchart LR\na\nb\n%% exports a: Client, fetch_mrs\n%% exports b: default\n";
+        let contract = parse(src).unwrap();
+        assert_eq!(contract.surfaces.len(), 2);
+        assert_eq!(contract.surfaces[&id("a")], names(&["Client", "fetch_mrs"]));
+        assert_eq!(contract.surfaces[&id("b")], names(&["default"]));
+    }
+
+    #[test]
+    fn exports_lines_tolerate_whitespace_and_any_position() {
+        let src = "%%exports   a  :  X ,Y,  $z\r\n\t%%   exports b: _w\nflowchart LR\n  a\n  b\n";
+        let contract = parse(src).unwrap();
+        assert_eq!(contract.surfaces[&id("a")], names(&["X", "Y", "$z"]));
+        assert_eq!(contract.surfaces[&id("b")], names(&["_w"]));
+    }
+
+    #[test]
+    fn exports_may_name_a_node_declared_later_or_inside_a_boundary() {
+        let src = "flowchart LR\n%% exports a: X\nsubgraph g\na\nend\n";
+        assert_eq!(parse(src).unwrap().surfaces[&id("a")], names(&["X"]));
+    }
+
+    #[test]
+    fn a_node_without_an_exports_line_has_no_surface() {
+        let contract = parse("flowchart LR\na\nb\n%% exports a: X\n").unwrap();
+        assert!(!contract.surfaces.contains_key(&id("b")));
+    }
+
+    #[test]
+    fn other_comments_stay_plain_comments() {
+        let src = "flowchart LR\na\n%% exportsx a: X\n%% exports: a\n%% export a: X\n%% see exports a: X\n%% Exports a: X\n%%\n";
+        assert!(parse(src).unwrap().surfaces.is_empty());
+    }
+
+    #[test]
+    fn a_comment_that_starts_with_the_word_exports_is_a_directive_or_an_error() {
+        let (err, _) = err_line("flowchart LR\na\n%% exports are listed below\n");
+        assert!(
+            matches!(err, DiagramError::MalformedExports { line: 3, .. }),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn exports_naming_an_undeclared_node_is_reported_on_its_line_after_the_whole_file() {
+        let (err, line) = err_line("flowchart LR\na\n\n%% exports ghost: X\nb\n");
+        assert_eq!(
+            err,
+            DiagramError::UndeclaredExportsNode {
+                line: 4,
+                id: id("ghost")
+            }
+        );
+        assert_eq!(line, Some(4));
+    }
+
+    #[test]
+    fn a_boundary_id_is_not_a_node_for_exports() {
+        let (err, _) = err_line("flowchart LR\nsubgraph g\na\nend\n%% exports g: X\n");
+        assert_eq!(
+            err,
+            DiagramError::UndeclaredExportsNode {
+                line: 5,
+                id: id("g")
+            }
+        );
+    }
+
+    #[test]
+    fn a_second_exports_line_for_a_node_is_rejected_with_both_lines() {
+        let (err, line) = err_line("flowchart LR\na\n%% exports a: X\n\n%% exports a: Y\n");
+        assert_eq!(
+            err,
+            DiagramError::DuplicateExports {
+                line: 5,
+                id: id("a"),
+                first_line: 3
+            }
+        );
+        assert_eq!(line, Some(5));
+    }
+
+    #[test]
+    fn empty_or_malformed_export_lists_are_rejected_on_their_line() {
+        let cases = [
+            "%% exports",
+            "%% exports a",
+            "%% exports a:",
+            "%% exports a:   ",
+            "%% exports : X",
+            "%% exports a: X,",
+            "%% exports a: ,X",
+            "%% exports a: X,,Y",
+            "%% exports a: X Y",
+            "%% exports a: X, X",
+            "%% exports a: *",
+            "%% exports a: 1abc",
+            "%% exports a: X.Y",
+            "%% exports a: X %% why",
+        ];
+        for case in cases {
+            let (err, line) = err_line(&format!("flowchart LR\na\n\n{case}\n"));
+            assert!(
+                matches!(err, DiagramError::MalformedExports { line: 4, .. }),
+                "{case}: {err:?}"
+            );
+            assert_eq!(line, Some(4), "{case}");
+        }
+    }
+
+    #[test]
+    fn an_exports_line_with_an_invalid_node_id_is_an_invalid_id() {
+        let (err, line) = err_line("flowchart LR\na\n%% exports 1a: X\n");
+        assert!(
+            matches!(err, DiagramError::InvalidId { line: 3, .. }),
+            "{err:?}"
+        );
+        assert_eq!(line, Some(3));
     }
 
     #[test]

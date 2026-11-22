@@ -44,6 +44,7 @@ pub fn contract(nodes: &[&str], edges: &[(&str, &str, EdgeKind)]) -> Contract {
             .iter()
             .map(|&(from, to, kind)| (edge(from, to), kind))
             .collect(),
+        ..Contract::default()
     }
 }
 

@@ -14,10 +14,13 @@ const PREAMBLE: [&str; 4] = [
 /// Renders `contract` as the Mermaid subset that [`parse`](super::parse) accepts.
 ///
 /// Output is byte-identical for equal contracts: boundaries in id order with their nodes, then
-/// unboundaried nodes, then edges sorted by `(from, to)`.
+/// unboundaried nodes, then edges sorted by `(from, to)`, then one `%% exports` line per node with
+/// a surface, sorted by node with its names sorted. A node with an empty surface has no line, since
+/// the format cannot say it.
 ///
-/// `parse(&render(&c)) == Ok(c)` holds for every contract whose ids are valid and whose labels
-/// contain no `"` or line break, with two exceptions. Boundary labels are not stored in
+/// `parse(&render(&c)) == Ok(c)` holds for every contract whose ids are valid, whose labels
+/// contain no `"` or line break, and whose surfaces name only declared nodes and use identifiers
+/// (see the format), with two exceptions. Boundary labels are not stored in
 /// [`Contract`], so each boundary is rendered with its id as its label. And the reserved words
 /// `end`, `flowchart` and `subgraph` cannot be node ids in the format, so a contract using one
 /// does not round-trip. Quotes and line breaks inside a node label are replaced (by `'` and a
@@ -59,6 +62,20 @@ pub fn render(contract: &Contract) -> String {
             };
             lines.push(format!("  {} {arrow} {}", edge.from, edge.to));
         }
+    }
+
+    let exports: Vec<String> = contract
+        .surfaces
+        .iter()
+        .filter(|(_, names)| !names.is_empty())
+        .map(|(node, names)| {
+            let names: Vec<&str> = names.iter().map(String::as_str).collect();
+            format!("  %% exports {node}: {}", names.join(", "))
+        })
+        .collect();
+    if !exports.is_empty() {
+        lines.push(String::new());
+        lines.extend(exports);
     }
 
     let mut out = lines.join("\n");
@@ -119,6 +136,7 @@ mod tests {
                     )
                 })
                 .collect(),
+            ..Contract::default()
         }
     }
 
@@ -274,6 +292,90 @@ flowchart LR
             parsed.nodes[&id("a")].label.as_deref(),
             Some("say 'hi' now")
         );
+    }
+
+    fn with_surfaces(mut c: Contract, surfaces: &[(&str, &[&str])]) -> Contract {
+        for (node, names) in surfaces {
+            c.surfaces
+                .insert(id(node), names.iter().map(|n| (*n).to_owned()).collect());
+        }
+        c
+    }
+
+    #[test]
+    fn surfaces_round_trip() {
+        let c = with_surfaces(
+            contract(
+                &[
+                    ("a", node(None, None)),
+                    ("b", node(Some("B"), Some("g"))),
+                    ("c", node(None, None)),
+                ],
+                &[("a", "b", EdgeKind::Implemented)],
+            ),
+            &[
+                ("b", &["Client", "default", "_x", "$y", "fetch_mrs"]),
+                ("a", &["X"]),
+            ],
+        );
+        assert_round_trips(&c);
+        assert_round_trips(&with_surfaces(
+            contract(&[("only", node(None, None))], &[]),
+            &[("only", &["X"])],
+        ));
+    }
+
+    #[test]
+    fn exports_lines_come_after_edges_sorted_by_node_and_name() {
+        let c = with_surfaces(
+            contract(
+                &[("a", node(None, None)), ("b", node(None, None))],
+                &[("a", "b", EdgeKind::Planned)],
+            ),
+            &[("b", &["zeta", "Alpha", "beta"]), ("a", &["X"])],
+        );
+        let expected = "\
+%% driftwall architecture contract.
+%% Solid arrow  (-->)  = implemented dependency, enforced.
+%% Dotted arrow (-.->) = planned dependency, tolerated until built.
+flowchart LR
+
+  a
+  b
+
+  a -.-> b
+
+  %% exports a: X
+  %% exports b: Alpha, beta, zeta
+";
+        assert_eq!(render(&c), expected);
+    }
+
+    #[test]
+    fn exports_lines_follow_nodes_when_there_are_no_edges() {
+        let c = with_surfaces(contract(&[("a", node(None, None))], &[]), &[("a", &["X"])]);
+        assert!(
+            render(&c).ends_with("  a\n\n  %% exports a: X\n"),
+            "{}",
+            render(&c)
+        );
+    }
+
+    #[test]
+    fn an_empty_surface_is_not_rendered() {
+        let c = with_surfaces(contract(&[("a", node(None, None))], &[]), &[("a", &[])]);
+        assert_eq!(
+            render(&c),
+            render(&contract(&[("a", node(None, None))], &[]))
+        );
+    }
+
+    #[test]
+    fn surface_order_does_not_depend_on_insertion_order() {
+        let nodes = [("a", node(None, None)), ("b", node(None, None))];
+        let forward = with_surfaces(contract(&nodes, &[]), &[("a", &["X", "Y"]), ("b", &["Z"])]);
+        let backward = with_surfaces(contract(&nodes, &[]), &[("b", &["Z"]), ("a", &["Y", "X"])]);
+        assert_eq!(render(&forward), render(&backward));
     }
 
     #[test]

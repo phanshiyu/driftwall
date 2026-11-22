@@ -90,6 +90,9 @@ pub struct Contract {
     pub nodes: BTreeMap<NodeId, NodeInfo>,
     /// Declared edges and whether each is enforced.
     pub edges: BTreeMap<Edge, EdgeKind>,
+    /// Public surface per node, from `%% exports` lines. A node absent here is unrestricted, and a
+    /// node present here has at least one name.
+    pub surfaces: BTreeMap<NodeId, BTreeSet<String>>,
 }
 
 /// Languages driftwall can extract imports from.

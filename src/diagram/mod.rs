@@ -38,6 +38,16 @@ mod tests {
     }
 
     #[test]
+    fn a_contract_with_exports_survives_a_render_round_trip() {
+        let src = format!("{OWN_CONTRACT}%% exports model: Edge, NodeId\n%% exports lint: run\n");
+        let contract = parse(&src).unwrap();
+        assert_eq!(contract.surfaces.len(), 2);
+        let rendered = render(&contract);
+        assert_eq!(parse(&rendered).as_ref(), Ok(&contract));
+        assert_eq!(render(&parse(&rendered).unwrap()), rendered);
+    }
+
+    #[test]
     fn truncated_and_mutated_inputs_never_panic() {
         let junk = [
             "",

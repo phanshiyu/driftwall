@@ -126,6 +126,32 @@ pub enum DiagramError {
         /// Line of the `end`.
         line: u32,
     },
+    /// A `%% exports` line that is not `%% exports <node>: <Name>, <Name>`.
+    #[error("line {line}: malformed `%% exports` line: {reason}")]
+    MalformedExports {
+        /// Line of the directive.
+        line: u32,
+        /// What is wrong with it.
+        reason: String,
+    },
+    /// Two `%% exports` lines name the same node.
+    #[error("line {line}: node `{id}` already has an `%% exports` line on line {first_line}")]
+    DuplicateExports {
+        /// Line of the second directive.
+        line: u32,
+        /// The node id.
+        id: NodeId,
+        /// Line of the first directive.
+        first_line: u32,
+    },
+    /// A `%% exports` line names a node that no statement declares.
+    #[error("line {line}: `%% exports` names `{id}`, which is not a declared node")]
+    UndeclaredExportsNode {
+        /// Line of the directive.
+        line: u32,
+        /// The undeclared node.
+        id: NodeId,
+    },
 }
 
 impl DiagramError {
@@ -146,7 +172,10 @@ impl DiagramError {
             | Self::DuplicateBoundary { line, .. }
             | Self::NestedSubgraph { line, .. }
             | Self::UnclosedSubgraph { line, .. }
-            | Self::StrayEnd { line } => Some(*line),
+            | Self::StrayEnd { line }
+            | Self::MalformedExports { line, .. }
+            | Self::DuplicateExports { line, .. }
+            | Self::UndeclaredExportsNode { line, .. } => Some(*line),
         }
     }
 }
