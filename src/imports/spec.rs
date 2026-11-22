@@ -1,9 +1,8 @@
 //! The per-language table: grammar, import query and resolver for each supported language.
 
-use std::collections::BTreeSet;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
-use super::{Reference, Resolution, python, queries, resolve};
+use super::{Environment, Reference, Resolution, python, queries, resolve};
 use crate::model::Language;
 
 /// One tree-sitter grammar with a stable name that keys the compiled-query cache.
@@ -44,10 +43,10 @@ pub struct LanguageSpec {
     /// Tree-sitter query capturing each import's module reference as `@specifier` and, when one
     /// statement imports several things from it, each imported name as `@name`.
     pub query: &'static str,
-    /// Resolves one match, written in `importer`, against the known repository files. Returns one
+    /// Resolves one match, written in `importer`, against the [`Environment`]. Returns one
     /// [`Resolution`] per target the match refers to, so a statement naming several imports can
     /// resolve each independently.
-    pub resolve: fn(&Reference<'_>, &Path, &BTreeSet<PathBuf>) -> Vec<Resolution>,
+    pub resolve: fn(&Reference<'_>, &Path, &Environment<'_>) -> Vec<Resolution>,
 }
 
 static TYPESCRIPT: LanguageSpec = LanguageSpec {

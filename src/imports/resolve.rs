@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 use std::ffi::OsString;
 use std::path::{Component, Path, PathBuf};
 
-use super::{Reference, Resolution};
+use super::{Environment, Reference, Resolution};
 
 /// Extensions tried, in order, for extension probing and directory index files.
 const SOURCE_EXTENSIONS: [&str; 8] = ["ts", "tsx", "mts", "cts", "js", "jsx", "mjs", "cjs"];
@@ -22,9 +22,9 @@ const JS_TO_TS: [(&str, &[&str]); 4] = [
 pub fn ecmascript(
     reference: &Reference<'_>,
     importer: &Path,
-    known: &BTreeSet<PathBuf>,
+    env: &Environment<'_>,
 ) -> Vec<Resolution> {
-    vec![resolve(reference.specifier, importer, known)]
+    vec![resolve(reference.specifier, importer, env.known)]
 }
 
 /// Resolves `specifier`, written in `importer`, to a file in `known`.

@@ -3,7 +3,7 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use super::{Reference, Resolution};
+use super::{Environment, Reference, Resolution};
 
 /// Directory prefixes that absolute imports are tried against, in order: the repository root, then
 /// `src/`.
@@ -19,8 +19,9 @@ const ABSOLUTE_ROOTS: [&str; 2] = ["", "src"];
 pub fn resolve(
     reference: &Reference<'_>,
     importer: &Path,
-    known: &BTreeSet<PathBuf>,
+    env: &Environment<'_>,
 ) -> Vec<Resolution> {
+    let known = env.known;
     let written: String = reference
         .specifier
         .chars()

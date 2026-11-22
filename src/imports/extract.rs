@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use tree_sitter::{Node, Parser, Query, QueryCursor, StreamingIterator};
 
 use super::spec::Grammar;
-use super::{FileImports, ImportsError, Reference, Resolution, spec};
+use super::{Environment, FileImports, ImportsError, Reference, Resolution, spec};
 use crate::model::{Language, Location, ResolvedImport, UnresolvedImport};
 
 const SPECIFIER_CAPTURE: &str = "specifier";
@@ -18,6 +18,8 @@ const NAME_CAPTURE: &str = "name";
 /// `file` is the repository-relative path of the importing file and `known` holds the
 /// repository-relative paths of every repository file. A language with no table entry yields no
 /// imports. Syntax errors are tolerated: whatever imports tree-sitter can still see are returned.
+/// No library crates are known, so Rust paths that start with a crate name are not followed; use
+/// [`extract_in`] to supply them.
 ///
 /// # Errors
 /// Returns [`ImportsError::Grammar`] or [`ImportsError::Query`] when a table entry is internally
@@ -27,6 +29,29 @@ pub fn extract(
     language: Language,
     file: &Path,
     known: &BTreeSet<PathBuf>,
+) -> Result<FileImports, ImportsError> {
+    let crates = BTreeMap::new();
+    extract_in(
+        source,
+        language,
+        file,
+        &Environment {
+            known,
+            crates: &crates,
+        },
+    )
+}
+
+/// [`extract`] with an explicit [`Environment`]: the known repository files and library crates.
+///
+/// # Errors
+/// Returns [`ImportsError::Grammar`] or [`ImportsError::Query`] when a table entry is internally
+/// inconsistent.
+pub fn extract_in(
+    source: &str,
+    language: Language,
+    file: &Path,
+    env: &Environment<'_>,
 ) -> Result<FileImports, ImportsError> {
     let Some(spec) = spec::spec(language) else {
         return Ok(FileImports::default());
@@ -74,8 +99,10 @@ pub fn extract(
         let reference = Reference {
             specifier,
             names: &names,
+            node,
+            source,
         };
-        for resolution in (spec.resolve)(&reference, file, known) {
+        for resolution in (spec.resolve)(&reference, file, env) {
             match resolution {
                 Resolution::Resolved(target) => {
                     resolved.insert(ResolvedImport {
