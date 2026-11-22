@@ -234,6 +234,9 @@ pub struct DirTag {
     pub tag: Tag,
     /// How far the tag reaches below the directory.
     pub scope: Scope,
+    /// For a `node: *` tag: the names of the non-test modules directly in the directory (see
+    /// `ownership::peers_in`), which decide the node of a test file there. Empty for any other tag.
+    pub peers: BTreeSet<String>,
 }
 
 /// Why the scan left a source file out of the repository's own source. Serialized as the word

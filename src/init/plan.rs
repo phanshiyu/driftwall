@@ -59,7 +59,10 @@ pub fn plan(
         .filter(|file| !existing.owners.contains_key(*file))
         .map(PathBuf::as_path)
         .collect();
-    let mut draft = Draft::new(existing.nodes.keys().cloned().collect());
+    let mut draft = Draft::new(
+        existing.nodes.keys().cloned().collect(),
+        files.keys().cloned().collect(),
+    );
     if let Some(depth) = options.depth {
         draft.cut_directories(&fresh, depth);
     } else {
@@ -113,15 +116,17 @@ pub fn plan(
     for (dir, id) in &directory_ids {
         let scope = scope_of(dir, &draft);
         let tag = Tag::Node(id.clone());
-        tags.insert(dir.clone(), DirTag { tag, scope });
+        let peers = BTreeSet::new();
+        tags.insert(dir.clone(), DirTag { tag, scope, peers });
     }
-    for (dir, prefix) in std::mem::take(&mut draft.module_dirs) {
-        let tag = Tag::Modules(prefix);
+    for (dir, region) in std::mem::take(&mut draft.module_dirs) {
+        let tag = Tag::Modules(region.prefix);
         tags.insert(
             dir,
             DirTag {
                 tag,
                 scope: Scope::Subtree,
+                peers: region.peers,
             },
         );
     }

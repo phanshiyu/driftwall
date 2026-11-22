@@ -7,7 +7,7 @@ use std::path::{Component, Path, PathBuf};
 
 use super::ids::RESERVED;
 use crate::model::{NodeId, Prefix};
-use crate::ownership::module_name;
+use crate::ownership::{is_test_file, module_name, peers_in};
 
 /// Label of the repository root directory.
 const ROOT_LABEL: &str = ".";
@@ -32,13 +32,22 @@ pub(super) enum Owner {
     Module(NodeId),
 }
 
+/// A directory that gets a `node: <prefix>*` tag.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct ModuleDir {
+    /// The prefix of every id the tag derives.
+    pub prefix: Prefix,
+    /// The non-test modules directly in the directory, as the scan will see them.
+    pub peers: BTreeSet<String>,
+}
+
 /// The decisions made so far about files that no existing tag covers.
 #[derive(Debug, Default)]
 pub(super) struct Draft {
     /// Directories that get a `node: <id>` tag, the id assigned once all are known.
     pub directories: BTreeSet<PathBuf>,
-    /// Directories that get a `node: <prefix>*` tag, with the prefix.
-    pub module_dirs: BTreeMap<PathBuf, Prefix>,
+    /// Directories that get a `node: <prefix>*` tag.
+    pub module_dirs: BTreeMap<PathBuf, ModuleDir>,
     /// Directory nodes of units that have a prefix: their ids are made of the whole path.
     pub whole_paths: BTreeSet<PathBuf>,
     /// Directory nodes that are named by something other than their path: a Swift target is named
@@ -54,13 +63,18 @@ pub(super) struct Draft {
     /// Ids that cannot be used for a new module node, or for a directory node without a suffix:
     /// the nodes existing tags name, and the modules in `modules`.
     pub fixed: BTreeSet<NodeId>,
+    /// Every source file of the repository, owned or not: the modules a `node: *` directory has
+    /// are the ones the scan will see there, whoever owns them.
+    pub all_files: BTreeSet<PathBuf>,
 }
 
 impl Draft {
-    /// A draft that must not reuse the `fixed` ids.
-    pub fn new(fixed: BTreeSet<NodeId>) -> Self {
+    /// A draft that must not reuse the `fixed` ids, for a repository with the source files
+    /// `all_files`.
+    pub fn new(fixed: BTreeSet<NodeId>, all_files: BTreeSet<PathBuf>) -> Self {
         Self {
             fixed,
+            all_files,
             ..Self::default()
         }
     }
@@ -89,8 +103,9 @@ impl Draft {
     ) -> bool {
         let mut derived: BTreeMap<PathBuf, (NodeId, String)> = BTreeMap::new();
         let mut direct: BTreeSet<&NodeId> = BTreeSet::new();
+        let peers = peers_in(fork, self.all_files.iter().map(PathBuf::as_path));
         for file in files {
-            let Some(name) = module_name(fork, file) else {
+            let Some(name) = module_name(fork, file, &peers) else {
                 return false;
             };
             let Ok(id) = prefix.derive(&name) else {
@@ -101,8 +116,13 @@ impl Draft {
             }
             derived.insert((*file).to_path_buf(), (id, name));
         }
+        // why: a test file never makes a module of its own, so it does not count towards two.
         for (file, (id, _)) in &derived {
-            if counted == Counted::FilesAndDirectories || file.parent() == Some(fork) {
+            let is_direct = file.parent() == Some(fork);
+            if is_direct && is_test_file(file) {
+                continue;
+            }
+            if counted == Counted::FilesAndDirectories || is_direct {
                 direct.insert(id);
             }
         }
@@ -116,7 +136,13 @@ impl Draft {
             self.fixed.insert(id.clone());
             self.owners.insert(file, Owner::Module(id));
         }
-        self.module_dirs.insert(fork.to_path_buf(), prefix.clone());
+        self.module_dirs.insert(
+            fork.to_path_buf(),
+            ModuleDir {
+                prefix: prefix.clone(),
+                peers,
+            },
+        );
         true
     }
 

@@ -211,6 +211,7 @@ fn existing_of_labels_nodes_by_their_tag_directory() {
     let dir_tag = |tag| DirTag {
         tag,
         scope: Scope::Subtree,
+        peers: BTreeSet::new(),
     };
     ownership
         .tag_dirs

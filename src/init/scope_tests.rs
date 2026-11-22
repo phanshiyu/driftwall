@@ -126,7 +126,7 @@ fn a_unit_group_is_limited_and_a_unit_prefix_is_its_directory_path() {
         tags(&p),
         pairs(&[
             ("apps/web ui", "apps-web-ui"),
-            ("apps/web ui/src", "apps-web-ui-*"),
+            ("apps/web ui/src", "apps-web-ui-src"),
             ("apps/web ui/test", "apps-web-ui-test"),
             ("src", "*"),
         ])
@@ -136,8 +136,7 @@ fn a_unit_group_is_limited_and_a_unit_prefix_is_its_directory_path() {
         [
             "a",
             "apps-web-ui",
-            "apps-web-ui-a",
-            "apps-web-ui-c",
+            "apps-web-ui-src",
             "apps-web-ui-test",
             "b"
         ]
@@ -145,7 +144,7 @@ fn a_unit_group_is_limited_and_a_unit_prefix_is_its_directory_path() {
     let limited: Vec<Scope> = scopes(&p).into_iter().map(|(_, scope)| scope).collect();
     assert_eq!(
         limited,
-        [Scope::Here, Scope::Subtree, Scope::Subtree, Scope::Subtree]
+        [Scope::Here, Scope::Here, Scope::Subtree, Scope::Subtree]
     );
 }
 

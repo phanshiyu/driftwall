@@ -55,3 +55,9 @@
   `dynamic-specifier`. Files with no extension whose first line is a `#!` shebang naming `sh`,
   `bash`, `zsh`, `dash` or Python are source too. `.githooks/` and `integrations/` are ignored by
   the repository's own `.driftwallignore`.
+- `init` grouping: only the primary unit's source directory, Rust crates and Python packages get one
+  node per module. Every other JavaScript unit (including one declared only by a `tsconfig.json`) is
+  split by subdirectory, with the loose files of its source directory as one `scope: here` node. The
+  root files are one `root` node when the root also has source directories. A test file (`*.test.*`,
+  `*.spec.*`, `test_*.py`, `*_test.py`, `*_test.rs`, `*_tests.rs`) joins the module it tests, or else the
+  node of its directory, and never makes a node of its own.

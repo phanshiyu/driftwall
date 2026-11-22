@@ -1,6 +1,7 @@
-//! End-to-end tests of init v3 on fixtures modelled on real repositories: every unit's source
-//! directory is split into module nodes, other units get prefixed ids, the root group is limited
-//! to its own files, and generated output is left out. Every baseline must lint exactly clean.
+//! End-to-end tests of init v3 on fixtures modelled on real repositories: the source directory of
+//! the primary unit is split into module nodes, other JavaScript units are split by directory and
+//! get prefixed ids, the root group is limited to its own files, and generated output is left out.
+//! Every baseline must lint exactly clean.
 
 use std::process::Output;
 
@@ -315,11 +316,11 @@ fn root_and_ui() -> Files {
 }
 
 #[test]
-fn a_sub_project_with_its_own_manifest_gets_prefixed_module_nodes() {
+fn a_sub_project_with_its_own_manifest_is_split_by_directory() {
     let dir = repo(&root_and_ui());
     init_ok(&dir);
     assert_eq!(read(&dir, "src/.arch"), "node: *\n");
-    assert_eq!(read(&dir, "ui/src/.arch"), "node: ui-*\n");
+    assert_eq!(read(&dir, "ui/src/.arch"), "node: ui-src\nscope: here\n");
     assert_eq!(read(&dir, "ui/.arch"), "node: ui\nscope: here\n");
     assert_eq!(
         node_ids(&dir),
@@ -327,10 +328,9 @@ fn a_sub_project_with_its_own_manifest_gets_prefixed_module_nodes() {
             "a",
             "b",
             "ui",
-            "ui-App",
             "ui-components",
             "ui-lib",
-            "ui-store",
+            "ui-src",
             "ui-test"
         ]
     );
@@ -338,10 +338,9 @@ fn a_sub_project_with_its_own_manifest_gets_prefixed_module_nodes() {
         edge_pairs(&dir),
         [
             "b a",
-            "ui-App ui-components",
-            "ui-App ui-store",
             "ui-components ui-lib",
-            "ui-test ui-App"
+            "ui-src ui-components",
+            "ui-test ui-src"
         ]
     );
     assert_lints_clean(&dir);

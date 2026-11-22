@@ -422,14 +422,9 @@ fn javascript_workspace_packages_are_nodes() {
     init_ok(&dir, &[]);
     assert_eq!(
         node_ids(&dir),
-        [
-            "packages-api",
-            "packages-web-page",
-            "packages-web-src",
-            "tools"
-        ]
+        ["packages-api-src", "packages-web-src", "tools"]
     );
-    assert_eq!(edge_pairs(&dir), ["packages-web-src packages-api"]);
+    assert_eq!(edge_pairs(&dir), ["packages-web-src packages-api-src"]);
     assert_lints_clean(&dir);
 }
 

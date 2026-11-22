@@ -26,7 +26,7 @@ pub fn owner_in(tags: &BTreeMap<PathBuf, DirTag>, file: &Path) -> Option<NodeId>
         })?;
     match &found.tag {
         Tag::Node(id) => Some(id.clone()),
-        Tag::Modules(prefix) => prefix.derive(&module_name(dir, file)?).ok(),
+        Tag::Modules(prefix) => prefix.derive(&module_name(dir, file, &found.peers)?).ok(),
     }
 }
 
@@ -34,9 +34,17 @@ pub fn owner_in(tags: &BTreeMap<PathBuf, DirTag>, file: &Path) -> Option<NodeId>
 mod tests {
     use super::*;
     use crate::model::Prefix;
+    use std::collections::BTreeSet;
 
     fn tag(dir: &str, tag: Tag, scope: Scope) -> (PathBuf, DirTag) {
-        (PathBuf::from(dir), DirTag { tag, scope })
+        (
+            PathBuf::from(dir),
+            DirTag {
+                tag,
+                scope,
+                peers: BTreeSet::new(),
+            },
+        )
     }
 
     fn node(raw: &str) -> Tag {

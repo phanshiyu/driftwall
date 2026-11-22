@@ -1,7 +1,7 @@
 //! Rule 2 of `init`: what the code units decide, before the automatic cut sees the rest.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use super::ids::sanitize;
 use super::layout::{Counted, Draft, Owner};
@@ -11,10 +11,12 @@ use crate::model::Prefix;
 /// Lets the units of the repository decide the files in `fresh` they cover, and returns the files
 /// nobody decided yet.
 ///
-/// Every unit is decomposed (see `docs/DESIGN.md`, "Code units"): its source directory gets
-/// `node: <prefix>*` when it directly holds two or more modules, and the rest of the unit becomes
-/// directory nodes. A unit that cannot be decomposed is one directory node, except the primary
-/// unit, whose files are left to the automatic cut. Units without a file in `fresh` do not count.
+/// Every unit is decomposed (see `docs/DESIGN.md`, "Code units"): the source directory of a crate,
+/// a Python package or the primary unit gets `node: <prefix>*` when it directly holds two or more
+/// modules, and the source directory of any other JavaScript unit is split by subdirectory. The
+/// rest of the unit becomes directory nodes. A unit that cannot be decomposed is one directory
+/// node, except the primary unit, whose files are left to the automatic cut. Units without a file
+/// in `fresh` do not count.
 pub(super) fn claim<'a>(draft: &mut Draft, fresh: &[&'a Path], units: &[Unit]) -> Vec<&'a Path> {
     let mut kinds: BTreeMap<&Path, UnitKind> = BTreeMap::new();
     for unit in units {
@@ -38,6 +40,9 @@ pub(super) fn claim<'a>(draft: &mut Draft, fresh: &[&'a Path], units: &[Unit]) -
         }
     }
     let primary = primary_unit(&files_of, &kinds);
+    let has_source_directories = fresh
+        .iter()
+        .any(|file| file.parent().is_some_and(|dir| !dir.as_os_str().is_empty()));
 
     let mut taken: BTreeSet<&Path> = BTreeSet::new();
     for (dir, files) in &files_of {
@@ -54,6 +59,24 @@ pub(super) fn claim<'a>(draft: &mut Draft, fresh: &[&'a Path], units: &[Unit]) -
             prefix_of(dir)
         };
         let source = source_dir(dir, kind, files);
+        if kind == UnitKind::Package
+            && !is_primary
+            && let Some(prefix) = &prefix
+        {
+            claim_layers(draft, dir, &source, prefix, files);
+            taken.extend(files.iter().copied());
+            continue;
+        }
+        if kind == UnitKind::Package
+            && is_primary
+            && source.as_os_str().is_empty()
+            && has_source_directories
+        {
+            // why: root files are tooling next to the code, never `node: *` ("Root files").
+            draft.cut_directories(files, 1);
+            taken.extend(files.iter().copied());
+            continue;
+        }
         let inside: Vec<&Path> = files
             .iter()
             .copied()
@@ -91,6 +114,35 @@ pub(super) fn claim<'a>(draft: &mut Draft, fresh: &[&'a Path], units: &[Unit]) -
         .copied()
         .filter(|file| !taken.contains(file))
         .collect()
+}
+
+/// A JavaScript unit that is not the primary one is cut by directory: the files directly in its
+/// source directory are one group, each subdirectory of the source directory is one node named
+/// `<prefix><subdirectory>`, and the rest of the unit is directory nodes of the whole path.
+fn claim_layers(draft: &mut Draft, dir: &Path, source: &Path, prefix: &Prefix, files: &[&Path]) {
+    for file in files {
+        let owner = match file.strip_prefix(source) {
+            Ok(below) if below.components().count() == 1 => {
+                draft.groups.insert(source.to_path_buf());
+                source.to_path_buf()
+            }
+            Ok(below) => {
+                let first = below.components().next().map(Component::as_os_str);
+                let layer = source.join(first.unwrap_or_default());
+                let name = first.unwrap_or_default().to_string_lossy();
+                draft
+                    .names
+                    .insert(layer.clone(), format!("{}{name}", prefix.as_str()));
+                layer
+            }
+            Err(_) => rest_directory(draft, dir, file),
+        };
+        draft.directories.insert(owner.clone());
+        draft.whole_paths.insert(owner.clone());
+        draft
+            .owners
+            .insert((*file).to_path_buf(), Owner::Directory(owner));
+    }
 }
 
 /// A Swift target is one directory node named after the target, whatever it holds: its files

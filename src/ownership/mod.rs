@@ -29,7 +29,7 @@ pub use exclude::{HEADER_LINES, announces_generated, exclusion_of};
 pub use language::{language_in, language_of};
 pub use locate::{FileKind, Located, locate};
 pub use lookup::owner_in;
-pub use module::module_name;
+pub use module::{is_test_file, module_name, peers_in};
 
 pub use crate::model::{DirTag, Scope, Tag};
 use crate::model::{Exclusion, Location, NodeId, Ownership};
@@ -54,6 +54,8 @@ struct Decision {
     scope: Scope,
     arch_file: PathBuf,
     line: u32,
+    /// The non-test modules directly in the directory, for a `node: *` tag (see [`peers_in`]).
+    peers: BTreeSet<String>,
 }
 
 impl Decision {
@@ -68,7 +70,7 @@ impl Decision {
         match &self.tag {
             Tag::Node(id) => Ok(id.clone()),
             Tag::Modules(prefix) => {
-                let name = module_name(dir, file).unwrap_or_default();
+                let name = module_name(dir, file, &self.peers).unwrap_or_default();
                 prefix
                     .derive(&name)
                     .map_err(|source| OwnershipError::InvalidModule {
@@ -137,6 +139,10 @@ pub fn scan(root: &Path) -> Result<Ownership, OwnershipError> {
         let dir = arch_file
             .parent()
             .map_or_else(PathBuf::new, Path::to_path_buf);
+        let peers = match parsed.tag {
+            Tag::Modules(_) => peers_in(&dir, sources.iter().map(PathBuf::as_path)),
+            Tag::Node(_) => BTreeSet::new(),
+        };
         decisions.insert(
             dir,
             Decision {
@@ -144,6 +150,7 @@ pub fn scan(root: &Path) -> Result<Ownership, OwnershipError> {
                 scope: parsed.scope,
                 arch_file,
                 line: parsed.line,
+                peers,
             },
         );
     }
@@ -191,6 +198,7 @@ pub fn scan(root: &Path) -> Result<Ownership, OwnershipError> {
             let tag = DirTag {
                 tag: decision.tag,
                 scope: decision.scope,
+                peers: decision.peers,
             };
             (dir, tag)
         })
@@ -233,11 +241,21 @@ pub fn explain(root: &Path, file: &Path) -> Result<Explanation, OwnershipError> 
         match fs::read_to_string(root.join(&arch_file)) {
             Ok(contents) => {
                 let parsed = arch::parse(&arch_file, &contents)?;
+                // why: only a test file needs the sibling sources, so only it pays for the walk.
+                let peers = if matches!(parsed.tag, Tag::Modules(_))
+                    && relative.parent() == Some(dir)
+                    && is_test_file(&relative)
+                {
+                    peers_in(dir, discover(root)?.sources.iter().map(PathBuf::as_path))
+                } else {
+                    BTreeSet::new()
+                };
                 let decision = Decision {
                     tag: parsed.tag,
                     scope: parsed.scope,
                     arch_file,
                     line: parsed.line,
+                    peers,
                 };
                 if decision.covers(dir, &relative) {
                     return Ok(Explanation {
