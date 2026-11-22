@@ -7,10 +7,11 @@ use std::sync::{Arc, Mutex, PoisonError};
 use tree_sitter::{Node, Parser, Query, QueryCursor, StreamingIterator};
 
 use super::spec::Grammar;
-use super::{FileImports, ImportsError, Resolution, spec};
+use super::{FileImports, ImportsError, Reference, Resolution, spec};
 use crate::model::{Language, Location, ResolvedImport, UnresolvedImport};
 
 const SPECIFIER_CAPTURE: &str = "specifier";
+const NAME_CAPTURE: &str = "name";
 
 /// Extracts and resolves the imports of one file. Pure: it never touches the filesystem.
 ///
@@ -42,31 +43,49 @@ pub fn extract(
         return Ok(FileImports::default());
     };
 
+    let name_capture = query.capture_index_for_name(NAME_CAPTURE);
+
     let mut resolved = BTreeSet::new();
     let mut unresolved = BTreeSet::new();
     let mut cursor = QueryCursor::new();
     let mut matches = cursor.matches(&query, tree.root_node(), source.as_bytes());
     while let Some(found) = matches.next() {
-        for node in found
+        let Some(node) = found
             .captures()
             .iter()
-            .filter(|c| c.index == capture)
+            .find(|c| c.index == capture)
             .map(|c| c.node)
-        {
-            let Some(specifier) = plain_string(node, source) else {
-                continue;
-            };
-            let at = Location {
-                file: file.to_path_buf(),
-                line: line_of(node),
-            };
-            match (spec.resolve)(specifier, file, known) {
+        else {
+            continue;
+        };
+        let Some(specifier) = specifier_text(node, source) else {
+            continue;
+        };
+        let names: Vec<&str> = found
+            .captures()
+            .iter()
+            .filter(|c| Some(c.index) == name_capture)
+            .filter_map(|c| c.node.utf8_text(source.as_bytes()).ok())
+            .collect();
+        let at = Location {
+            file: file.to_path_buf(),
+            line: line_of(node),
+        };
+        let reference = Reference {
+            specifier,
+            names: &names,
+        };
+        for resolution in (spec.resolve)(&reference, file, known) {
+            match resolution {
                 Resolution::Resolved(target) => {
-                    resolved.insert(ResolvedImport { at, target });
+                    resolved.insert(ResolvedImport {
+                        at: at.clone(),
+                        target,
+                    });
                 }
                 Resolution::Unresolved => {
                     unresolved.insert(UnresolvedImport {
-                        at,
+                        at: at.clone(),
                         specifier: specifier.to_owned(),
                     });
                 }
@@ -78,6 +97,16 @@ pub fn extract(
         resolved: resolved.into_iter().collect(),
         unresolved: unresolved.into_iter().collect(),
     })
+}
+
+/// The text of a captured specifier: the contents of a string literal, or the source text of any
+/// other node, such as a Python module path.
+fn specifier_text<'s>(node: Node<'_>, source: &'s str) -> Option<&'s str> {
+    if node.kind() == "string" {
+        plain_string(node, source)
+    } else {
+        node.utf8_text(source.as_bytes()).ok()
+    }
 }
 
 /// The text of a string literal made of a single fragment, so escapes and templates never produce

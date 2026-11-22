@@ -1,6 +1,7 @@
 //! Tree-sitter queries that capture import specifiers, one constant per language.
 //!
-//! Every query must capture the specifier string node as `@specifier`.
+//! Every query must capture the module reference node as `@specifier`. A query may also capture
+//! imported names as `@name`; all captures of one match are resolved together.
 
 /// Forms shared by TypeScript and JavaScript: `import ... from`, `import 'a'`, every
 /// `export ... from`, dynamic `import(...)` and `require(...)`.

@@ -3,7 +3,7 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use super::{Resolution, queries, resolve};
+use super::{Reference, Resolution, queries, resolve};
 use crate::model::Language;
 
 /// One tree-sitter grammar with a stable name that keys the compiled-query cache.
@@ -36,24 +36,27 @@ pub struct LanguageSpec {
     pub language: Language,
     /// Grammar to parse `file` with. Chosen per file because TSX needs its own grammar.
     pub grammar: fn(&Path) -> &'static Grammar,
-    /// Tree-sitter query capturing each import specifier string as `@specifier`.
+    /// Tree-sitter query capturing each import's module reference as `@specifier` and, when one
+    /// statement imports several things from it, each imported name as `@name`.
     pub query: &'static str,
-    /// Resolves a specifier written in `importer` against the known repository files.
-    pub resolve: fn(&str, &Path, &BTreeSet<PathBuf>) -> Resolution,
+    /// Resolves one match, written in `importer`, against the known repository files. Returns one
+    /// [`Resolution`] per target the match refers to, so a statement naming several imports can
+    /// resolve each independently.
+    pub resolve: fn(&Reference<'_>, &Path, &BTreeSet<PathBuf>) -> Vec<Resolution>,
 }
 
 static TYPESCRIPT: LanguageSpec = LanguageSpec {
     language: Language::TypeScript,
     grammar: typescript_grammar,
     query: queries::TYPESCRIPT,
-    resolve: resolve::resolve,
+    resolve: resolve::ecmascript,
 };
 
 static JAVASCRIPT: LanguageSpec = LanguageSpec {
     language: Language::JavaScript,
     grammar: javascript_grammar,
     query: queries::JAVASCRIPT,
-    resolve: resolve::resolve,
+    resolve: resolve::ecmascript,
 };
 
 /// The table entry for `language`, or `None` when extraction is not implemented for it yet.

@@ -38,6 +38,16 @@ pub struct FileImports {
     pub unresolved: Vec<UnresolvedImport>,
 }
 
+/// One query match handed to a language resolver: the module reference as written and, for
+/// languages whose statements import several things from one module, the imported names.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Reference<'a> {
+    /// The text of the `@specifier` capture. For string-based languages the string contents.
+    pub specifier: &'a str,
+    /// The text of every `@name` capture of the same match, in source order. Usually empty.
+    pub names: &'a [&'a str],
+}
+
 /// What a language resolver decided about one specifier.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Resolution {
