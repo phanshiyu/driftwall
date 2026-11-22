@@ -24,7 +24,7 @@ flowchart LR
   end
 
   cli --> lint
-  cli -.-> init
+  cli --> init
   cli --> report
   cli --> ownership
   cli --> model
@@ -32,10 +32,10 @@ flowchart LR
   lint --> ownership
   lint --> imports
   lint --> model
-  init -.-> diagram
-  init -.-> ownership
-  init -.-> imports
-  init -.-> model
+  init --> diagram
+  init --> ownership
+  init --> imports
+  init --> model
   diagram --> model
   ownership --> model
   imports --> model
