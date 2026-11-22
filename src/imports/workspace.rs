@@ -107,7 +107,7 @@ fn inside(dir: &Path, text: &str) -> Option<Candidate> {
 pub fn discover(root: &Path, files: &BTreeMap<PathBuf, Language>) -> Workspaces {
     let sources = files
         .iter()
-        .filter(|(_, language)| matches!(language, Language::TypeScript | Language::JavaScript))
+        .filter(|(_, language)| language.is_ecmascript())
         .map(|(path, _)| path.as_path());
     let dirs = directories(sources);
     let manifests: BTreeMap<&PathBuf, Map<String, Value>> = dirs

@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use tree_sitter::{Node, Parser, Query, QueryCursor, StreamingIterator};
 
-use super::spec::Grammar;
+use super::spec::{Grammar, LanguageSpec, Region};
 use super::statement::Flags;
 use super::{
     Environment, FileImports, ImportsError, PythonLayout, Reference, Resolution, Workspaces, spec,
@@ -72,22 +72,64 @@ pub fn extract_in(
     let Some(spec) = spec::spec(language) else {
         return Ok(FileImports::default());
     };
-    let grammar = (spec.grammar)(file);
-    let query = compiled_query(grammar, spec.query)?;
+    let mut found = Found::default();
+    for region in (spec.scan)(source, file).regions {
+        found_in(&region, spec, source, file, env, &mut found)?;
+    }
+    let Found {
+        resolved,
+        unresolved,
+        skipped,
+    } = found;
+    let mut resolved: Vec<ResolvedImport> = resolved
+        .into_iter()
+        .map(|((at, target, kind, test_only), symbols)| ResolvedImport {
+            at,
+            target,
+            symbols,
+            kind,
+            test_only,
+        })
+        .collect();
+    // why: the map is ordered by its merge key; the documented order puts symbols before kind.
+    resolved.sort();
+    Ok(FileImports {
+        resolved,
+        unresolved: unresolved.into_iter().collect(),
+        skipped: skipped.into_iter().collect(),
+    })
+}
+
+/// Parses `region` of `source`, the text of `file`, and files every import it holds into `found`.
+fn found_in(
+    region: &Region,
+    spec: &LanguageSpec,
+    source: &str,
+    file: &Path,
+    env: &Environment<'_>,
+    found: &mut Found,
+) -> Result<(), ImportsError> {
+    let grammar = region.grammar;
+    let query = compiled_query(grammar, grammar.query)?;
     let mut parser = Parser::new();
     parser.set_language(&(grammar.language)())?;
+    if let Some(range) = region.range {
+        // why: a range taken from the text being parsed is always accepted; a refusal means nothing to read.
+        if parser.set_included_ranges(&[range]).is_err() {
+            return Ok(());
+        }
+    }
     // why: no timeout or cancellation flag is configured, so a parse only fails on a runtime fault.
     let Some(tree) = parser.parse(source, None) else {
-        return Ok(FileImports::default());
+        return Ok(());
     };
     let Some(capture) = query.capture_index_for_name(SPECIFIER_CAPTURE) else {
-        return Ok(FileImports::default());
+        return Ok(());
     };
 
     let name_capture = query.capture_index_for_name(NAME_CAPTURE);
     let bindings = (spec.bindings)(tree.root_node(), source);
 
-    let mut found = Found::default();
     let mut cursor = QueryCursor::new();
     let mut matches = cursor.matches(&query, tree.root_node(), source.as_bytes());
     while let Some(hit) = matches.next() {
@@ -125,28 +167,7 @@ pub fn extract_in(
             found.record(resolution, &at, specifier, flags);
         }
     }
-    let Found {
-        resolved,
-        unresolved,
-        skipped,
-    } = found;
-    let mut resolved: Vec<ResolvedImport> = resolved
-        .into_iter()
-        .map(|((at, target, kind, test_only), symbols)| ResolvedImport {
-            at,
-            target,
-            symbols,
-            kind,
-            test_only,
-        })
-        .collect();
-    // why: the map is ordered by its merge key; the documented order puts symbols before kind.
-    resolved.sort();
-    Ok(FileImports {
-        resolved,
-        unresolved: unresolved.into_iter().collect(),
-        skipped: skipped.into_iter().collect(),
-    })
+    Ok(())
 }
 
 /// What the resolutions of one file add up to.
@@ -304,7 +325,7 @@ fn compiled_query(grammar: &Grammar, text: &str) -> Result<Arc<Query>, ImportsEr
 
 #[cfg(test)]
 mod cache_key_tests {
-    use super::super::spec::spec;
+    use super::super::spec::{Scan, spec};
     use crate::model::Language;
     use std::path::Path;
 
@@ -312,10 +333,11 @@ mod cache_key_tests {
     fn grammar_names_are_unique_per_grammar() {
         let ts = spec(Language::TypeScript).unwrap();
         let js = spec(Language::JavaScript).unwrap();
+        let name = |scan: Scan| scan.regions[0].grammar.name;
         let names = [
-            (ts.grammar)(Path::new("a.ts")).name,
-            (ts.grammar)(Path::new("a.tsx")).name,
-            (js.grammar)(Path::new("a.js")).name,
+            name((ts.scan)("", Path::new("a.ts"))),
+            name((ts.scan)("", Path::new("a.tsx"))),
+            name((js.scan)("", Path::new("a.js"))),
         ];
         assert_eq!(names, ["typescript", "tsx", "javascript"]);
     }

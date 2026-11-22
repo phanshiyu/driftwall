@@ -157,6 +157,17 @@ pub enum Language {
     Python,
     /// Rust, used to lint driftwall itself.
     Rust,
+    /// Svelte components: the `<script>` elements of a `.svelte` file.
+    Svelte,
+}
+
+impl Language {
+    /// Whether the language's imports are TypeScript or JavaScript imports, resolved with the
+    /// TypeScript and JavaScript rules and governed by `tsconfig.json` and `package.json`.
+    #[must_use]
+    pub const fn is_ecmascript(self) -> bool {
+        matches!(self, Self::TypeScript | Self::JavaScript | Self::Svelte)
+    }
 }
 
 /// A location in a source file, 1-indexed.

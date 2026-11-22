@@ -71,7 +71,7 @@ pub fn alias_configs(
 ) -> BTreeMap<PathBuf, AliasConfig> {
     let sources = files
         .iter()
-        .filter(|(_, language)| matches!(language, Language::TypeScript | Language::JavaScript))
+        .filter(|(_, language)| language.is_ecmascript())
         .map(|(path, _)| path.as_path());
     discover(&directories(sources), &|path| {
         fs::read_to_string(root.join(path)).ok()
@@ -87,7 +87,7 @@ pub fn project_configs(
 ) -> BTreeMap<PathBuf, Vec<Project>> {
     let sources = files
         .iter()
-        .filter(|(_, language)| matches!(language, Language::TypeScript | Language::JavaScript))
+        .filter(|(_, language)| language.is_ecmascript())
         .map(|(path, _)| path.as_path());
     project::discover(&directories(sources), &|path| {
         fs::read_to_string(root.join(path)).ok()

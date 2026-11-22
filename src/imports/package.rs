@@ -44,7 +44,7 @@ pub fn package_dependencies(
 ) -> BTreeMap<PathBuf, BTreeSet<String>> {
     let sources = files
         .iter()
-        .filter(|(_, language)| matches!(language, Language::TypeScript | Language::JavaScript))
+        .filter(|(_, language)| language.is_ecmascript())
         .map(|(path, _)| path.as_path());
     directories(sources)
         .into_iter()

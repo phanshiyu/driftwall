@@ -16,6 +16,7 @@ const EXTENSIONS: &[(&str, Language)] = &[
     ("cjs", Language::JavaScript),
     ("py", Language::Python),
     ("rs", Language::Rust),
+    ("svelte", Language::Svelte),
 ];
 
 /// The language of `path`, judged by its extension, or `None` when it is not a source file.
@@ -47,6 +48,7 @@ mod tests {
             ("a.cjs", Language::JavaScript),
             ("a.py", Language::Python),
             ("a.rs", Language::Rust),
+            ("a.svelte", Language::Svelte),
         ];
         for (name, expected) in cases {
             assert_eq!(language_of(Path::new(name)), Some(expected), "{name}");

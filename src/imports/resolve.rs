@@ -12,9 +12,10 @@ use super::{
 use crate::model::SkipReason;
 
 /// Extensions tried, in order, for extension probing and directory index files. Declaration files
-/// come after the TypeScript files of their kind.
-const SOURCE_EXTENSIONS: [&str; 11] = [
-    "ts", "tsx", "d.ts", "mts", "cts", "d.mts", "d.cts", "js", "jsx", "mjs", "cjs",
+/// come after the TypeScript files of their kind. `svelte` is last so that no specifier that
+/// resolves without it changes meaning; neither TypeScript nor Vite appends it itself.
+const SOURCE_EXTENSIONS: [&str; 12] = [
+    "ts", "tsx", "d.ts", "mts", "cts", "d.mts", "d.cts", "js", "jsx", "mjs", "cjs", "svelte",
 ];
 
 /// The TypeScript ESM convention: a specifier written with a JavaScript extension refers to the

@@ -35,6 +35,7 @@ mod error;
 mod extract;
 mod glob;
 mod manifest;
+mod markup;
 mod package;
 mod project;
 mod python;
@@ -65,6 +66,8 @@ mod ecmascript_symbols_tests;
 mod fixtures;
 #[cfg(test)]
 mod kind_tests;
+#[cfg(test)]
+mod markup_tests;
 #[cfg(test)]
 mod probe_tests;
 #[cfg(test)]
@@ -107,7 +110,7 @@ pub use project::Project;
 pub use python_config::python_roots;
 pub use python_layout::PythonLayout;
 pub use rust_scope::Bindings;
-pub use spec::{LanguageSpec, spec};
+pub use spec::{Grammar, LanguageSpec, Region, Scan, spec};
 pub use tsconfig::{alias_configs, project_configs};
 pub use workspace::{Workspaces, discover as workspaces};
 

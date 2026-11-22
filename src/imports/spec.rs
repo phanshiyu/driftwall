@@ -3,42 +3,66 @@
 use std::path::Path;
 
 use super::{
-    Bindings, Environment, Reference, Resolution, python, queries, resolve, rust, statement,
-    statement::Flags,
+    Bindings, Environment, Reference, Resolution, markup, python, queries, resolve, rust,
+    statement, statement::Flags,
 };
 use crate::model::Language;
 
-/// One tree-sitter grammar with a stable name that keys the compiled-query cache.
+/// One tree-sitter grammar with a stable name that keys the compiled-query cache, and the query
+/// that captures the imports written in it.
 pub struct Grammar {
     /// Unique across all grammars.
     pub name: &'static str,
     /// Builds the tree-sitter language.
     pub language: fn() -> tree_sitter::Language,
+    /// Tree-sitter query capturing each import's module reference as `@specifier` and, when one
+    /// statement imports several things from it, each imported name as `@name`.
+    pub query: &'static str,
 }
 
-static TYPESCRIPT_GRAMMAR: Grammar = Grammar {
+/// A stretch of a file that one grammar parses.
+pub struct Region {
+    /// The grammar of the code in the region.
+    pub grammar: &'static Grammar,
+    /// The part of the file the grammar parses, or `None` for the whole file. Positions of nodes
+    /// are positions in the file either way.
+    pub range: Option<tree_sitter::Range>,
+}
+
+/// What [`LanguageSpec::scan`] finds in one file.
+pub struct Scan {
+    /// The regions to parse and query, in source order.
+    pub regions: Vec<Region>,
+}
+
+pub(super) static TYPESCRIPT_GRAMMAR: Grammar = Grammar {
     name: "typescript",
     language: || tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
+    query: queries::TYPESCRIPT,
 };
 
 static TSX_GRAMMAR: Grammar = Grammar {
     name: "tsx",
     language: || tree_sitter_typescript::LANGUAGE_TSX.into(),
+    query: queries::TYPESCRIPT,
 };
 
-static JAVASCRIPT_GRAMMAR: Grammar = Grammar {
+pub(super) static JAVASCRIPT_GRAMMAR: Grammar = Grammar {
     name: "javascript",
     language: || tree_sitter_javascript::LANGUAGE.into(),
+    query: queries::JAVASCRIPT,
 };
 
 static PYTHON_GRAMMAR: Grammar = Grammar {
     name: "python",
     language: || tree_sitter_python::LANGUAGE.into(),
+    query: queries::PYTHON,
 };
 
 static RUST_GRAMMAR: Grammar = Grammar {
     name: "rust",
     language: || tree_sitter_rust::LANGUAGE.into(),
+    query: queries::RUST,
 };
 
 /// Everything needed to extract and resolve imports for one language. Adding a language is adding
@@ -46,11 +70,9 @@ static RUST_GRAMMAR: Grammar = Grammar {
 pub struct LanguageSpec {
     /// Language this entry serves.
     pub language: Language,
-    /// Grammar to parse `file` with. Chosen per file because TSX needs its own grammar.
-    pub grammar: fn(&Path) -> &'static Grammar,
-    /// Tree-sitter query capturing each import's module reference as `@specifier` and, when one
-    /// statement imports several things from it, each imported name as `@name`.
-    pub query: &'static str,
+    /// Finds what to parse in `source`, the text of `file`: the whole file with a grammar chosen
+    /// per file because TSX needs its own, or the script elements of a markup file.
+    pub scan: fn(&str, &Path) -> Scan,
     /// Collects, once per file, the names the file brings into scope. Languages whose resolver
     /// does not follow such names use a function that returns no bindings.
     pub bindings: for<'a> fn(tree_sitter::Node<'a>, &'a str) -> Bindings<'a>,
@@ -68,8 +90,7 @@ pub struct LanguageSpec {
 
 static TYPESCRIPT: LanguageSpec = LanguageSpec {
     language: Language::TypeScript,
-    grammar: typescript_grammar,
-    query: queries::TYPESCRIPT,
+    scan: typescript_scan,
     bindings: no_bindings,
     anchor: statement::ecmascript_anchor,
     flags: statement::ecmascript_flags,
@@ -78,18 +99,25 @@ static TYPESCRIPT: LanguageSpec = LanguageSpec {
 
 static PYTHON: LanguageSpec = LanguageSpec {
     language: Language::Python,
-    grammar: python_grammar,
-    query: queries::PYTHON,
+    scan: python_scan,
     bindings: no_bindings,
     anchor: statement::python_anchor,
     flags: statement::python_flags,
     resolve: python::resolve,
 };
 
+static SVELTE: LanguageSpec = LanguageSpec {
+    language: Language::Svelte,
+    scan: markup::svelte,
+    bindings: no_bindings,
+    anchor: statement::ecmascript_anchor,
+    flags: statement::ecmascript_flags,
+    resolve: resolve::ecmascript,
+};
+
 static JAVASCRIPT: LanguageSpec = LanguageSpec {
     language: Language::JavaScript,
-    grammar: javascript_grammar,
-    query: queries::JAVASCRIPT,
+    scan: javascript_scan,
     bindings: no_bindings,
     anchor: statement::ecmascript_anchor,
     flags: statement::ecmascript_flags,
@@ -98,8 +126,7 @@ static JAVASCRIPT: LanguageSpec = LanguageSpec {
 
 static RUST: LanguageSpec = LanguageSpec {
     language: Language::Rust,
-    grammar: rust_grammar,
-    query: queries::RUST,
+    scan: rust_scan,
     bindings: rust_bindings,
     anchor: statement::rust_anchor,
     flags: statement::rust_flags,
@@ -114,6 +141,7 @@ pub fn spec(language: Language) -> Option<&'static LanguageSpec> {
         Language::JavaScript => Some(&JAVASCRIPT),
         Language::Python => Some(&PYTHON),
         Language::Rust => Some(&RUST),
+        Language::Svelte => Some(&SVELTE),
     }
 }
 
@@ -127,22 +155,34 @@ fn rust_bindings<'a>(root: tree_sitter::Node<'a>, source: &'a str) -> Bindings<'
     Bindings::of_tree(root, source)
 }
 
-fn typescript_grammar(file: &Path) -> &'static Grammar {
-    if file.extension().is_some_and(|extension| extension == "tsx") {
-        &TSX_GRAMMAR
-    } else {
-        &TYPESCRIPT_GRAMMAR
+/// The scan of a language whose files are one piece of code in `grammar`.
+fn whole_file(grammar: &'static Grammar) -> Scan {
+    Scan {
+        regions: vec![Region {
+            grammar,
+            range: None,
+        }],
     }
 }
 
-const fn javascript_grammar(_file: &Path) -> &'static Grammar {
-    &JAVASCRIPT_GRAMMAR
+fn typescript_scan(_source: &str, file: &Path) -> Scan {
+    whole_file(
+        if file.extension().is_some_and(|extension| extension == "tsx") {
+            &TSX_GRAMMAR
+        } else {
+            &TYPESCRIPT_GRAMMAR
+        },
+    )
 }
 
-const fn python_grammar(_file: &Path) -> &'static Grammar {
-    &PYTHON_GRAMMAR
+fn javascript_scan(_source: &str, _file: &Path) -> Scan {
+    whole_file(&JAVASCRIPT_GRAMMAR)
 }
 
-const fn rust_grammar(_file: &Path) -> &'static Grammar {
-    &RUST_GRAMMAR
+fn python_scan(_source: &str, _file: &Path) -> Scan {
+    whole_file(&PYTHON_GRAMMAR)
+}
+
+fn rust_scan(_source: &str, _file: &Path) -> Scan {
+    whole_file(&RUST_GRAMMAR)
 }
