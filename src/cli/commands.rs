@@ -3,7 +3,7 @@
 //! Nothing here prints or exits: [`Run`] carries the result back to `main`.
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Result, anyhow, bail};
 use driftwall::init::{self, InitOptions, InitSummary, WriteOptions};
@@ -11,8 +11,8 @@ use driftwall::lint::{self, LintOptions};
 use driftwall::report;
 
 use crate::args::{Command, InitArgs, LintArgs, LintFormat};
-use crate::locate;
 use crate::outcome::Outcome;
+use crate::{diff, locate, views};
 
 /// What a command produced.
 #[derive(Debug)]
@@ -32,15 +32,24 @@ pub fn execute(command: &Command) -> Result<Run> {
         Command::Lint(args) => run_lint(args),
         Command::Init(args) => run_init(args),
         Command::Where(args) => locate::run(args),
+        Command::Brief(args) => views::brief(args),
+        Command::Neighbors(args) => views::neighbors(args),
+        Command::Diff(args) => diff::run(args),
     }
+}
+
+/// The lint options for an optional `--contract` argument.
+pub fn lint_options(contract: Option<&PathBuf>) -> LintOptions {
+    let mut options = LintOptions::default();
+    if let Some(contract) = contract {
+        options.contract.clone_from(contract);
+    }
+    options
 }
 
 fn run_lint(args: &LintArgs) -> Result<Run> {
     require_directory(&args.path)?;
-    let mut options = LintOptions::default();
-    if let Some(contract) = &args.contract {
-        options.contract.clone_from(contract);
-    }
+    let options = lint_options(args.contract.as_ref());
     let lint_report = lint::run(&args.path, &options)?;
     let stdout = match args.format {
         LintFormat::Text => report::render_text(&lint_report),

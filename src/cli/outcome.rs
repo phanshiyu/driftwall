@@ -1,6 +1,6 @@
 //! How a command ended, and the exit code each ending maps to (see docs/DESIGN.md).
 
-use driftwall::model::LintReport;
+use driftwall::model::{ContractDiff, LintReport};
 use driftwall::ownership::Explanation;
 
 /// The three ways a driftwall command can end.
@@ -33,6 +33,16 @@ impl Outcome {
             Self::Clean
         } else {
             Self::Findings
+        }
+    }
+
+    /// The outcome of `diff`: a changed contract is a finding only when `exit_code` asks for it.
+    #[must_use]
+    pub const fn of_diff(diff: &ContractDiff, exit_code: bool) -> Self {
+        if exit_code && !diff.is_empty() {
+            Self::Findings
+        } else {
+            Self::Clean
         }
     }
 
@@ -108,6 +118,23 @@ mod tests {
         };
         assert_eq!(Outcome::of_where(&mapped), Outcome::Clean);
         assert_eq!(Outcome::of_where(&unmapped), Outcome::Findings);
+    }
+
+    #[test]
+    fn a_changed_contract_is_a_finding_only_with_exit_code() {
+        let changed = ContractDiff {
+            added_nodes: vec![NodeId::new("a").unwrap()],
+            ..ContractDiff::default()
+        };
+        assert_eq!(Outcome::of_diff(&changed, false), Outcome::Clean);
+        assert_eq!(Outcome::of_diff(&changed, true), Outcome::Findings);
+    }
+
+    #[test]
+    fn an_unchanged_contract_is_always_clean() {
+        let same = ContractDiff::default();
+        assert_eq!(Outcome::of_diff(&same, false), Outcome::Clean);
+        assert_eq!(Outcome::of_diff(&same, true), Outcome::Clean);
     }
 
     #[test]

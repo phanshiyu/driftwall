@@ -4,10 +4,13 @@
 
 mod args;
 mod commands;
+mod diff;
 mod error_chain;
+mod git;
 mod locate;
 mod outcome;
 mod output;
+mod views;
 
 use std::process::ExitCode;
 

@@ -31,6 +31,78 @@ pub enum Command {
     ///
     /// Exits 1 when the file is unmapped.
     Where(WhereArgs),
+    /// Print the whole architecture: nodes, directories, edges, how code realises them.
+    ///
+    /// Read-only and informational: exits 0 unless the tool fails.
+    Brief(BriefArgs),
+    /// Print one node: its directories, files, and every edge entering or leaving it.
+    ///
+    /// Includes edges code uses that the contract does not declare. Read-only.
+    Neighbors(NeighborsArgs),
+    /// Compare the contract with the one at a git ref, for human review.
+    ///
+    /// Exits 0 whatever changed, unless `--exit-code` asks for 1 on any change.
+    Diff(DiffArgs),
+}
+
+/// Output formats of the commands that present the architecture or a contract change.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum ViewFormat {
+    /// Human and agent readable text.
+    Text,
+    /// Stable JSON for agents.
+    Json,
+}
+
+/// Arguments of `driftwall brief`.
+#[derive(Debug, Args)]
+pub struct BriefArgs {
+    /// Repository root to describe.
+    #[arg(value_name = "PATH", default_value = DEFAULT_PATH)]
+    pub path: PathBuf,
+    /// Contract file, relative to PATH [default: architecture.mmd].
+    #[arg(long, value_name = "FILE")]
+    pub contract: Option<PathBuf>,
+    /// Output format.
+    #[arg(long, value_enum, default_value_t = ViewFormat::Text)]
+    pub format: ViewFormat,
+}
+
+/// Arguments of `driftwall neighbors`.
+#[derive(Debug, Args)]
+pub struct NeighborsArgs {
+    /// Node id to describe.
+    #[arg(value_name = "NODE")]
+    pub node: String,
+    /// Repository root.
+    #[arg(value_name = "PATH", default_value = DEFAULT_PATH)]
+    pub path: PathBuf,
+    /// Contract file, relative to PATH [default: architecture.mmd].
+    #[arg(long, value_name = "FILE")]
+    pub contract: Option<PathBuf>,
+    /// Output format.
+    #[arg(long, value_enum, default_value_t = ViewFormat::Text)]
+    pub format: ViewFormat,
+}
+
+/// Arguments of `driftwall diff`.
+#[derive(Debug, Args)]
+pub struct DiffArgs {
+    /// Git ref holding the contract to compare against, for example `main` or `HEAD~1`.
+    #[arg(long, value_name = "REF")]
+    pub base: String,
+    /// Repository root.
+    #[arg(value_name = "PATH", default_value = DEFAULT_PATH)]
+    pub path: PathBuf,
+    /// Contract file, relative to PATH [default: architecture.mmd].
+    #[arg(long, value_name = "FILE")]
+    pub contract: Option<PathBuf>,
+    /// Output format.
+    #[arg(long, value_enum, default_value_t = ViewFormat::Text)]
+    pub format: ViewFormat,
+    /// Exit 1 when the contract changed, so CI can require approval.
+    #[arg(long)]
+    pub exit_code: bool,
 }
 
 /// Arguments of `driftwall where`.
