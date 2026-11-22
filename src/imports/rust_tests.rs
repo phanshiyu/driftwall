@@ -47,6 +47,7 @@ fn rs_in(
         projects: &BTreeMap::new(),
         python: &PythonLayout::default(),
         swift: &SwiftModules::default(),
+        vite_roots: &BTreeMap::new(),
     };
     extract_in(source, Language::Rust, Path::new(file), &env).expect("extract succeeds")
 }

@@ -358,6 +358,7 @@ fn rs_with(source: &str, file: &str, repo: &[&str]) -> FileImports {
         projects: &BTreeMap::new(),
         python: &PythonLayout::default(),
         swift: &SwiftModules::default(),
+        vite_roots: &BTreeMap::new(),
     };
     extract_in(source, Language::Rust, Path::new(file), &env).expect("extract succeeds")
 }

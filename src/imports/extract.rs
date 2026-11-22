@@ -56,6 +56,7 @@ pub fn extract(
             projects: &BTreeMap::new(),
             python: &python,
             swift: &SwiftModules::default(),
+            vite_roots: &BTreeMap::new(),
         },
     )
 }
@@ -215,8 +216,8 @@ impl Found {
                 self.resolved.entry(merge).or_default();
             }
             Resolution::Skipped(reason) => self.skip(at, specifier, reason, None),
-            Resolution::Unreachable { message } => {
-                self.skip(at, specifier, SkipReason::UnreachableModule, Some(message));
+            Resolution::SkippedWith { reason, message } => {
+                self.skip(at, specifier, reason, Some(message));
             }
             Resolution::Ignored => {}
         }

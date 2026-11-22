@@ -84,7 +84,7 @@ fn the_vite_root_is_the_closest_package_json_else_the_repository_root() {
 }
 
 #[test]
-fn a_root_absolute_specifier_that_finds_no_file_is_ignored() {
+fn a_root_absolute_specifier_that_finds_no_file_is_skipped_never_unresolved() {
     let r = repo(&[
         ("package.json", "{}"),
         (
@@ -95,7 +95,7 @@ fn a_root_absolute_specifier_that_finds_no_file_is_ignored() {
     let got = r.imports("index.html");
     assert_eq!(got.resolved, []);
     assert_eq!(got.unresolved, []);
-    assert_eq!(got.skipped, []);
+    assert_eq!(r.skipped("index.html"), pairs(&[(2, "/public/logo.js")]));
 }
 
 #[test]

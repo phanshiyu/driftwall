@@ -431,6 +431,9 @@ pub enum SkipReason {
     /// A Python absolute import that no import root resolves, although its top-level name matches
     /// a first-party module or package elsewhere in the repository.
     UnreachableModule,
+    /// A root-absolute `src`, `href` or import specifier of an HTML file that finds no file below
+    /// the Vite root of the page.
+    UnresolvedRootPath,
 }
 
 /// A reference driftwall saw and could not follow, kept so it is never silently dropped.
@@ -442,8 +445,9 @@ pub struct Skipped {
     pub specifier: String,
     /// Why it was skipped.
     pub reason: SkipReason,
-    /// A sentence of explanation, set for [`SkipReason::UnreachableModule`]: the repository path
-    /// the top-level name matches. Not serialized when absent.
+    /// A sentence of explanation, set for [`SkipReason::UnreachableModule`] (the repository path
+    /// the top-level name matches) and [`SkipReason::UnresolvedRootPath`] (the Vite root that was
+    /// searched). Not serialized when absent.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
 }
@@ -887,6 +891,9 @@ mod tests {
         assert!(json(SkipReason::DynamicSpecifier).ends_with(r#""reason":"dynamic-specifier"}"#));
         assert!(json(SkipReason::EmbedNonSource).ends_with(r#""reason":"embed-non-source"}"#));
         assert!(json(SkipReason::UnreachableModule).ends_with(r#""reason":"unreachable-module"}"#));
+        assert!(
+            json(SkipReason::UnresolvedRootPath).ends_with(r#""reason":"unresolved-root-path"}"#)
+        );
     }
 
     #[test]

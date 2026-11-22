@@ -608,13 +608,48 @@ finds nothing is an `unresolved-import`.
 
 **Vite root.** A root-absolute specifier is one that starts with a single `/`. In an HTML file, in a
 `src` or `href` and in an `import`, `export ... from`, `import()` or `require()` of its inline
-scripts, it names a path below the Vite project root: the nearest ancestor directory of the HTML
-file, the file's own directory first, that holds a `package.json`, else the repository root. So
-`/src/forest-paint.ts` in `dev/index.html` is `<root>/src/forest-paint.ts`, with `<root>` the
-directory of `dev/package.json` or, when `dev` has none, of the nearest `package.json` above it. A
-root-absolute specifier is probed like a relative path, and one that finds no file is ignored, never
-unresolved: it may be served from Vite's `public` directory or by the dev server, which the scan
-cannot tell. Root-absolute specifiers are not special in TypeScript, JavaScript or Svelte files.
+scripts, it names a path below the Vite project root. The root of an HTML file is the first of
+
+1. **The Vite config.** The nearest ancestor directory of the HTML file, the file's own directory
+   first, that holds a Vite config: a file named `vite.config.js`, `.mjs`, `.ts`, `.cjs`, `.mts` or
+   `.cts` (when a directory holds several, the first in that order, which is Vite's own). The root is
+   that directory, adjusted by the `root` option of the config when the option can be read, see
+   below. A Vite config sits above a nearer `package.json`: `ui/vite.config.ts` makes `ui` the root
+   of `ui/index.html` whatever `package.json` files lie around;
+2. **The nearest `package.json`.** The nearest ancestor directory, the file's own directory first,
+   that holds a `package.json`;
+3. **The repository root.**
+
+So `/src/forest-paint.ts` in `dev/index.html` is `<root>/src/forest-paint.ts`.
+
+The `root` option is read from the config with the TypeScript or JavaScript grammar (by extension),
+never by running it. The config object is the operand of `export default`, of `module.exports =`, or
+the top level `const` an identifier there names, looking through parentheses, `as` and `satisfies`; a
+call such as `defineConfig(..)` stands for its first argument that is an object or a function, and a
+function stands for the object it returns (an arrow function's expression body, or the first `return`
+of its block). Only a `root` key directly in that object counts (`test.root` and the like do not).
+Its value is read when it is one of
+
+- a plain string literal, a path relative to the config directory (`'ui'`, `'./ui'`, `'.'`);
+- `__dirname` or `import.meta.dirname`, or `path.dirname(fileURLToPath(import.meta.url))` or
+  `path.dirname(__filename)`: the config directory;
+- `path.resolve(D, 'a', 'b')` or `path.join(D, 'a', 'b')` (the callee may be written with or
+  without `path.`), where `D` is any of the directory forms of this list and every other argument is
+  a plain string literal: the directory joined with the literals, `..` resolved lexically;
+- `fileURLToPath(new URL('<literal>', import.meta.url))`, also written `new URL(..).pathname`: the
+  literal joined onto the config directory.
+
+Any other value (a variable, `process.cwd()`, an absolute path, a path that leaves the repository,
+an expression driftwall does not recognise) means the config directory, as does a config that
+cannot be read or has no `root`. The extraction functions that are given no file system (`extract`)
+know no Vite configs, so they use rules 2 and 3.
+
+A root-absolute specifier is probed like a relative path against the root. A file that Vite would
+serve from `<root>/public/` (`/logo.svg` for `<root>/public/logo.svg`) is ignored. A root-absolute
+specifier that still finds nothing is never dropped: it is skipped with reason
+`unresolved-root-path` (see "Skipped references"), whose message names the root that was used, so
+a wrong root is visible. Root-absolute specifiers are not special in TypeScript, JavaScript or
+Svelte files.
 
 A remote URL is ignored: a specifier that starts with `//` or with a scheme (`https:`, `http:`,
 `data:`, `blob:`, ..: a letter, then letters, digits, `+`, `-` or `.`, then `:`). In an HTML file
@@ -736,6 +771,7 @@ a location, the specifier as written and a typed reason (kebab-case in serializa
 | `dynamic-specifier` | a shell `source` or `.` whose path has no value, see "Shell resolution"; `import(expr)` or `require(expr)` whose argument is not a string literal or a template without substitutions; Python `importlib.import_module(..)` and `__import__(..)` whose first argument is not a plain string literal, or whose relative literal has no usable package (see "Python resolution") |
 | `embed-non-source` | a Rust embed whose target is not a known source file |
 | `unreachable-module` | a Python absolute import that no import root resolves, whose top-level name matches a first-party module or package elsewhere in the repository (see "Python resolution") |
+| `unresolved-root-path` | a root-absolute `src`, `href` or import specifier of an HTML file that finds no file below its Vite root (see "Svelte and HTML") |
 
 For `undeclared-package`, a specifier that a `paths` pattern matches is an alias and never skipped,
 even when no file backs it (that stays silent, as before). `baseUrl` alone is not an alias: a bare
@@ -749,8 +785,9 @@ count. Declared third party packages stay silently
 ignored: they are not repository imports and nothing is wrong. `skipped` is not a lint finding.
 For a skipped Python call the specifier is the text of its first argument.
 
-A skipped reference may carry a `message`, a sentence of explanation. Only `unreachable-module` has
-one: it names the repository path the top-level name matches. `message` is absent from the
+A skipped reference may carry a `message`, a sentence of explanation. `unreachable-module` has one:
+it names the repository path the top-level name matches. So has `unresolved-root-path`: it names
+the Vite root that was searched. `message` is absent from the
 serialized form when there is none.
 
 ## Symbols and public surfaces

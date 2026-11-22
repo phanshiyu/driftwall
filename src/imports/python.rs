@@ -134,7 +134,8 @@ fn miss(module: &[&str], roots: &[PathBuf], importer: &Path, env: &Environment<'
     }
     env.python
         .matching(first)
-        .map_or(Resolution::Ignored, |path| Resolution::Unreachable {
+        .map_or(Resolution::Ignored, |path| Resolution::SkippedWith {
+            reason: SkipReason::UnreachableModule,
             message: format!(
                 "`{first}` matches `{}`, which no import root of `{}` reaches",
                 path.display(),

@@ -13,6 +13,7 @@ use super::package::MANIFEST_FILE;
 use super::spec::{Grammar, JAVASCRIPT_GRAMMAR, Load, Region, Scan, TYPESCRIPT_GRAMMAR};
 use super::{Environment, Reference, Resolution, ecmascript_symbols, resolve};
 use crate::markup::{self, Tag};
+use crate::model::SkipReason;
 
 /// The values of a script's `type` that make it JavaScript, besides no `type` at all.
 const SCRIPT_TYPES: [&str; 3] = ["module", "text/javascript", "application/javascript"];
@@ -161,25 +162,45 @@ fn is_root_absolute(specifier: &str) -> bool {
     specifier.starts_with('/') && !specifier.starts_with("//")
 }
 
-/// Resolves the root-absolute `specifier` against the Vite root of `importer`. A path that finds no
-/// file is ignored: it may be served from `public` or by the dev server.
+/// Resolves the root-absolute `specifier` against the Vite root of `importer`. A file Vite serves
+/// from `<root>/public` is ignored; a path that finds no file at all is skipped as
+/// [`SkipReason::UnresolvedRootPath`], never dropped.
 fn root_absolute(specifier: &str, importer: &Path, env: &Environment<'_>) -> Resolution {
     let path = resolve::strip_suffix(specifier);
-    resolve::join_normalised(
-        Some(&vite_root(importer, env)),
-        path.trim_start_matches('/'),
-    )
-    .and_then(|base| resolve::find(&base, path.ends_with('/'), env))
-    .unwrap_or(Resolution::Ignored)
+    let below = path.trim_start_matches('/');
+    let root = vite_root(importer, env);
+    let find = |dir: &Path| {
+        resolve::join_normalised(Some(dir), below)
+            .and_then(|base| resolve::find(&base, path.ends_with('/'), env))
+    };
+    if let Some(found) = find(&root) {
+        return found;
+    }
+    if find(&root.join("public")).is_some() {
+        return Resolution::Ignored;
+    }
+    let shown = if root.as_os_str().is_empty() {
+        ".".to_owned()
+    } else {
+        root.display().to_string()
+    };
+    Resolution::SkippedWith {
+        reason: SkipReason::UnresolvedRootPath,
+        message: format!("`{path}` finds no file below the Vite root `{shown}`"),
+    }
 }
 
-/// The Vite project root of the HTML file `importer`: its nearest ancestor directory, its own
-/// directory first, that holds a `package.json`, else the repository root.
+/// The Vite root of the HTML file `importer`: the root of the nearest Vite config above it, else
+/// its nearest ancestor directory that holds a `package.json`, else the repository root. The file's
+/// own directory is the first one looked at.
 fn vite_root(importer: &Path, env: &Environment<'_>) -> PathBuf {
-    importer
-        .ancestors()
-        .skip(1)
-        .find(|dir| env.assets.contains(&dir.join(MANIFEST_FILE)))
-        .map(Path::to_path_buf)
+    let directories = || importer.ancestors().skip(1);
+    directories()
+        .find_map(|dir| env.vite_roots.get(dir).cloned())
+        .or_else(|| {
+            directories()
+                .find(|dir| env.assets.contains(&dir.join(MANIFEST_FILE)))
+                .map(Path::to_path_buf)
+        })
         .unwrap_or_default()
 }

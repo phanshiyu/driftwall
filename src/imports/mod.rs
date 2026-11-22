@@ -55,6 +55,7 @@ mod subpath;
 mod swift;
 mod swift_package;
 mod tsconfig;
+mod vite;
 mod workspace;
 
 #[cfg(test)]
@@ -100,6 +101,8 @@ mod tests;
 #[cfg(test)]
 mod tsconfig_tests;
 #[cfg(test)]
+mod vite_tests;
+#[cfg(test)]
 mod workspace_tests;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -123,6 +126,7 @@ pub use spec::{Grammar, LanguageSpec, Load, Loads, Region, Scan, spec};
 pub use swift::SwiftModules;
 pub use swift_package::{SwiftTarget, swift_targets};
 pub use tsconfig::{alias_configs, project_configs};
+pub use vite::vite_roots;
 pub use workspace::{Workspaces, discover as workspaces};
 
 /// The imports found in one file. Every list is sorted and free of duplicates.
@@ -169,6 +173,9 @@ pub struct Environment<'a> {
     pub python: &'a PythonLayout,
     /// The Swift targets of the repository by module name. Only Swift resolution reads it.
     pub swift: &'a SwiftModules,
+    /// Repository-relative directory holding a `vite.config.*` file to the Vite root that config
+    /// gives, see [`vite_roots`]. Only the resolution of root-absolute paths in HTML reads it.
+    pub vite_roots: &'a BTreeMap<PathBuf, PathBuf>,
 }
 
 /// One query match handed to a language resolver: the module reference as written and, for
@@ -215,10 +222,13 @@ pub enum Resolution {
     Ignored,
     /// A reference that could not be followed, and is reported as such.
     Skipped(SkipReason),
-    /// A Python module that no import root reaches although its top-level name matches a
-    /// repository path. Skipped as [`SkipReason::UnreachableModule`] with `message`.
-    Unreachable {
-        /// The explanation, naming the repository path the name matches.
+    /// A reference that could not be followed, and is reported as such with an explanation: a
+    /// Python module that no import root reaches ([`SkipReason::UnreachableModule`]) or a
+    /// root-absolute path of an HTML file that finds no file ([`SkipReason::UnresolvedRootPath`]).
+    SkippedWith {
+        /// Why it was skipped.
+        reason: SkipReason,
+        /// The explanation, naming what the reference was compared with.
         message: String,
     },
 }
@@ -281,6 +291,7 @@ pub fn collect_with_assets(
     let projects = project_configs(root, files);
     let python = PythonLayout::new(&known, python_roots(root, files));
     let swift = SwiftModules::new(swift_targets(root, files));
+    let vite = vite_roots(root, files);
     let env = Environment {
         known: &known,
         assets,
@@ -291,6 +302,7 @@ pub fn collect_with_assets(
         projects: &projects,
         python: &python,
         swift: &swift,
+        vite_roots: &vite,
     };
     let entries: Vec<(&PathBuf, &Language)> = files.iter().collect();
     // why: collected into an indexed Vec so the reported error never depends on thread scheduling.
