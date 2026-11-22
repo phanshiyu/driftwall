@@ -18,7 +18,8 @@ use serde_json::Value;
 use super::tsconfig::directories;
 use crate::model::Language;
 
-const MANIFEST_FILE: &str = "package.json";
+/// The file that declares a package.
+pub(super) const MANIFEST_FILE: &str = "package.json";
 
 /// A dependency table: package name to version, which is never read.
 type Table = BTreeMap<String, Value>;

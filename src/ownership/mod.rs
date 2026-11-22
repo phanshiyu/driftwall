@@ -345,7 +345,7 @@ fn discover(root: &Path) -> Result<Discovered, OwnershipError> {
         let relative: PathBuf = relative.components().collect();
         if relative.file_name() == Some(OsStr::new(ARCH_FILE)) {
             found.arch_files.push(relative);
-        } else if language_of(&relative).is_some() {
+        } else if language::is_source(root, &relative) {
             let reason = exclusion_of(&relative)
                 .or_else(|| {
                     announces_generated(&read_head(entry.path())).then_some(Exclusion::Generated)

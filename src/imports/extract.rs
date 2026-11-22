@@ -72,9 +72,20 @@ pub fn extract_in(
     let Some(spec) = spec::spec(language) else {
         return Ok(FileImports::default());
     };
+    let scan = (spec.scan)(source, file);
     let mut found = Found::default();
-    for region in (spec.scan)(source, file).regions {
-        found_in(&region, spec, source, file, env, &mut found)?;
+    for region in &scan.regions {
+        found_in(region, spec, source, file, env, &mut found)?;
+    }
+    if let Some(loads) = &spec.loads {
+        for load in &scan.loads {
+            let at = Location {
+                file: file.to_path_buf(),
+                line: load.line,
+            };
+            let resolution = (loads.resolve)(&load.specifier, file, env);
+            found.record(resolution, &at, &load.specifier, (loads.flags)(file));
+        }
     }
     let Found {
         resolved,

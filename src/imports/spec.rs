@@ -33,6 +33,25 @@ pub struct Region {
 pub struct Scan {
     /// The regions to parse and query, in source order.
     pub regions: Vec<Region>,
+    /// The files the markup loads without an import statement, in source order. Empty unless the
+    /// language has [`LanguageSpec::loads`].
+    pub loads: Vec<Load>,
+}
+
+/// A reference to a file that is written as an attribute of a tag, not as an import statement.
+pub struct Load {
+    /// The path as written, trimmed.
+    pub specifier: String,
+    /// The line the tag starts on.
+    pub line: u32,
+}
+
+/// How a language resolves the files its markup loads, see [`Scan::loads`].
+pub struct Loads {
+    /// Resolves one path written in `importer`. The import it makes uses no symbol.
+    pub resolve: fn(&str, &Path, &Environment<'_>) -> Resolution,
+    /// Decides from the importing file whether the import is written in test code.
+    pub flags: fn(&Path) -> Flags,
 }
 
 pub(super) static TYPESCRIPT_GRAMMAR: Grammar = Grammar {
@@ -86,6 +105,8 @@ pub struct LanguageSpec {
     /// [`Resolution`] per target the match refers to, so a statement naming several imports can
     /// resolve each independently.
     pub resolve: fn(&Reference<'_>, &Path, &Environment<'_>) -> Vec<Resolution>,
+    /// How the files that [`Scan::loads`] lists resolve, for a language whose markup loads files.
+    pub loads: Option<Loads>,
 }
 
 static TYPESCRIPT: LanguageSpec = LanguageSpec {
@@ -95,6 +116,7 @@ static TYPESCRIPT: LanguageSpec = LanguageSpec {
     anchor: statement::ecmascript_anchor,
     flags: statement::ecmascript_flags,
     resolve: resolve::ecmascript,
+    loads: None,
 };
 
 static PYTHON: LanguageSpec = LanguageSpec {
@@ -104,6 +126,7 @@ static PYTHON: LanguageSpec = LanguageSpec {
     anchor: statement::python_anchor,
     flags: statement::python_flags,
     resolve: python::resolve,
+    loads: None,
 };
 
 static SVELTE: LanguageSpec = LanguageSpec {
@@ -113,6 +136,20 @@ static SVELTE: LanguageSpec = LanguageSpec {
     anchor: statement::ecmascript_anchor,
     flags: statement::ecmascript_flags,
     resolve: resolve::ecmascript,
+    loads: None,
+};
+
+static HTML: LanguageSpec = LanguageSpec {
+    language: Language::Html,
+    scan: markup::html,
+    bindings: no_bindings,
+    anchor: statement::ecmascript_anchor,
+    flags: statement::ecmascript_flags,
+    resolve: markup::resolve_inline,
+    loads: Some(Loads {
+        resolve: markup::resolve_load,
+        flags: statement::load_flags,
+    }),
 };
 
 static JAVASCRIPT: LanguageSpec = LanguageSpec {
@@ -122,6 +159,7 @@ static JAVASCRIPT: LanguageSpec = LanguageSpec {
     anchor: statement::ecmascript_anchor,
     flags: statement::ecmascript_flags,
     resolve: resolve::ecmascript,
+    loads: None,
 };
 
 static RUST: LanguageSpec = LanguageSpec {
@@ -131,6 +169,7 @@ static RUST: LanguageSpec = LanguageSpec {
     anchor: statement::rust_anchor,
     flags: statement::rust_flags,
     resolve: rust::resolve,
+    loads: None,
 };
 
 /// The table entry for `language`, or `None` when extraction is not implemented for it yet.
@@ -142,6 +181,7 @@ pub fn spec(language: Language) -> Option<&'static LanguageSpec> {
         Language::Python => Some(&PYTHON),
         Language::Rust => Some(&RUST),
         Language::Svelte => Some(&SVELTE),
+        Language::Html => Some(&HTML),
     }
 }
 
@@ -162,6 +202,7 @@ fn whole_file(grammar: &'static Grammar) -> Scan {
             grammar,
             range: None,
         }],
+        loads: Vec::new(),
     }
 }
 

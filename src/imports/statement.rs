@@ -86,9 +86,20 @@ impl Flags {
 pub fn ecmascript_flags(anchor: Node<'_>, source: &str, file: &Path) -> Flags {
     Flags::new(
         is_declaration_file(file) || ecmascript_type_only(anchor, source),
-        has_test_segment(file, &["test", "spec"])
-            || in_directory(file, &["__tests__", "test", "tests"]),
+        ecmascript_test_file(file),
     )
+}
+
+/// The flags of an import that loads a whole file (an HTML `<script src>`) written in `file`:
+/// runtime, and test code by the same file rules as [`ecmascript_flags`].
+pub fn load_flags(file: &Path) -> Flags {
+    Flags::new(false, ecmascript_test_file(file))
+}
+
+/// Whether `file` is a TypeScript or JavaScript test file: `*.test.*`, `*.spec.*`, or below a
+/// `__tests__`, `test` or `tests` directory.
+fn ecmascript_test_file(file: &Path) -> bool {
+    has_test_segment(file, &["test", "spec"]) || in_directory(file, &["__tests__", "test", "tests"])
 }
 
 /// The flags of the Python `anchor` (see [`python_anchor`]) written in `file`.

@@ -53,7 +53,7 @@ pub fn ecmascript(
 
 /// The specifier without a bundler query or fragment: everything from the first `?`, or from the
 /// first `#` that is not the first character (a leading `#` marks a package `imports` key).
-fn strip_suffix(specifier: &str) -> &str {
+pub(super) fn strip_suffix(specifier: &str) -> &str {
     let end = specifier
         .char_indices()
         .find(|&(index, c)| c == '?' || (c == '#' && index > 0))
@@ -71,6 +71,12 @@ pub fn resolve(specifier: &str, importer: &Path, env: &Environment<'_>) -> Resol
     join_normalised(importer.parent(), specifier)
         .and_then(|base| locate(&base, specifier.ends_with('/'), env))
         .map_or(Resolution::Unresolved, Found::resolution)
+}
+
+/// Looks `base` up like [`resolve`] does after joining: the file itself, then the probes. `None`
+/// when nothing is found. `directory_only` is a candidate written with a trailing `/`.
+pub(super) fn find(base: &Path, directory_only: bool, env: &Environment<'_>) -> Option<Resolution> {
+    locate(base, directory_only, env).map(Found::resolution)
 }
 
 /// A repository file a candidate path names.

@@ -65,6 +65,8 @@ mod ecmascript_symbols_tests;
 #[cfg(test)]
 mod fixtures;
 #[cfg(test)]
+mod html_tests;
+#[cfg(test)]
 mod kind_tests;
 #[cfg(test)]
 mod markup_tests;
@@ -110,7 +112,7 @@ pub use project::Project;
 pub use python_config::python_roots;
 pub use python_layout::PythonLayout;
 pub use rust_scope::Bindings;
-pub use spec::{Grammar, LanguageSpec, Region, Scan, spec};
+pub use spec::{Grammar, LanguageSpec, Load, Loads, Region, Scan, spec};
 pub use tsconfig::{alias_configs, project_configs};
 pub use workspace::{Workspaces, discover as workspaces};
 

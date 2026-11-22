@@ -159,6 +159,8 @@ pub enum Language {
     Rust,
     /// Svelte components: the `<script>` elements of a `.svelte` file.
     Svelte,
+    /// HTML pages that hold a `<script` element: their inline scripts, `src` and module preloads.
+    Html,
 }
 
 impl Language {
@@ -166,7 +168,10 @@ impl Language {
     /// TypeScript and JavaScript rules and governed by `tsconfig.json` and `package.json`.
     #[must_use]
     pub const fn is_ecmascript(self) -> bool {
-        matches!(self, Self::TypeScript | Self::JavaScript | Self::Svelte)
+        matches!(
+            self,
+            Self::TypeScript | Self::JavaScript | Self::Svelte | Self::Html
+        )
     }
 }
 
