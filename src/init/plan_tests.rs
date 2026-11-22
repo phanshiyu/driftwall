@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use super::*;
-use crate::model::{Language, NodeId, Ownership, Tag};
+use crate::model::{DirTag, Language, NodeId, Ownership, Prefix, Scope, Tag};
 
 fn files(paths: &[&str]) -> BTreeMap<PathBuf, Language> {
     paths
@@ -37,7 +37,7 @@ fn id(raw: &str) -> NodeId {
 fn tags(plan: &InitPlan) -> Vec<(String, String)> {
     plan.tags
         .iter()
-        .map(|(dir, tag)| (dir.display().to_string(), tag.to_string()))
+        .map(|(dir, found)| (dir.display().to_string(), found.tag.to_string()))
         .collect()
 }
 
@@ -188,12 +188,21 @@ fn root_files_next_to_source_directories_form_one_node() {
 #[test]
 fn existing_of_labels_nodes_by_their_tag_directory() {
     let mut ownership = Ownership::default();
+    let dir_tag = |tag| DirTag {
+        tag,
+        scope: Scope::Subtree,
+    };
     ownership
         .tag_dirs
-        .insert(PathBuf::from("lib"), Tag::Node(id("lib")));
-    ownership
-        .tag_dirs
-        .insert(PathBuf::from("src"), Tag::Modules);
+        .insert(PathBuf::from("lib"), dir_tag(Tag::Node(id("lib"))));
+    ownership.tag_dirs.insert(
+        PathBuf::from("src"),
+        dir_tag(Tag::Modules(Prefix::default())),
+    );
+    ownership.tag_dirs.insert(
+        PathBuf::from("ui"),
+        dir_tag(Tag::Modules(Prefix::new("ui-").unwrap())),
+    );
     let at = |file: &str| crate::model::Location {
         file: PathBuf::from(file),
         line: 1,
@@ -201,6 +210,7 @@ fn existing_of_labels_nodes_by_their_tag_directory() {
     ownership.tags = vec![
         (at("lib/.arch"), "lib".to_owned()),
         (at("src/.arch"), "gitlab".to_owned()),
+        (at("ui/.arch"), "ui-store".to_owned()),
     ];
     ownership
         .owners
@@ -210,7 +220,8 @@ fn existing_of_labels_nodes_by_their_tag_directory() {
         existing.nodes,
         BTreeMap::from([
             (id("gitlab"), "src/gitlab".to_owned()),
-            (id("lib"), "lib".to_owned())
+            (id("lib"), "lib".to_owned()),
+            (id("ui-store"), "ui/store".to_owned()),
         ])
     );
     assert_eq!(existing.owners, ownership.owners);

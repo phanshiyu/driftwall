@@ -9,8 +9,9 @@ use super::ids;
 use super::layout::{Draft, Owner, label_of};
 use super::units::{Unit, python_units};
 use crate::imports::FileImports;
-use crate::model::{Contract, Edge, EdgeKind, Language, NodeId, NodeInfo};
-use crate::ownership::Tag;
+use crate::model::{
+    Contract, DirTag, Edge, EdgeKind, Language, NodeId, NodeInfo, Prefix, Scope, Tag,
+};
 
 /// Settings for [`plan`].
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -28,8 +29,9 @@ pub struct InitPlan {
     /// per observed import.
     pub contract: Contract,
     /// Repository-relative directory (empty for the root) to the tag its new `.arch` gets: a node
-    /// id, or `node: *` when the nodes are derived from module names. Existing tags are not here.
-    pub tags: BTreeMap<PathBuf, Tag>,
+    /// id, or `node: *` (with its prefix) when the nodes are derived from module names, and the
+    /// scope. Existing tags are not here.
+    pub tags: BTreeMap<PathBuf, DirTag>,
 }
 
 /// Builds the baseline for `files` and the `imports` found in them.
@@ -99,11 +101,20 @@ pub fn plan(
     }
     add_edges(&mut contract, imports, &owners);
 
-    let mut tags: BTreeMap<PathBuf, Tag> = directory_ids
+    let plain = |tag| DirTag {
+        tag,
+        scope: Scope::Subtree,
+    };
+    let mut tags: BTreeMap<PathBuf, DirTag> = directory_ids
         .into_iter()
-        .map(|(dir, id)| (dir, Tag::Node(id)))
+        .map(|(dir, id)| (dir, plain(Tag::Node(id))))
         .collect();
-    tags.extend(draft.module_dirs.into_iter().map(|dir| (dir, Tag::Modules)));
+    tags.extend(
+        draft
+            .module_dirs
+            .into_iter()
+            .map(|dir| (dir, plain(Tag::Modules(Prefix::default())))),
+    );
     InitPlan { contract, tags }
 }
 

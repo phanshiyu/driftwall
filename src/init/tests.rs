@@ -7,8 +7,8 @@ use tempfile::TempDir;
 
 use super::*;
 use crate::imports::FileImports;
+use crate::model::Tag;
 use crate::model::{Edge, EdgeKind, Location, NodeId, ResolvedImport};
-use crate::ownership::Tag;
 
 fn files(paths: &[&str]) -> BTreeMap<PathBuf, Language> {
     paths
@@ -48,7 +48,7 @@ fn plan_of(paths: &[&str], depth: Option<usize>) -> InitPlan {
 fn tags(plan: &InitPlan) -> Vec<(String, String)> {
     plan.tags
         .iter()
-        .map(|(dir, tag)| (dir.display().to_string(), tag.to_string()))
+        .map(|(dir, found)| (dir.display().to_string(), found.tag.to_string()))
         .collect()
 }
 
@@ -191,7 +191,9 @@ fn an_explicit_depth_never_makes_module_nodes() {
     for depth in 0..=3 {
         let p = plan_of(&paths, Some(depth));
         assert!(
-            p.tags.values().all(|tag| *tag != Tag::Modules),
+            p.tags
+                .values()
+                .all(|found| !matches!(found.tag, Tag::Modules(_))),
             "depth {depth}"
         );
     }
@@ -313,9 +315,9 @@ fn every_planned_node_is_tagged_exactly_once() {
     let tagged: BTreeSet<&NodeId> = p
         .tags
         .values()
-        .filter_map(|tag| match tag {
+        .filter_map(|found| match &found.tag {
             Tag::Node(id) => Some(id),
-            Tag::Modules => None,
+            Tag::Modules(_) => None,
         })
         .collect();
     let declared: BTreeSet<&NodeId> = p.contract.nodes.keys().collect();

@@ -54,8 +54,15 @@ mod witness {
         };
     }
 
-    witness!(ModelError: InvalidNodeId);
-    witness!(ArchProblem: MissingNode, DuplicateNode, InvalidId, UnrecognisedLine);
+    witness!(ModelError: InvalidNodeId, InvalidPrefix);
+    witness!(
+        ArchProblem: MissingNode,
+        DuplicateNode,
+        InvalidId,
+        DuplicateScope,
+        InvalidScope,
+        UnrecognisedLine,
+    );
     witness!(
         DiagramError: MissingHeader,
         BadHeader,
@@ -141,7 +148,7 @@ mod witness {
 
     impl Build for ModelError {
         fn build() -> Vec<Self> {
-            vec![model_error()]
+            vec![model_error(), Self::InvalidPrefix("1".to_owned())]
         }
     }
 
@@ -151,6 +158,8 @@ mod witness {
                 Self::MissingNode,
                 Self::DuplicateNode,
                 Self::InvalidId(model_error()),
+                Self::DuplicateScope,
+                Self::InvalidScope("x".to_owned()),
                 Self::UnrecognisedLine("x".to_owned()),
             ]
         }

@@ -19,8 +19,14 @@ pub enum ArchProblem {
     /// The `node:` value is not a valid node id.
     #[error(transparent)]
     InvalidId(#[from] ModelError),
-    /// A line that is neither blank, a `#` comment, nor `node: <id>`.
-    #[error("unrecognised line `{0}`: expected `node: <id>` or a `#` comment")]
+    /// The file has more than one `scope:` line. Reported at the second one.
+    #[error("more than one `scope:` line")]
+    DuplicateScope,
+    /// The `scope:` value is not `here`.
+    #[error("invalid scope `{0}`: expected `scope: here`")]
+    InvalidScope(String),
+    /// A line that is neither blank, a `#` comment, `node: <id>` nor `scope: here`.
+    #[error("unrecognised line `{0}`: expected `node: <id>`, `scope: here` or a `#` comment")]
     UnrecognisedLine(String),
 }
 

@@ -19,6 +19,9 @@ pub enum ModelError {
     /// A node identifier did not match `[A-Za-z][A-Za-z0-9_-]*`.
     #[error("invalid node id `{0}`: expected [A-Za-z][A-Za-z0-9_-]*")]
     InvalidNodeId(String),
+    /// A node id prefix did not match `[A-Za-z][A-Za-z0-9_-]*-`.
+    #[error("invalid node id prefix `{0}`: expected [A-Za-z][A-Za-z0-9_-]*-")]
+    InvalidPrefix(String),
 }
 
 /// A validated architecture node identifier.
@@ -50,6 +53,51 @@ impl NodeId {
 }
 
 impl fmt::Display for NodeId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+/// The text put in front of the module names under `node: <prefix>*`, such as `ui-`.
+///
+/// A prefix is either empty (a plain `node: *`) or matches `[A-Za-z][A-Za-z0-9_-]*-`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Prefix(String);
+
+impl Prefix {
+    /// Validates and wraps a non-empty prefix: a valid node id spelling that ends in `-`.
+    ///
+    /// # Errors
+    /// Returns [`ModelError::InvalidPrefix`] when `raw` is empty, does not end in `-`, or uses
+    /// disallowed characters.
+    pub fn new(raw: &str) -> Result<Self, ModelError> {
+        if raw.ends_with('-') && NodeId::new(raw).is_ok() {
+            Ok(Self(raw.to_owned()))
+        } else {
+            Err(ModelError::InvalidPrefix(raw.to_owned()))
+        }
+    }
+
+    /// The prefix as a string slice, empty for none.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// The node id of the module called `name` under this prefix: the prefix followed by the name.
+    ///
+    /// # Errors
+    /// Returns [`ModelError::InvalidNodeId`] when `name` is empty or the result is not a valid id.
+    pub fn derive(&self, name: &str) -> Result<NodeId, ModelError> {
+        let id = format!("{}{name}", self.0);
+        if name.is_empty() {
+            return Err(ModelError::InvalidNodeId(id));
+        }
+        NodeId::new(&id)
+    }
+}
+
+impl fmt::Display for Prefix {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.0)
     }
@@ -126,17 +174,40 @@ pub const MODULES_MARK: &str = "*";
 pub enum Tag {
     /// `node: <id>`: the directory and everything below it is one node.
     Node(NodeId),
-    /// `node: *`: every module directly in the directory is its own node, named by its position.
-    Modules,
+    /// `node: <prefix>*`: every module directly in the directory is its own node, named by its
+    /// position and the prefix (empty for a plain `node: *`).
+    Modules(Prefix),
 }
 
 impl fmt::Display for Tag {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Node(id) => id.fmt(f),
-            Self::Modules => f.write_str(MODULES_MARK),
+            Self::Modules(prefix) => write!(f, "{prefix}{MODULES_MARK}"),
         }
     }
+}
+
+/// How far a `.arch` file reaches below its own directory.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Scope {
+    /// The default: the tag covers the directory and every subdirectory, until a nearer `.arch`.
+    #[default]
+    Subtree,
+    /// `scope: here`: the tag covers only the files directly in its directory.
+    Here,
+}
+
+/// The value of `scope:` that limits a tag to its own directory.
+pub const SCOPE_HERE: &str = "here";
+
+/// What one `.arch` file says: the tag and how far it reaches.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DirTag {
+    /// What the directory is tagged with.
+    pub tag: Tag,
+    /// How far the tag reaches below the directory.
+    pub scope: Scope,
 }
 
 /// Why the scan left a source file out of the repository's own source.
@@ -146,6 +217,9 @@ pub enum Exclusion {
     Vendored,
     /// The file name has the form `<name>.min.<ext>`.
     Minified,
+    /// The file is below a directory named `dist`, or announces itself as generated in its first
+    /// lines.
+    Generated,
 }
 
 impl Exclusion {
@@ -155,6 +229,7 @@ impl Exclusion {
         match self {
             Self::Vendored => "vendored",
             Self::Minified => "minified",
+            Self::Generated => "generated",
         }
     }
 }
@@ -170,7 +245,7 @@ pub struct Ownership {
     pub tags: Vec<(Location, String)>,
     /// What each `.arch` file the scan saw says, by the repository-relative directory it is in
     /// (empty for the root).
-    pub tag_dirs: BTreeMap<PathBuf, Tag>,
+    pub tag_dirs: BTreeMap<PathBuf, DirTag>,
     /// Source files the scan left out, by reason. They are neither owned nor unmapped.
     pub excluded: BTreeMap<Exclusion, BTreeSet<PathBuf>>,
     /// Owner per repository-relative asset: every other walked file (`data.json`, `style.css`),
@@ -585,6 +660,43 @@ mod tests {
                 Err(ModelError::InvalidNodeId(bad.to_owned()))
             );
         }
+    }
+
+    #[test]
+    fn a_prefix_ends_in_a_dash_and_is_otherwise_an_id() {
+        for good in ["ui-", "a-", "ui-kit-", "a_b-", "A1--"] {
+            assert_eq!(Prefix::new(good).unwrap().as_str(), good);
+        }
+        for bad in [
+            "", "-", "ui", "ui_", "9-", "-ui-", "u i-", "u.i-", "*-", "ui-*",
+        ] {
+            assert_eq!(
+                Prefix::new(bad),
+                Err(ModelError::InvalidPrefix(bad.to_owned())),
+                "{bad}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_prefix_derives_the_id_as_prefix_then_name() {
+        let ui = Prefix::new("ui-").unwrap();
+        assert_eq!(ui.derive("components").unwrap().as_str(), "ui-components");
+        assert_eq!(ui.derive("9lives").unwrap().as_str(), "ui-9lives");
+        assert_eq!(Prefix::default().derive("a").unwrap().as_str(), "a");
+        let none = Prefix::default();
+        for (prefix, name) in [(&ui, ""), (&ui, "a.b"), (&none, "9"), (&none, "")] {
+            assert!(prefix.derive(name).is_err(), "{prefix}{name}");
+        }
+    }
+
+    #[test]
+    fn tags_display_as_written_in_the_arch_file() {
+        let modules = |prefix: &str| Tag::Modules(Prefix::new(prefix).unwrap_or_default());
+        assert_eq!(modules("").to_string(), "*");
+        assert_eq!(modules("ui-").to_string(), "ui-*");
+        assert_eq!(Tag::Node(NodeId::new("core").unwrap()).to_string(), "core");
+        assert_eq!(Scope::default(), Scope::Subtree);
     }
 
     #[test]

@@ -23,7 +23,7 @@ pub use exclude::exclusion_of;
 pub use language::language_of;
 pub use module::module_name;
 
-pub use crate::model::Tag;
+pub use crate::model::{DirTag, Scope, Tag};
 use crate::model::{Exclusion, Location, NodeId, Ownership};
 
 /// Name of the file that tags a directory with a node.
@@ -43,22 +43,31 @@ pub struct Explanation {
 /// One `.arch` file's decision about its directory.
 struct Decision {
     tag: Tag,
+    scope: Scope,
     arch_file: PathBuf,
     line: u32,
 }
 
 impl Decision {
+    /// Whether this decision, made in the directory `dir`, applies to `file`: always for a file
+    /// directly in `dir`, and for one below it only when the scope is the whole subtree.
+    fn covers(&self, dir: &Path, file: &Path) -> bool {
+        self.scope == Scope::Subtree || file.parent() == Some(dir)
+    }
+
     /// The node `file` gets from this decision, where `dir` is the directory of the `.arch` file.
     fn node_for(&self, dir: &Path, file: &Path) -> Result<NodeId, OwnershipError> {
         match &self.tag {
             Tag::Node(id) => Ok(id.clone()),
-            Tag::Modules => {
+            Tag::Modules(prefix) => {
                 let name = module_name(dir, file).unwrap_or_default();
-                NodeId::new(&name).map_err(|source| OwnershipError::InvalidModule {
-                    at: self.location(),
-                    file: file.to_path_buf(),
-                    source,
-                })
+                prefix
+                    .derive(&name)
+                    .map_err(|source| OwnershipError::InvalidModule {
+                        at: self.location(),
+                        file: file.to_path_buf(),
+                        source,
+                    })
             }
         }
     }
@@ -118,6 +127,7 @@ pub fn scan(root: &Path) -> Result<Ownership, OwnershipError> {
             dir,
             Decision {
                 tag: parsed.tag,
+                scope: parsed.scope,
                 arch_file,
                 line: parsed.line,
             },
@@ -133,7 +143,7 @@ pub fn scan(root: &Path) -> Result<Ownership, OwnershipError> {
         match nearest_decision(&decisions, &source) {
             Some((dir, decision)) => {
                 let node = decision.node_for(dir, &source)?;
-                if decision.tag == Tag::Modules {
+                if matches!(decision.tag, Tag::Modules(_)) {
                     derived.insert((decision.location(), node.to_string()));
                 }
                 ownership.owners.insert(source, node);
@@ -161,12 +171,19 @@ pub fn scan(root: &Path) -> Result<Ownership, OwnershipError> {
     ownership.tags = tags;
     ownership.tag_dirs = decisions
         .into_iter()
-        .map(|(dir, decision)| (dir, decision.tag))
+        .map(|(dir, decision)| {
+            let tag = DirTag {
+                tag: decision.tag,
+                scope: decision.scope,
+            };
+            (dir, tag)
+        })
         .collect();
     Ok(ownership)
 }
 
-/// The decision of the nearest `.arch` at or above `file`, with the directory that holds it.
+/// The decision of the nearest `.arch` at or above `file` that covers it (a `scope: here` one only
+/// covers the files directly in its directory), with the directory that holds it.
 fn nearest_decision<'a>(
     decisions: &'a BTreeMap<PathBuf, Decision>,
     file: &Path,
@@ -174,8 +191,12 @@ fn nearest_decision<'a>(
     file.parent()
         .into_iter()
         .flat_map(Path::ancestors)
-        .find_map(|dir| decisions.get_key_value(dir))
-        .map(|(dir, decision)| (dir.as_path(), decision))
+        .find_map(|dir| {
+            let (held, decision) = decisions.get_key_value(dir)?;
+            decision
+                .covers(held, file)
+                .then_some((held.as_path(), decision))
+        })
 }
 
 /// Explains which node owns `file` and which `.arch` file decided it.
@@ -198,13 +219,16 @@ pub fn explain(root: &Path, file: &Path) -> Result<Explanation, OwnershipError> 
                 let parsed = arch::parse(&arch_file, &contents)?;
                 let decision = Decision {
                     tag: parsed.tag,
+                    scope: parsed.scope,
                     arch_file,
                     line: parsed.line,
                 };
-                return Ok(Explanation {
-                    node: Some(decision.node_for(dir, &relative)?),
-                    arch_file: Some(decision.arch_file),
-                });
+                if decision.covers(dir, &relative) {
+                    return Ok(Explanation {
+                        node: Some(decision.node_for(dir, &relative)?),
+                        arch_file: Some(decision.arch_file),
+                    });
+                }
             }
             Err(e) if e.kind() == io::ErrorKind::NotFound => {}
             Err(source) => {
@@ -958,6 +982,200 @@ mod tests {
             }
             other => panic!("expected InvalidModule, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn a_prefix_is_put_in_front_of_every_derived_node() {
+        assert_eq!(
+            derived_with(
+                "ui-*",
+                &[
+                    "src/store.ts",
+                    "src/store.test.ts",
+                    "src/index.ts",
+                    "src/components/a.ts",
+                    "src/components/deep/b.ts",
+                    "src/9lives.ts",
+                ]
+            ),
+            pairs(&[
+                ("src/9lives.ts", "ui-9lives"),
+                ("src/components/a.ts", "ui-components"),
+                ("src/components/deep/b.ts", "ui-components"),
+                ("src/index.ts", "ui-src"),
+                ("src/store.test.ts", "ui-store"),
+                ("src/store.ts", "ui-store"),
+            ])
+        );
+    }
+
+    /// Like [`derived`], with the `node:` value of `src/.arch` given.
+    fn derived_with(value: &str, paths: &[&str]) -> Vec<(String, String)> {
+        let arch = format!("node: {value}\n");
+        let mut files: Vec<(&str, &str)> = vec![("src/.arch", &arch)];
+        files.extend(paths.iter().map(|path| (*path, "")));
+        let dir = tree(&files);
+        let o = scan(dir.path()).unwrap();
+        assert!(o.unmapped.is_empty(), "{:?}", o.unmapped);
+        o.owners
+            .iter()
+            .map(|(path, node)| (path.display().to_string(), node.to_string()))
+            .collect()
+    }
+
+    #[test]
+    fn prefixed_tags_name_the_prefixed_nodes_at_the_star_line() {
+        let dir = tree(&[
+            ("ui/.arch", "# c\nnode: ui-*\n"),
+            ("ui/b.ts", ""),
+            ("ui/a/x.ts", ""),
+        ]);
+        let o = scan(dir.path()).unwrap();
+        let at = |line| Location {
+            file: PathBuf::from("ui/.arch"),
+            line,
+        };
+        assert_eq!(
+            o.tags,
+            vec![(at(2), "ui-a".to_owned()), (at(2), "ui-b".to_owned())]
+        );
+    }
+
+    #[test]
+    fn a_prefixed_name_must_still_be_non_empty_and_valid() {
+        for bad in [".eslintrc.js", "a b.ts"] {
+            let dir = tree(&[
+                ("pkg/.arch", "node: ui-*\n"),
+                ("pkg/ok.py", ""),
+                (&format!("pkg/{bad}"), ""),
+            ]);
+            assert!(
+                matches!(scan(dir.path()), Err(OwnershipError::InvalidModule { .. })),
+                "{bad}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_here_tag_does_not_reach_subdirectories() {
+        let dir = tree(&[
+            (".arch", "node: root\nscope: here\n"),
+            ("vite.config.ts", ""),
+            ("src/a.ts", ""),
+            ("src/deep/b.ts", ""),
+        ]);
+        let o = scan(dir.path()).unwrap();
+        assert_eq!(owner(&o, "vite.config.ts").as_deref(), Some("root"));
+        assert_eq!(unmapped(&o), ["src/a.ts", "src/deep/b.ts"]);
+    }
+
+    #[test]
+    fn a_here_tag_leaves_subdirectories_to_the_tag_above_it() {
+        let dir = tree(&[
+            ("a/.arch", "node: outer\n"),
+            ("a/x.ts", ""),
+            ("a/b/.arch", "node: inner\nscope: here\n"),
+            ("a/b/y.ts", ""),
+            ("a/b/deep/z.ts", ""),
+            ("a/b/deep/.arch", "node: nearest\n"),
+            ("a/b/deep/w.ts", ""),
+            ("a/b/other/v.ts", ""),
+        ]);
+        let o = scan(dir.path()).unwrap();
+        assert_eq!(owner(&o, "a/b/y.ts").as_deref(), Some("inner"));
+        assert_eq!(owner(&o, "a/b/other/v.ts").as_deref(), Some("outer"));
+        assert_eq!(owner(&o, "a/b/deep/w.ts").as_deref(), Some("nearest"));
+        assert!(o.unmapped.is_empty());
+    }
+
+    #[test]
+    fn a_here_star_tag_names_only_the_files_directly_in_its_directory() {
+        let dir = tree(&[
+            ("src/.arch", "node: ui-*\nscope: here\n"),
+            ("src/a.ts", ""),
+            ("src/b/c.ts", ""),
+        ]);
+        let o = scan(dir.path()).unwrap();
+        assert_eq!(owner(&o, "src/a.ts").as_deref(), Some("ui-a"));
+        assert_eq!(unmapped(&o), ["src/b/c.ts"]);
+    }
+
+    #[test]
+    fn the_scan_records_the_scope_of_each_tag_directory() {
+        let dir = tree(&[
+            (".arch", "node: root\nscope: here\n"),
+            ("a/.arch", "node: ui-*\n"),
+            ("a/x.ts", ""),
+        ]);
+        let o = scan(dir.path()).unwrap();
+        let scope_of = |dir: &str| o.tag_dirs.get(Path::new(dir)).map(|tag| tag.scope);
+        assert_eq!(scope_of(""), Some(Scope::Here));
+        assert_eq!(scope_of("a"), Some(Scope::Subtree));
+        assert_eq!(
+            o.tag_dirs
+                .get(Path::new("a"))
+                .map(|tag| tag.tag.to_string()),
+            Some("ui-*".to_owned())
+        );
+    }
+
+    #[test]
+    fn explain_agrees_with_scan_for_scopes_and_prefixes() {
+        let dir = tree(&[
+            (".arch", "node: root\nscope: here\n"),
+            ("top.ts", ""),
+            ("lone/x.ts", ""),
+            ("ui/.arch", "node: ui-*\n"),
+            ("ui/store.ts", ""),
+            ("ui/components/a.ts", ""),
+            ("ui/components/deep/.arch", "node: inner\nscope: here\n"),
+            ("ui/components/deep/b.ts", ""),
+            ("ui/components/deep/more/c.ts", ""),
+            ("pkg/.arch", "node: p-*\nscope: here\n"),
+            ("pkg/m.ts", ""),
+            ("pkg/sub/n.ts", ""),
+        ]);
+        let scanned = scan(dir.path()).unwrap();
+        assert!(!scanned.owners.is_empty() && !scanned.unmapped.is_empty());
+        for (path, node) in &scanned.owners {
+            let explanation = explain(dir.path(), path).unwrap();
+            assert_eq!(explanation.node.as_ref(), Some(node), "{}", path.display());
+        }
+        for path in &scanned.unmapped {
+            let explanation = explain(dir.path(), path).unwrap();
+            assert_eq!(explanation.node, None, "{}", path.display());
+            assert_eq!(explanation.arch_file, None, "{}", path.display());
+        }
+        assert_eq!(unmapped(&scanned), ["lone/x.ts", "pkg/sub/n.ts"]);
+    }
+
+    #[test]
+    fn explain_names_the_arch_file_that_covers_a_file_below_a_here_tag() {
+        let dir = tree(&[
+            ("a/.arch", "node: outer\n"),
+            ("a/b/.arch", "node: inner\nscope: here\n"),
+        ]);
+        let explain_of = |path: &str| explain(dir.path(), Path::new(path)).unwrap();
+        let direct = explain_of("a/b/y.ts");
+        assert_eq!(direct.node.as_ref().map(NodeId::as_str), Some("inner"));
+        assert_eq!(direct.arch_file.as_deref(), Some(Path::new("a/b/.arch")));
+        let below = explain_of("a/b/new/z.ts");
+        assert_eq!(below.node.as_ref().map(NodeId::as_str), Some("outer"));
+        assert_eq!(below.arch_file.as_deref(), Some(Path::new("a/.arch")));
+    }
+
+    #[test]
+    fn explain_derives_a_prefixed_node() {
+        let dir = tree(&[("ui/.arch", "node: ui-*\n")]);
+        let explanation = explain(dir.path(), Path::new("ui/components/new.ts")).unwrap();
+        assert_eq!(
+            explanation.node.as_ref().map(NodeId::as_str),
+            Some("ui-components")
+        );
+        assert_eq!(
+            explanation.arch_file.as_deref(),
+            Some(Path::new("ui/.arch"))
+        );
     }
 
     #[test]

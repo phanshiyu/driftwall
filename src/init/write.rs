@@ -4,6 +4,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::diagram;
+use crate::model::{DirTag, SCOPE_HERE, Scope};
 
 use super::{InitError, InitPlan, InitSummary, WriteOptions};
 
@@ -25,7 +26,7 @@ pub fn apply(
         baseline
             .tags
             .iter()
-            .map(|(dir, tag)| (dir.join(ARCH_FILE), format!("node: {tag}\n")))
+            .map(|(dir, found)| (dir.join(ARCH_FILE), arch_text(found)))
             .collect()
     } else {
         Vec::new()
@@ -53,6 +54,16 @@ pub fn apply(
         tag_files: tag_paths.len(),
         contract: write.contract.clone(),
     })
+}
+
+/// The contents of the `.arch` file for `found`: its `node:` line, then `scope: here` when the tag
+/// does not reach below its directory.
+fn arch_text(found: &DirTag) -> String {
+    let scope = match found.scope {
+        Scope::Subtree => String::new(),
+        Scope::Here => format!("scope: {SCOPE_HERE}\n"),
+    };
+    format!("node: {}\n{scope}", found.tag)
 }
 
 fn write_file(root: &Path, relative: &Path, contents: &str) -> Result<(), InitError> {

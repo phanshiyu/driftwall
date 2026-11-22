@@ -27,8 +27,10 @@ impl Existing {
                 continue;
             };
             let dir = at.file.parent().unwrap_or_else(|| Path::new(""));
-            let label = match ownership.tag_dirs.get(dir) {
-                Some(Tag::Modules) => label_of(&dir.join(name)),
+            let label = match ownership.tag_dirs.get(dir).map(|found| &found.tag) {
+                Some(Tag::Modules(prefix)) => {
+                    label_of(&dir.join(name.strip_prefix(prefix.as_str()).unwrap_or(name)))
+                }
                 Some(Tag::Node(_)) | None => label_of(dir),
             };
             nodes.entry(id).or_insert(label);
