@@ -10,6 +10,7 @@ const REPO: &[&str] = &[
     "src/lib.rs",
     "src/model/mod.rs",
     "src/diagram/mod.rs",
+    "src/diagram/parse.rs",
     "src/lint/mod.rs",
     "src/lint/rules.rs",
     "src/gitlab.rs",
@@ -161,10 +162,27 @@ fn qualified_paths_record_the_first_item_segment() {
 }
 
 #[test]
-fn a_qualified_path_ending_at_the_module_records_all() {
+fn a_qualified_path_ending_at_a_module_file_names_an_item_of_the_parent() {
+    // why: `diagram/parse.rs` is a module and a module is no value, so the call names `diagram::parse`.
     assert_eq!(
-        used("fn f() { let _ = crate::model; }"),
-        [entry(1, "src/model/mod.rs", &["*"])]
+        used("fn f() { crate::diagram::parse(); }"),
+        [entry(1, "src/diagram/mod.rs", &["parse"])]
+    );
+    assert_eq!(
+        used("fn f(x: crate::diagram::parse) {}"),
+        [entry(1, "src/diagram/mod.rs", &["parse"])]
+    );
+    assert_eq!(
+        used("fn f() { crate::model; }"),
+        [entry(1, "src/lib.rs", &["model"])]
+    );
+}
+
+#[test]
+fn a_use_leaf_that_ends_at_a_module_file_is_the_module() {
+    assert_eq!(
+        used("use crate::diagram::parse;"),
+        [entry(1, "src/diagram/parse.rs", &["*"])]
     );
 }
 

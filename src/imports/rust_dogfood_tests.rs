@@ -109,6 +109,79 @@ fn model_depends_on_no_other_node() {
     assert!(dependencies(&all, "src/model/mod.rs").is_empty());
 }
 
+/// Every symbol `file` uses from `target`, across all of its import lines, as serialized.
+fn symbols_used(
+    all: &BTreeMap<PathBuf, FileImports>,
+    file: &str,
+    target: &str,
+) -> BTreeSet<String> {
+    all.get(Path::new(file))
+        .expect("file was collected")
+        .resolved
+        .iter()
+        .filter(|import| import.target == Path::new(target))
+        .flat_map(|import| import.symbols.iter().map(ToString::to_string))
+        .collect()
+}
+
+/// Asserts `file` uses every one of `names` from `target`. Other symbols may be used too, so the
+/// test survives unrelated edits to the real source.
+fn assert_uses(all: &BTreeMap<PathBuf, FileImports>, file: &str, target: &str, names: &[&str]) {
+    let used = symbols_used(all, file, target);
+    for name in names {
+        assert!(
+            used.contains(*name),
+            "{file} -> {target}: {name} in {used:?}"
+        );
+    }
+}
+
+#[test]
+fn lint_uses_the_diagram_parser_by_name() {
+    // why: `diagram::parse(&source)` is reached through the `self` binding of `use crate::diagram`.
+    assert_uses(
+        &dogfood(),
+        "src/lint/mod.rs",
+        "src/diagram/mod.rs",
+        &["DiagramError", "parse", "*"],
+    );
+}
+
+#[test]
+fn the_binary_uses_lint_run_through_the_bound_module_name() {
+    // why: `use driftwall::lint::{self, LintOptions};` and `lint::run(&args.path, &options)`.
+    assert_uses(
+        &dogfood(),
+        "src/cli/commands.rs",
+        "src/lint/mod.rs",
+        &["LintOptions", "run", "*"],
+    );
+}
+
+#[test]
+fn a_module_import_group_records_each_module_as_all() {
+    // why: `use crate::{diff, locate, views};` imports three sibling modules as modules.
+    let all = dogfood();
+    for target in ["src/cli/diff.rs", "src/cli/locate.rs", "src/cli/views.rs"] {
+        assert_uses(&all, "src/cli/commands.rs", target, &["*"]);
+    }
+}
+
+#[test]
+fn the_binary_uses_the_report_renderers_by_name() {
+    assert_uses(
+        &dogfood(),
+        "src/cli/commands.rs",
+        "src/report/mod.rs",
+        &["render_text", "render_json", "render_sarif"],
+    );
+}
+
+#[test]
+fn symbols_are_deterministic_across_runs() {
+    assert_eq!(dogfood(), dogfood());
+}
+
 #[test]
 fn rust_files_never_leave_unresolved_imports() {
     for (file, imports) in &dogfood() {

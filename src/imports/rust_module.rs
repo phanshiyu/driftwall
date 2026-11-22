@@ -27,6 +27,9 @@ pub enum Segment<'s> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WrittenPath<'s> {
     segments: Vec<Segment<'s>>,
+    /// Whether the path may name a module as a whole: true for a `use` leaf and a `mod`
+    /// declaration, false for a path in an expression, a type or a macro argument.
+    names_module: bool,
 }
 
 /// A module's name chain from its crate root. The crate root itself is the empty path.
@@ -50,9 +53,22 @@ pub struct Site {
 }
 
 impl<'s> WrittenPath<'s> {
-    /// A path made of `segments`.
-    pub const fn new(segments: Vec<Segment<'s>>) -> Self {
-        Self { segments }
+    /// A path made of `segments` written in an expression, a type or a macro argument, where it
+    /// cannot name a module as a whole.
+    pub const fn in_code(segments: Vec<Segment<'s>>) -> Self {
+        Self {
+            segments,
+            names_module: false,
+        }
+    }
+
+    /// A path made of `segments` written in a `use` or `mod` declaration, where it may name a
+    /// module as a whole.
+    pub const fn declared(segments: Vec<Segment<'s>>) -> Self {
+        Self {
+            segments,
+            names_module: true,
+        }
     }
 
     /// The name the path ends in, or `None` when it ends in `crate`, `self` or `super` or is empty.
@@ -77,6 +93,7 @@ impl<'s> WrittenPath<'s> {
         let tail = self.segments.iter().skip(1).copied();
         Self {
             segments: prefix.segments.iter().copied().chain(tail).collect(),
+            names_module: self.names_module,
         }
     }
 
@@ -87,8 +104,10 @@ impl<'s> WrittenPath<'s> {
     ///
     /// The file is the longest prefix of the path that names a module file. Trailing segments are
     /// items inside that module, and the first of them is the symbol. A path that ends at the
-    /// module file itself uses [`Symbol::All`]. When no module file matches, the crate root file
-    /// is the target and the first segment after `crate` is the symbol.
+    /// module file itself uses [`Symbol::All`], except that a path in code (not a `use` or `mod`
+    /// declaration) that ends at a module file names an item of the parent module instead, see
+    /// [`WrittenPath::in_code`]. When no module file matches, the crate root file is the target and
+    /// the first segment after `crate` is the symbol.
     pub fn target(&self, site: Option<&Site>, env: &Environment<'_>) -> Option<(PathBuf, Symbol)> {
         let (first, tail) = self.segments.split_first()?;
         let (root, mut module, mut rest) = match first {
@@ -118,12 +137,22 @@ impl<'s> WrittenPath<'s> {
             Segment::Name(name) => Some(*name),
             Segment::Crate | Segment::SelfModule | Segment::Super => None,
         });
+        let module_len = module.names.len();
         let written: Vec<&str> = module
             .names
             .iter()
             .map(String::as_str)
             .chain(items)
             .collect();
+        // why: a module is no value, so `diagram::parse(..)` with a `parse.rs` names an item of `diagram`.
+        if !self.names_module
+            && written.len() > module_len
+            && let Some((item, parents)) = written.split_last()
+            && root.deepest_file(&written, env.known).1 == written.len()
+        {
+            let (file, _) = root.deepest_file(parents, env.known);
+            return Some((file, Symbol::Name((*item).to_owned())));
+        }
         let (file, matched) = root.deepest_file(&written, env.known);
         let symbol = written
             .get(matched)

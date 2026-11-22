@@ -10,8 +10,13 @@
 //! skipped, like a malformed `Cargo.toml`. Import types (`typeof import('./a')`) are
 //! not extracted. For Python, `__import__`, `importlib.import_module`, `.pyi` stubs and import
 //! roots other than the repository root and `src/` are not supported. For Rust, see `rust`'s
-//! limitations: `#[path]` modules, `extern crate` renames and relative paths that start with a
-//! local module name are not followed.
+//! limitations: `#[path]` modules, `extern crate` renames and names that only a glob import brings
+//! in are not followed. A path that starts with a module name the same file brought into scope
+//! with `use` or `mod name;` is followed.
+//!
+//! Every resolved import also records the symbols it uses from its target, from syntax only (see
+//! `ResolvedImport::symbols`). Imports of one file on one line collapse by target and union their
+//! symbols; a side-effect import records none. Method calls on values are never resolved.
 
 mod alias;
 mod ecmascript_symbols;

@@ -80,7 +80,7 @@ impl<'s> Bindings<'s> {
             return;
         };
         let inline = enclosing_modules(node, source);
-        let path = WrittenPath::new(vec![Segment::SelfModule, Segment::Name(name)]);
+        let path = WrittenPath::declared(vec![Segment::SelfModule, Segment::Name(name)]);
         self.bind(&inline, name, path);
     }
 

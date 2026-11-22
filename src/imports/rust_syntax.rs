@@ -49,7 +49,7 @@ fn scoped_path<'s>(node: Node<'_>, source: &'s str) -> Option<WrittenPath<'s>> {
     }
     let mut segments = Vec::new();
     flatten(node, source, &mut segments)?;
-    Some(WrittenPath::new(segments))
+    Some(WrittenPath::in_code(segments))
 }
 
 /// Whether `node` is the leading part of a longer path, so only the longer path counts.
@@ -128,7 +128,7 @@ pub fn use_leaves<'s>(node: Node<'_>, source: &'s str) -> Vec<UseLeaf<'s>> {
 }
 
 fn leaf<'s>(segments: Vec<Segment<'s>>, alias: Option<&'s str>) -> UseLeaf<'s> {
-    let path = WrittenPath::new(segments);
+    let path = WrittenPath::declared(segments);
     let binding = match alias {
         Some("_") => None,
         Some(name) => Some(name),
@@ -210,5 +210,5 @@ fn token_path<'s>(node: Node<'_>, source: &'s str) -> Option<WrittenPath<'s>> {
         segments.push(found);
         last = next;
     }
-    (segments.len() > 1).then(|| WrittenPath::new(segments))
+    (segments.len() > 1).then(|| WrittenPath::in_code(segments))
 }
