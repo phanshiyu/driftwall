@@ -95,11 +95,12 @@ declare at the `node: *` line of its `.arch` file.
   file is a source file or, for TypeScript and JavaScript, an asset (see "Asset files").
 - Imports inside one node are ignored. Third party and standard library imports are ignored.
 - A relative import that resolves to nothing is an `unresolved-import` warning, never silently
-  dropped, whatever extension the specifier has (`./missing.json` included).
+  dropped, whatever extension the specifier has (`./missing.json` included). So is a Python absolute
+  import into a first-party package that holds no such module, see "Python resolution".
 - Files with no owner never produce edge findings (no cascade from `unmapped-file`).
 - Resolution per language: TypeScript and JavaScript are described under "TypeScript and JavaScript
-  resolution" below. Python handles relative imports, `__init__.py`, and absolute imports rooted at
-  the repo root or at `src/`. Rust handles `use crate::`, `use super::`, and `mod` declarations are
+  resolution" below. Python handles relative imports, `__init__.py`, and absolute imports against
+  an ordered list of import roots, see "Python resolution" below. Rust handles `use crate::`, `use super::`, and `mod` declarations are
   containment, not edges.
 - Extraction is tree-sitter based and driven by a per-language table (extensions, grammar, query),
   not a trait hierarchy. Adding a language means adding a table entry and a query.
@@ -227,6 +228,109 @@ A declared dependency is a name listed in `dependencies`, `devDependencies`, `pe
 `optionalDependencies` of any `package.json` at or above the file, up to the repository root, because
 Node searches every ancestor `node_modules`. A name declared in any one of them is declared.
 
+### Python resolution
+
+A module reference is the dotted module of `import a.b`, `import a.b as c`, `from a.b import c`,
+`from .a import c` and the literal dynamic imports below. Spaces inside it are ignored.
+
+**Relative** (leading dots): the module is joined onto the directory of the importer, climbed one
+level for each dot after the first. A relative import that climbs above the repository root or finds
+no file is an `unresolved-import`.
+
+**Absolute** (no leading dot): the module is looked up under each import root of the importing file,
+in order, and the first root that holds a file wins.
+
+#### Import roots
+
+The import roots of a file, in this order, with a later duplicate of an earlier root dropped:
+
+1. **Own directory**, when the directory of the importing file holds no `__init__.py`. Python runs a
+   script, and pytest in its default import mode runs a test module, with that directory first on
+   `sys.path`, so sibling files import each other by bare name. A file in a package directory (one with
+   an `__init__.py`) never gets this root: its siblings are reached through the package, or relatively.
+2. **Configured roots**, see below.
+3. **The repository root.**
+4. **`src/`** at the repository root.
+
+#### Configured roots
+
+`collect` reads project configuration once. A configuration directory is the repository root and every
+directory below it that holds a `pyproject.toml`, among the directories at or above a Python file. In
+each, these files are read, in this order, and give roots in the order written:
+
+| File | Setting | Root |
+| --- | --- | --- |
+| `pyproject.toml` | `[tool.pytest.ini_options] pythonpath` | each entry |
+| `pyproject.toml` | `[tool.pyright] extraPaths`, then `[tool.basedpyright] extraPaths` | each entry |
+| `pyproject.toml` | `[tool.setuptools] package-dir`, the entry whose key is `""` | its value |
+| `pyproject.toml` | `[tool.setuptools.packages.find] where` | each entry |
+| `pyproject.toml` | `[tool.hatch.build.targets.wheel] packages` | the parent directory of each entry (`src/x` gives `src`, `x` gives `.`) |
+| `pyproject.toml` | `[tool.poetry] packages`, each table with an `include` | its `from` (`.` without one) |
+| `setup.cfg` | `[options] package_dir`, the entry with an empty key (`= src`) | its value |
+| `setup.cfg` | `[options.packages.find] where` | each entry |
+| `setup.cfg` | `[tool:pytest] pythonpath` | each entry |
+| `pytest.ini` | `[pytest] pythonpath` | each entry |
+| `pyrightconfig.json` | `extraPaths` | each entry |
+
+A root is relative to the directory of the configuration that names it, `.` being that directory
+itself; it is normalised lexically. An entry that is absolute, leaves the repository, or is not a
+string is dropped. A list setting is an array of strings in TOML and JSON, and in the INI files a list
+separated by commas or whitespace (a lone string works everywhere). A `package-dir` entry for a named
+package, other tables of `pyproject.toml` and every other file (`tox.ini`, a `Makefile`, an
+environment variable such as `PYTHONPATH`) are not read. A file that cannot be read or parsed, or a
+setting of the wrong type, is skipped silently like a malformed `Cargo.toml`, and the other files still
+count. `pyrightconfig.json` is JSONC.
+
+The roots a configuration directory gives apply to the files at or below it. For a file, the roots of
+the nearest configuration directory come first, then those of each directory above it up to the
+repository root. So a root-level `pythonpath = ["scripts", "."]` applies to the whole repository, and
+a `lib` configured in `services/api/pyproject.toml` means `services/api/lib` for the files below
+`services/api` only.
+
+#### Probing
+
+A module `m` with imported names `n` (none for `import m`, and for `from m import *`) resolves under
+one root to the first of these files that exists, `<root>/` being omitted for the repository root:
+
+1. for each name, in the order written, and independently: the submodule `<m>/<n>.py`, then the
+   package `<m>/<n>/__init__.py`;
+2. the module `<m>.py`, then the package `<m>/__init__.py`. With names this is the file the names
+   are found in. `from . import x` has the package `__init__.py` as its module.
+
+The first root with a hit decides, so a name that is a submodule under one root and a plain name
+inside another module under an earlier root resolves under the earlier. An import of the importing
+file itself is dropped.
+
+#### Misses
+
+An absolute module that no root resolves is decided by its first segment, the top-level name:
+
+1. when some root holds a first-party module or package of that name (`<root>/<name>.py`, or a
+   directory `<root>/<name>/` below which any Python file lies, with or without an `__init__.py`)
+   the import is an `unresolved-import`, as a relative miss is. Exception: the module itself exists
+   as such a directory and the miss is only a name imported from it, which is ignored;
+2. else when some repository path matches the name, anywhere (a file `<name>.py` or a directory
+   `<name>/` with a Python file below it, at any depth), the import is skipped as
+   `unreachable-module`. Its message names the first such path in path order and says that no import
+   root of the importing file reaches it. This is how a script reachable only through a `Makefile`
+   `PYTHONPATH` is seen;
+3. else it is a third party or standard library module and is ignored.
+
+#### Dynamic imports
+
+`importlib.import_module(x)` and `__import__(x)` (the call spelled exactly so; a bare
+`import_module(x)` is not recognised) resolve like `import x` when `x` is a plain string literal:
+no prefix but `r` or `u`, no escapes, no f-string, no implicit concatenation. The import has kind
+`runtime`, is located at the start of the call and uses no symbol (a module import, see "Symbols").
+Its specifier in `unresolved` and `skipped` is the string contents.
+
+A literal that starts with dots is relative to a package. The package is the second argument, given
+positionally or as `package=`, and must be a plain string literal, an absolute dotted name. The module
+is that name with `dots - 1` trailing segments removed, then the rest of the literal appended, and it
+resolves as an absolute import (roots, probing, misses). When the package is missing, not a literal,
+or has too few segments, the call stays `dynamic-specifier`. Every other argument (a name, a call, an
+f-string, a concatenation) stays `dynamic-specifier` with the text of the argument as specifier.
+
 ### Import location
 
 An import's line is the line where its statement starts, not the line of the specifier string: the
@@ -299,8 +403,9 @@ a location, the specifier as written and a typed reason (kebab-case in serializa
 | Reason | When |
 | --- | --- |
 | `undeclared-package` | TypeScript or JavaScript specifier that is not relative, matches no `tsconfig` or `jsconfig` `paths` alias, is not a workspace package, is not a Node builtin and is not a declared dependency |
-| `dynamic-specifier` | `import(expr)` or `require(expr)` whose argument is not a string literal or a template without substitutions; Python `importlib.import_module(..)` and `__import__(..)` |
+| `dynamic-specifier` | `import(expr)` or `require(expr)` whose argument is not a string literal or a template without substitutions; Python `importlib.import_module(..)` and `__import__(..)` whose first argument is not a plain string literal, or whose relative literal has no usable package (see "Python resolution") |
 | `embed-non-source` | a Rust embed whose target is not a known source file |
+| `unreachable-module` | a Python absolute import that no import root resolves, whose top-level name matches a first-party module or package elsewhere in the repository (see "Python resolution") |
 
 For `undeclared-package`, a specifier that a `paths` pattern matches is an alias and never skipped,
 even when no file backs it (that stays silent, as before). `baseUrl` alone is not an alias: a bare
@@ -312,7 +417,11 @@ package `@a/b` and `pkg/sub` is `pkg`. A file with no readable `package.json` ab
 A malformed `package.json` is skipped silently, as a malformed `tsconfig` is, and the others still
 count. Declared third party packages stay silently
 ignored: they are not repository imports and nothing is wrong. `skipped` is not a lint finding.
-For a Python call the specifier is the text of its first argument.
+For a skipped Python call the specifier is the text of its first argument.
+
+A skipped reference may carry a `message`, a sentence of explanation. Only `unreachable-module` has
+one: it names the repository path the top-level name matches. `message` is absent from the
+serialized form when there is none.
 
 ## Symbols and public surfaces
 
@@ -327,8 +436,9 @@ Every resolved import records the symbols it uses, exactly as written in the cod
   and the items reached through its name are recorded at their own sites.
 - TypeScript and JavaScript: named imports and re-exports by their exported name, `default` for a
   default import, `*` for namespace imports, `require`, dynamic `import()` and `export *`.
-- Python: `from a import b, c` uses `b`, `c` when they resolve to names inside `a`. `import a.b` and
-  a name that resolves to a submodule use `*`.
+- Python: `from a import b, c` uses `b`, `c` when they resolve to names inside `a`. `from a import *`
+  uses `*`. A module binding (`import a.b`, `import a.b as c`, `from a import submodule`, a literal
+  `importlib.import_module("a.b")`) uses no symbol, as in Rust: it is a dependency on the module file.
 - A side-effect import (`import './x'`) uses no symbol.
 
 Method calls on values (`client.fetch()`) are not resolved: knowing which `fetch` needs type
@@ -355,9 +465,10 @@ inside one node are never checked. Nodes without an `exports` line are unrestric
 
 `*` is always a violation for a node with a surface: the importer reaches names that are never seen,
 so it cannot be checked. A Rust glob (`use crate::gitlab::*;`), TypeScript `import * as` and
-`export *`, and Python `import a.b` all record `*`. A Rust module binding records nothing, so
-`use crate::gitlab;` is not private by itself, and each `gitlab::item` used through it is checked
-against the surface at its own line, one per item.
+`export *`, and Python `from a import *` all record `*`. A Rust or Python module binding records
+nothing, so `use crate::gitlab;` is not private by itself, and each `gitlab::item` used through it is
+checked against the surface at its own line, one per item. Python records no such item sites: a
+Python module import is not checked against a surface.
 
 `diff` reports surface changes as `+ exports gitlab: X` and `- exports gitlab: Y`, one line per
 name; a node that loses its whole surface shows only `-` lines and is unrestricted from then on.
@@ -374,7 +485,7 @@ name; a node that loses its whole surface shows only `-` lines and is unrestrict
 | `undeclared-edge` | error | code imports across nodes and the diagram has no such edge |
 | `stale-edge` | warning | solid edge with no import backing it |
 | `planned-realized` | warning | dotted edge now backed by code, promote it to solid |
-| `unresolved-import` | warning | relative import resolves to nothing, whatever its extension |
+| `unresolved-import` | warning | relative import resolves to nothing, whatever its extension; Python absolute import into a first-party package that holds no such module |
 | `private-symbol` | error | an import uses a symbol outside the target node's declared surface |
 
 A dotted edge permits the import. `--strict` turns every warning into a failure.
