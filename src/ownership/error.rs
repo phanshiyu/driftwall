@@ -67,6 +67,12 @@ pub enum OwnershipError {
         /// The underlying error.
         source: ignore::Error,
     },
+    /// The path given to `locate` does not exist.
+    #[error("no such file: {}", path.display())]
+    NoSuchFile {
+        /// The path as given, relative to the root.
+        path: PathBuf,
+    },
     /// The path given to `explain` is not inside the scanned root.
     #[error("{} is not inside {}", path.display(), root.display())]
     OutsideRoot {

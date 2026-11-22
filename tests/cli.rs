@@ -413,7 +413,7 @@ fn where_json_for_a_mapped_file() {
     let out = stdout(&output);
     assert_eq!(
         out,
-        "{\n  \"file\": \"a/inner/deep/lib.ts\",\n  \"node\": \"b\",\n  \"arch_file\": \"a/inner/.arch\"\n}\n"
+        "{\n  \"file\": \"a/inner/deep/lib.ts\",\n  \"node\": \"b\",\n  \"arch_file\": \"a/inner/.arch\",\n  \"kind\": \"source\"\n}\n"
     );
     let doc: Value = serde_json::from_str(&out).unwrap();
     assert_eq!(doc["node"], "b");

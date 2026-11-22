@@ -1,7 +1,7 @@
 //! How a command ended, and the exit code each ending maps to (see docs/DESIGN.md).
 
 use driftwall::model::{ContractDiff, LintReport};
-use driftwall::ownership::Explanation;
+use driftwall::ownership::{FileKind, Located};
 
 /// The three ways a driftwall command can end.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -26,13 +26,13 @@ impl Outcome {
         }
     }
 
-    /// The outcome of `where`: a file nothing owns is a finding.
+    /// The outcome of `where`: a source file (or directory) nothing owns is a finding. Assets,
+    /// unread, excluded and ignored files are not findings whatever their owner.
     #[must_use]
-    pub const fn of_where(explanation: &Explanation) -> Self {
-        if explanation.node.is_some() {
-            Self::Clean
-        } else {
-            Self::Findings
+    pub const fn of_where(located: &Located) -> Self {
+        match (&located.kind, &located.node) {
+            (FileKind::Source | FileKind::Directory, None) => Self::Findings,
+            _ => Self::Clean,
         }
     }
 
@@ -108,16 +108,36 @@ mod tests {
 
     #[test]
     fn a_mapped_file_is_clean_and_an_unmapped_one_is_a_finding() {
-        let mapped = Explanation {
-            node: Some(NodeId::new("lint").unwrap()),
-            arch_file: Some("src/lint/.arch".into()),
+        let located = |kind, owned: bool| Located {
+            kind,
+            node: owned.then(|| NodeId::new("lint").unwrap()),
+            arch_file: owned.then(|| "src/lint/.arch".into()),
         };
-        let unmapped = Explanation {
+        assert_eq!(
+            Outcome::of_where(&located(FileKind::Source, true)),
+            Outcome::Clean
+        );
+        assert_eq!(
+            Outcome::of_where(&located(FileKind::Source, false)),
+            Outcome::Findings
+        );
+    }
+
+    #[test]
+    fn only_an_unmapped_source_file_is_a_finding_for_where() {
+        let unowned = |kind| Located {
+            kind,
             node: None,
             arch_file: None,
         };
-        assert_eq!(Outcome::of_where(&mapped), Outcome::Clean);
-        assert_eq!(Outcome::of_where(&unmapped), Outcome::Findings);
+        for kind in [
+            FileKind::Asset,
+            FileKind::Unread("swift".to_owned()),
+            FileKind::Excluded(driftwall::model::Exclusion::Vendored),
+            FileKind::Ignored,
+        ] {
+            assert_eq!(Outcome::of_where(&unowned(kind)), Outcome::Clean);
+        }
     }
 
     #[test]

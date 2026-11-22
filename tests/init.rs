@@ -663,6 +663,9 @@ fn lint_reports_an_invalid_derived_name_as_a_tool_error() {
 fn where_reports_the_derived_node_and_its_arch_file() {
     let dir = repo(&rust_flat());
     init(&dir, &[]);
+    // why: `where` needs the file to exist, and this one is added after `init` ran.
+    fs::create_dir_all(dir.path().join("src/gitlab")).unwrap();
+    fs::write(dir.path().join("src/gitlab/new.rs"), "").unwrap();
     for (file, expected) in [
         ("src/gitlab.rs", "src/gitlab.rs: gitlab (via src/.arch)\n"),
         (

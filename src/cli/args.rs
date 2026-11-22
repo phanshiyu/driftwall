@@ -27,9 +27,9 @@ pub enum Command {
     ///
     /// The result lints clean. Refuses to overwrite existing files unless `--force`.
     Init(InitArgs),
-    /// Show which node owns a file and which .arch file decided it.
+    /// Show what a file is and which node owns it, with the .arch file that decided it.
     ///
-    /// Exits 1 when the file is unmapped.
+    /// The file must exist. Exits 1 when a source file is unmapped.
     Where(WhereArgs),
     /// Print the whole architecture: nodes, directories, edges, how code realises them.
     ///
@@ -114,6 +114,9 @@ pub struct WhereArgs {
     /// Repository root.
     #[arg(long, value_name = "DIR", default_value = ".")]
     pub root: PathBuf,
+    /// Contract file, relative to the root [default: architecture.mmd]. Must be valid when given.
+    #[arg(long, value_name = "FILE")]
+    pub contract: Option<PathBuf>,
     /// Output format.
     #[arg(long, value_enum, default_value_t = WhereFormat::Text)]
     pub format: WhereFormat,
@@ -122,9 +125,9 @@ pub struct WhereArgs {
 /// Output formats of `driftwall where`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum WhereFormat {
-    /// `<file>: <node> (via <arch file>)` or `<file>: unmapped`.
+    /// `<file>: <what it is and who owns it>`, for example `<file>: <node> (via <arch file>)`.
     Text,
-    /// An object with `file`, `node` and `arch_file`.
+    /// An object with `file`, `node`, `arch_file`, `kind` and, when there is one, `detail`.
     Json,
 }
 

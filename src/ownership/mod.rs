@@ -5,6 +5,7 @@ mod census;
 mod error;
 mod exclude;
 mod language;
+mod locate;
 mod lookup;
 mod module;
 
@@ -26,6 +27,7 @@ pub use census::{SHEBANG, line_count};
 pub use error::{ArchProblem, OwnershipError};
 pub use exclude::{HEADER_LINES, announces_generated, exclusion_of};
 pub use language::language_of;
+pub use locate::{FileKind, Located, locate};
 pub use lookup::owner_in;
 pub use module::module_name;
 

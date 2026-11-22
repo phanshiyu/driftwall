@@ -203,6 +203,19 @@ fn where_agrees_with_the_scan_for_the_root_group_scope() {
     let dir = repo(&root_app());
     init_ok(&dir);
     std::fs::create_dir_all(dir.path().join("extras")).unwrap();
+    // why: `where` needs every file it is asked about to exist, and these are added after `init`.
+    for added in [
+        "extras/new.ts",
+        "src/domain/new.ts",
+        "scripts/deep/x.ts",
+        "tooling.ts",
+    ] {
+        let full = dir.path().join(added);
+        std::fs::create_dir_all(full.parent().unwrap()).unwrap();
+        if !full.exists() {
+            std::fs::write(full, "").unwrap();
+        }
+    }
     for (file, expected, code) in [
         ("vite.config.ts", "vite.config.ts: root (via .arch)\n", 0),
         ("tooling.ts", "tooling.ts: root (via .arch)\n", 0),

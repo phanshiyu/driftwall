@@ -108,6 +108,21 @@ pub struct Observation {
     pub report: LintReport,
 }
 
+/// Reads and parses the contract at `contract`, relative to the repository root `root`.
+///
+/// # Errors
+/// Fails when the file cannot be read or is not a valid contract.
+pub fn read_contract(root: &Path, contract: &Path) -> Result<Contract, LintError> {
+    let source = fs::read_to_string(root.join(contract)).map_err(|source| LintError::Io {
+        path: contract.to_path_buf(),
+        source,
+    })?;
+    diagram::parse(&source).map_err(|source| LintError::Diagram {
+        path: contract.to_path_buf(),
+        source,
+    })
+}
+
 /// Lints the repository at `root` against the contract named by `options`.
 ///
 /// # Errors
@@ -122,15 +137,7 @@ pub fn run(root: &Path, options: &LintOptions) -> Result<LintReport, LintError> 
 /// # Errors
 /// The same as [`run`].
 pub fn observe(root: &Path, options: &LintOptions) -> Result<Observation, LintError> {
-    let source =
-        fs::read_to_string(root.join(&options.contract)).map_err(|source| LintError::Io {
-            path: options.contract.clone(),
-            source,
-        })?;
-    let contract = diagram::parse(&source).map_err(|source| LintError::Diagram {
-        path: options.contract.clone(),
-        source,
-    })?;
+    let contract = read_contract(root, &options.contract)?;
     let ownership = ownership::scan(root)?;
 
     // why: files of unsupported languages are skipped here, so only extractable sources are read.

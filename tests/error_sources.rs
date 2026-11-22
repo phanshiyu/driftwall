@@ -82,7 +82,7 @@ mod witness {
         DuplicateExports,
         UndeclaredExportsNode,
     );
-    witness!(OwnershipError: Io, InvalidArch, InvalidModule, Walk, OutsideRoot);
+    witness!(OwnershipError: Io, InvalidArch, InvalidModule, Walk, NoSuchFile, OutsideRoot);
     witness!(ImportsError: Io, Grammar, Query);
     witness!(LintError: Io, Diagram, Ownership, Imports, OldContract, NewContract);
     witness!(
@@ -248,6 +248,7 @@ mod witness {
                     root: path(),
                     source: ignore::Error::Io(io_error()),
                 },
+                Self::NoSuchFile { path: path() },
                 Self::OutsideRoot {
                     path: path(),
                     root: path(),
