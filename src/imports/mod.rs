@@ -23,6 +23,7 @@ mod queries;
 mod resolve;
 mod rust;
 mod rust_module;
+mod rust_scope;
 mod rust_syntax;
 mod spec;
 mod tsconfig;
@@ -60,6 +61,7 @@ pub use alias::{AliasConfig, Candidate, Pattern, TargetTemplate, nearest};
 pub use error::ImportsError;
 pub use extract::{extract, extract_in};
 pub use manifest::library_crates;
+pub use rust_scope::Bindings;
 pub use spec::{LanguageSpec, spec};
 pub use tsconfig::alias_configs;
 
@@ -99,6 +101,9 @@ pub struct Reference<'a> {
     pub node: tree_sitter::Node<'a>,
     /// The source text `node` was parsed from.
     pub source: &'a str,
+    /// The names the file brings into scope, for languages whose paths can start with one. Empty
+    /// for the others.
+    pub bindings: &'a Bindings<'a>,
 }
 
 /// What a language resolver decided about one specifier.

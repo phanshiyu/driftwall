@@ -2,18 +2,30 @@
 //!
 //! A path is a dependency when it starts with `crate`, `self`, `super` or the name of a library
 //! crate in the repository, and the file that holds the item it names is another repository file.
-//! `mod foo;` declarations are containment and never match the query.
+//! Each resolution also records the symbol it uses: the first item segment after the module file,
+//! or all of the module when the path ends there. `mod foo;` is containment and is not itself an
+//! edge.
 //!
-//! Known limitations: `#[path = "..."]` module attributes, `extern crate` renames, relative paths
-//! that start with a local module name (`use rules::x;`), and macro-generated paths are not
-//! followed.
+//! A path may also start with a module name the same file brought into scope: `use crate::gitlab;`
+//! or `use crate::gitlab as gl;` followed by `gitlab::Client` or `gl::Client`, or `mod gitlab;`
+//! followed by `gitlab::Client`. Such a path resolves through the binding, see `rust_scope`. Only
+//! names that stand for a repository module file are followed: `use crate::gitlab::Client;` binds
+//! `Client`, and a later `Client::new()` is not a second reference to `gitlab`, the `use` line
+//! already is. A binding is visible only in the module block that declares it, a `use` inside a
+//! function counts for its whole module, a name bound twice to different paths is not followed,
+//! and a binding is never followed through another binding.
+//!
+//! Known limitations: `#[path = "..."]` module attributes, `extern crate` renames, names that
+//! only a glob import brings in (`use crate::*; gitlab::x()`), local names that come from an
+//! inline `mod name { }`, and macro-generated paths are not followed.
 
 use std::collections::BTreeSet;
 use std::path::Path;
 
-use super::rust_module::Site;
+use super::rust_module::{Site, WrittenPath};
 use super::rust_syntax;
 use super::{Environment, Reference, Resolution};
+use crate::model::Symbol;
 
 /// The table entry. `reference.node` is a `use` argument, a scoped path, or a token inside a macro
 /// argument list; each is expanded into the repository files it points at. A reference that
@@ -32,8 +44,34 @@ pub fn resolve(
     let site = Site::of(importer, &inline, env.known);
     paths
         .iter()
+        .map(|path| through_bindings(path, reference, &inline, site.as_ref(), env))
         .filter_map(|path| path.target(site.as_ref(), env))
         .filter(|(target, _)| target != importer)
         .map(|(target, symbol)| Resolution::resolved(target).using(BTreeSet::from([symbol])))
         .collect()
+}
+
+/// `path` with its first segment replaced by the module path the file bound that name to, when
+/// the name is bound in the module block `inline` to a path that is a repository module file.
+/// Otherwise `path` unchanged.
+fn through_bindings<'s>(
+    path: &WrittenPath<'s>,
+    reference: &Reference<'s>,
+    inline: &[&'s str],
+    site: Option<&Site>,
+    env: &Environment<'_>,
+) -> WrittenPath<'s> {
+    let bound = path
+        .first_name()
+        .and_then(|name| reference.bindings.get(inline, name));
+    match bound {
+        Some(prefix)
+            if prefix
+                .target(site, env)
+                .is_some_and(|(_, used)| used == Symbol::All) =>
+        {
+            path.with_first_replaced(prefix)
+        }
+        _ => path.clone(),
+    }
 }

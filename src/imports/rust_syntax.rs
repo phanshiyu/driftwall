@@ -12,11 +12,10 @@ use super::rust_module::{Segment, WrittenPath};
 /// parsed into expressions.
 pub fn paths<'s>(node: Node<'_>, source: &'s str) -> Vec<WrittenPath<'s>> {
     match node.parent().map(|parent| parent.kind()) {
-        Some("use_declaration") => {
-            let mut found = Vec::new();
-            expand_use(node, source, &[], &mut found);
-            found
-        }
+        Some("use_declaration") => use_leaves(node, source)
+            .into_iter()
+            .map(|leaf| leaf.path)
+            .collect(),
         Some("token_tree") => token_path(node, source).into_iter().collect(),
         _ => scoped_path(node, source).into_iter().collect(),
     }
@@ -111,12 +110,41 @@ fn segment<'s>(node: Node<'_>, source: &'s str) -> Option<Segment<'s>> {
     }
 }
 
-/// Expands one node of a `use` tree below `prefix` into the full path of each leaf.
+/// One leaf of a `use` tree: the full path it names and the name it brings into scope, if any.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UseLeaf<'s> {
+    /// The path as written, with enclosing groups already prefixed.
+    pub path: WrittenPath<'s>,
+    /// The name the leaf binds in the importing module: its alias, else its last segment. `None`
+    /// for a glob, for `as _`, and for a leaf that ends in `crate`, `self` or `super`.
+    pub binding: Option<&'s str>,
+}
+
+/// The leaves of the `use` argument `node`, in source order.
+pub fn use_leaves<'s>(node: Node<'_>, source: &'s str) -> Vec<UseLeaf<'s>> {
+    let mut found = Vec::new();
+    expand_use(node, source, &[], None, &mut found);
+    found
+}
+
+fn leaf<'s>(segments: Vec<Segment<'s>>, alias: Option<&'s str>) -> UseLeaf<'s> {
+    let path = WrittenPath::new(segments);
+    let binding = match alias {
+        Some("_") => None,
+        Some(name) => Some(name),
+        None => path.last_name(),
+    };
+    UseLeaf { path, binding }
+}
+
+/// Expands one node of a `use` tree below `prefix` into each leaf. `alias` is the `as` name that
+/// applies to the leaf this node is, when the node sits inside a `use_as_clause`.
 fn expand_use<'s>(
     node: Node<'_>,
     source: &'s str,
     prefix: &[Segment<'s>],
-    out: &mut Vec<WrittenPath<'s>>,
+    alias: Option<&'s str>,
+    out: &mut Vec<UseLeaf<'s>>,
 ) {
     match node.kind() {
         "scoped_use_list" => {
@@ -127,30 +155,41 @@ fn expand_use<'s>(
                 return;
             }
             if let Some(list) = node.child_by_field_name("list") {
-                expand_use(list, source, &extended, out);
+                expand_use(list, source, &extended, None, out);
             }
         }
         "use_list" => {
             let mut cursor = node.walk();
             for child in node.named_children(&mut cursor) {
-                expand_use(child, source, prefix, out);
+                expand_use(child, source, prefix, None, out);
             }
         }
         "use_as_clause" => {
+            let alias = node
+                .child_by_field_name("alias")
+                .and_then(|name| name.utf8_text(source.as_bytes()).ok());
             if let Some(path) = node.child_by_field_name("path") {
-                expand_use(path, source, prefix, out);
+                expand_use(path, source, prefix, alias, out);
             }
         }
-        "use_wildcard" => match node.named_child(0) {
-            Some(inner) => expand_use(inner, source, prefix, out),
-            None => out.push(WrittenPath::new(prefix.to_vec())),
-        },
+        "use_wildcard" => {
+            let mut inner = Vec::new();
+            match node.named_child(0) {
+                Some(path) => expand_use(path, source, prefix, None, &mut inner),
+                None => inner.push(leaf(prefix.to_vec(), None)),
+            }
+            // why: a glob binds no name, whatever its path ends in.
+            out.extend(inner.into_iter().map(|found| UseLeaf {
+                binding: None,
+                ..found
+            }));
+        }
         // why: `self` inside a group names the group's own path, as in `use a::b::{self, c}`.
-        "self" if !prefix.is_empty() => out.push(WrittenPath::new(prefix.to_vec())),
+        "self" if !prefix.is_empty() => out.push(leaf(prefix.to_vec(), alias)),
         _ => {
             let mut full = prefix.to_vec();
             if flatten(node, source, &mut full).is_some() {
-                out.push(WrittenPath::new(full));
+                out.push(leaf(full, alias));
             }
         }
     }

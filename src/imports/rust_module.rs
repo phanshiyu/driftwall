@@ -55,6 +55,31 @@ impl<'s> WrittenPath<'s> {
         Self { segments }
     }
 
+    /// The name the path ends in, or `None` when it ends in `crate`, `self` or `super` or is empty.
+    pub fn last_name(&self) -> Option<&'s str> {
+        match self.segments.last()? {
+            Segment::Name(name) => Some(name),
+            Segment::Crate | Segment::SelfModule | Segment::Super => None,
+        }
+    }
+
+    /// The name the path starts with, or `None` when it starts with `crate`, `self` or `super`.
+    pub fn first_name(&self) -> Option<&'s str> {
+        match self.segments.first()? {
+            Segment::Name(name) => Some(name),
+            Segment::Crate | Segment::SelfModule | Segment::Super => None,
+        }
+    }
+
+    /// This path with its first segment replaced by all of `prefix`: `gl::Client` with `gl` bound
+    /// to `crate::gitlab` is `crate::gitlab::Client`.
+    pub fn with_first_replaced(&self, prefix: &Self) -> Self {
+        let tail = self.segments.iter().skip(1).copied();
+        Self {
+            segments: prefix.segments.iter().copied().chain(tail).collect(),
+        }
+    }
+
     /// The repository file this path points into, written at `site`, and the symbol it uses from
     /// that file. `None` means the path is not a repository reference: it starts with a third
     /// party or standard library name, climbs above the crate root, or uses `crate`, `self` or

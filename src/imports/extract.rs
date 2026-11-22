@@ -71,6 +71,7 @@ pub fn extract_in(
     };
 
     let name_capture = query.capture_index_for_name(NAME_CAPTURE);
+    let bindings = (spec.bindings)(tree.root_node(), source);
 
     // why: keyed by (location, target) so duplicate imports collapse and their symbols union.
     let mut resolved: BTreeMap<(Location, PathBuf), BTreeSet<Symbol>> = BTreeMap::new();
@@ -104,6 +105,7 @@ pub fn extract_in(
             names: &names,
             node,
             source,
+            bindings: &bindings,
         };
         for resolution in (spec.resolve)(&reference, file, env) {
             match resolution {

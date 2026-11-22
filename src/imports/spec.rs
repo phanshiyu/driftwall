@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use super::{Environment, Reference, Resolution, python, queries, resolve, rust};
+use super::{Bindings, Environment, Reference, Resolution, python, queries, resolve, rust};
 use crate::model::Language;
 
 /// One tree-sitter grammar with a stable name that keys the compiled-query cache.
@@ -48,6 +48,9 @@ pub struct LanguageSpec {
     /// Tree-sitter query capturing each import's module reference as `@specifier` and, when one
     /// statement imports several things from it, each imported name as `@name`.
     pub query: &'static str,
+    /// Collects, once per file, the names the file brings into scope. Languages whose resolver
+    /// does not follow such names use a function that returns no bindings.
+    pub bindings: for<'a> fn(tree_sitter::Node<'a>, &'a str) -> Bindings<'a>,
     /// Resolves one match, written in `importer`, against the [`Environment`]. Returns one
     /// [`Resolution`] per target the match refers to, so a statement naming several imports can
     /// resolve each independently.
@@ -58,6 +61,7 @@ static TYPESCRIPT: LanguageSpec = LanguageSpec {
     language: Language::TypeScript,
     grammar: typescript_grammar,
     query: queries::TYPESCRIPT,
+    bindings: no_bindings,
     resolve: resolve::ecmascript,
 };
 
@@ -65,6 +69,7 @@ static PYTHON: LanguageSpec = LanguageSpec {
     language: Language::Python,
     grammar: python_grammar,
     query: queries::PYTHON,
+    bindings: no_bindings,
     resolve: python::resolve,
 };
 
@@ -72,6 +77,7 @@ static JAVASCRIPT: LanguageSpec = LanguageSpec {
     language: Language::JavaScript,
     grammar: javascript_grammar,
     query: queries::JAVASCRIPT,
+    bindings: no_bindings,
     resolve: resolve::ecmascript,
 };
 
@@ -79,6 +85,7 @@ static RUST: LanguageSpec = LanguageSpec {
     language: Language::Rust,
     grammar: rust_grammar,
     query: queries::RUST,
+    bindings: rust_bindings,
     resolve: rust::resolve,
 };
 
@@ -91,6 +98,16 @@ pub fn spec(language: Language) -> Option<&'static LanguageSpec> {
         Language::Python => Some(&PYTHON),
         Language::Rust => Some(&RUST),
     }
+}
+
+/// The [`LanguageSpec::bindings`] of a language that does not follow names brought into scope.
+fn no_bindings<'a>(_root: tree_sitter::Node<'a>, _source: &'a str) -> Bindings<'a> {
+    Bindings::default()
+}
+
+/// The [`LanguageSpec::bindings`] of Rust: its `use` leaves and `mod name;` declarations.
+fn rust_bindings<'a>(root: tree_sitter::Node<'a>, source: &'a str) -> Bindings<'a> {
+    Bindings::of_tree(root, source)
 }
 
 fn typescript_grammar(file: &Path) -> &'static Grammar {
