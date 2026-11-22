@@ -63,7 +63,7 @@ pub fn collect(
 ) -> Result<BTreeMap<PathBuf, FileImports>, ImportsError> {
     let known: BTreeSet<PathBuf> = files.keys().cloned().collect();
     let entries: Vec<(&PathBuf, &Language)> = files.iter().collect();
-    // Collected into an indexed Vec so the reported error never depends on thread scheduling.
+    // why: collected into an indexed Vec so the reported error never depends on thread scheduling.
     let results: Vec<Result<(PathBuf, FileImports), ImportsError>> = entries
         .par_iter()
         .map(|&(path, &language)| {

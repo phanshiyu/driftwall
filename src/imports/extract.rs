@@ -1,11 +1,12 @@
 //! Parsing a single file and turning query matches into imports.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use tree_sitter::{Node, Parser, Query, QueryCursor, StreamingIterator};
 
+use super::spec::Grammar;
 use super::{FileImports, ImportsError, Resolution, spec};
 use crate::model::{Language, Location, ResolvedImport, UnresolvedImport};
 
@@ -30,10 +31,10 @@ pub fn extract(
         return Ok(FileImports::default());
     };
     let grammar = (spec.grammar)(file);
-    let query = compiled_query(&grammar, spec.query)?;
+    let query = compiled_query(grammar, spec.query)?;
     let mut parser = Parser::new();
-    parser.set_language(&grammar)?;
-    // No timeout or cancellation flag is configured, so a parse only fails on a runtime fault.
+    parser.set_language(&(grammar.language)())?;
+    // why: no timeout or cancellation flag is configured, so a parse only fails on a runtime fault.
     let Some(tree) = parser.parse(source, None) else {
         return Ok(FileImports::default());
     };
@@ -96,17 +97,14 @@ fn line_of(node: Node<'_>) -> u32 {
     u32::try_from(node.start_position().row).map_or(u32::MAX, |row| row.saturating_add(1))
 }
 
-type QueryCache = Mutex<HashMap<(tree_sitter::Language, &'static str), Arc<Query>>>;
+type QueryCache = Mutex<BTreeMap<&'static str, Arc<Query>>>;
 
 /// Compiles each distinct (grammar, query) pair once for the life of the process. TSX and plain
 /// TypeScript share query text but need separate compiled queries.
-fn compiled_query(
-    grammar: &tree_sitter::Language,
-    text: &'static str,
-) -> Result<Arc<Query>, ImportsError> {
+fn compiled_query(grammar: &Grammar, text: &str) -> Result<Arc<Query>, ImportsError> {
     static CACHE: std::sync::OnceLock<QueryCache> = std::sync::OnceLock::new();
     let cache = CACHE.get_or_init(QueryCache::default);
-    let key = (grammar.clone(), text);
+    let key = grammar.name;
     let cached = cache
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
@@ -115,11 +113,30 @@ fn compiled_query(
     if let Some(query) = cached {
         return Ok(query);
     }
-    // Compiled outside the lock; two threads racing here both compile and the later insert wins.
-    let query = Arc::new(Query::new(grammar, text)?);
+    // why: compiled outside the lock; two threads racing here both compile and the later insert wins.
+    let query = Arc::new(Query::new(&(grammar.language)(), text)?);
     cache
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         .insert(key, Arc::clone(&query));
     Ok(query)
+}
+
+#[cfg(test)]
+mod cache_key_tests {
+    use super::super::spec::spec;
+    use crate::model::Language;
+    use std::path::Path;
+
+    #[test]
+    fn grammar_names_are_unique_per_grammar() {
+        let ts = spec(Language::TypeScript).unwrap();
+        let js = spec(Language::JavaScript).unwrap();
+        let names = [
+            (ts.grammar)(Path::new("a.ts")).name,
+            (ts.grammar)(Path::new("a.tsx")).name,
+            (js.grammar)(Path::new("a.js")).name,
+        ];
+        assert_eq!(names, ["typescript", "tsx", "javascript"]);
+    }
 }

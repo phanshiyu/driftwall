@@ -6,13 +6,36 @@ use std::path::{Path, PathBuf};
 use super::{Resolution, queries, resolve};
 use crate::model::Language;
 
+/// One tree-sitter grammar with a stable name that keys the compiled-query cache.
+pub struct Grammar {
+    /// Unique across all grammars.
+    pub name: &'static str,
+    /// Builds the tree-sitter language.
+    pub language: fn() -> tree_sitter::Language,
+}
+
+static TYPESCRIPT_GRAMMAR: Grammar = Grammar {
+    name: "typescript",
+    language: || tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
+};
+
+static TSX_GRAMMAR: Grammar = Grammar {
+    name: "tsx",
+    language: || tree_sitter_typescript::LANGUAGE_TSX.into(),
+};
+
+static JAVASCRIPT_GRAMMAR: Grammar = Grammar {
+    name: "javascript",
+    language: || tree_sitter_javascript::LANGUAGE.into(),
+};
+
 /// Everything needed to extract and resolve imports for one language. Adding a language is adding
 /// one entry to [`spec`].
 pub struct LanguageSpec {
     /// Language this entry serves.
     pub language: Language,
     /// Grammar to parse `file` with. Chosen per file because TSX needs its own grammar.
-    pub grammar: fn(&Path) -> tree_sitter::Language,
+    pub grammar: fn(&Path) -> &'static Grammar,
     /// Tree-sitter query capturing each import specifier string as `@specifier`.
     pub query: &'static str,
     /// Resolves a specifier written in `importer` against the known repository files.
@@ -43,14 +66,14 @@ pub fn spec(language: Language) -> Option<&'static LanguageSpec> {
     }
 }
 
-fn typescript_grammar(file: &Path) -> tree_sitter::Language {
+fn typescript_grammar(file: &Path) -> &'static Grammar {
     if file.extension().is_some_and(|extension| extension == "tsx") {
-        tree_sitter_typescript::LANGUAGE_TSX.into()
+        &TSX_GRAMMAR
     } else {
-        tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into()
+        &TYPESCRIPT_GRAMMAR
     }
 }
 
-fn javascript_grammar(_file: &Path) -> tree_sitter::Language {
-    tree_sitter_javascript::LANGUAGE.into()
+const fn javascript_grammar(_file: &Path) -> &'static Grammar {
+    &JAVASCRIPT_GRAMMAR
 }
