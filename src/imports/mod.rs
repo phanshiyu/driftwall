@@ -7,7 +7,7 @@
 //! packages, scoped packages, `node:` builtins and aliases such as `@/x` are ignored, because
 //! `tsconfig` `paths` support is not implemented yet. Import types (`typeof import('./a')`) are
 //! not extracted. For Python, `__import__`, `importlib.import_module`, `.pyi` stubs and import
-//! roots other than the repository root and `src/` are not supported. For Rust, see [`rust`]'s
+//! roots other than the repository root and `src/` are not supported. For Rust, see `rust`'s
 //! limitations: `#[path]` modules, `extern crate` renames and relative paths that start with a
 //! local module name are not followed.
 
