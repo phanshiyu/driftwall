@@ -88,6 +88,22 @@ driftwall init            # baseline architecture.mmd and .arch tags from the ex
 driftwall lint            # exit 0 clean, 1 violations, 2 tool error
 driftwall lint --format json
 driftwall where src/foo.ts
+driftwall brief           # the whole architecture and its current state, for agents
+driftwall neighbors lint  # one node's dependencies, with file:line sites
+driftwall diff --base main   # contract changes versus a git ref, for human review
+```
+
+An excerpt of `driftwall brief .` on this repository:
+
+```
+driftwall: 8 nodes, 17 edges (17 implemented, 0 planned), 0 errors, 0 warnings
+nodes:
+  cli: src (11 files)
+  lint: src/lint (8 files)
+  model: src/model (1 file)
+edges:
+  cli --> lint (3 imports)
+  lint --> model (11 imports)
 ```
 
 Agent integration (Claude Code skill and hooks): [integrations/claude-code](integrations/claude-code).
