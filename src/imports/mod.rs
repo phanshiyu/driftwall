@@ -3,9 +3,11 @@
 //! Extraction is driven by the per-language table in [`spec`]: a grammar, a query capturing import
 //! specifiers, and a resolver. TypeScript, JavaScript, Python and Rust are filled in.
 //!
-//! Known limitation: for TypeScript and JavaScript only relative specifiers are resolved. Bare
-//! packages, scoped packages, `node:` builtins and aliases such as `@/x` are ignored, because
-//! `tsconfig` `paths` support is not implemented yet. Import types (`typeof import('./a')`) are
+//! TypeScript and JavaScript resolve relative specifiers, and aliases defined by `compilerOptions`
+//! `paths` and `baseUrl` of the nearest `tsconfig.json` or `jsconfig.json` (see `tsconfig`). A
+//! specifier that no alias maps to a repository file, such as a package, a scoped package or a
+//! `node:` builtin, is ignored, never reported unresolved. A `tsconfig` that cannot be parsed is
+//! skipped, like a malformed `Cargo.toml`. Import types (`typeof import('./a')`) are
 //! not extracted. For Python, `__import__`, `importlib.import_module`, `.pyi` stubs and import
 //! roots other than the repository root and `src/` are not supported. For Rust, see `rust`'s
 //! limitations: `#[path]` modules, `extern crate` renames and relative paths that start with a
@@ -22,6 +24,7 @@ mod rust;
 mod rust_module;
 mod rust_syntax;
 mod spec;
+mod tsconfig;
 
 #[cfg(test)]
 mod alias_resolve_tests;
@@ -35,6 +38,8 @@ mod rust_dogfood_tests;
 mod rust_tests;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tsconfig_tests;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -49,6 +54,7 @@ pub use error::ImportsError;
 pub use extract::{extract, extract_in};
 pub use manifest::library_crates;
 pub use spec::{LanguageSpec, spec};
+pub use tsconfig::alias_configs;
 
 /// The imports found in one file. Both lists are sorted and free of duplicates.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -102,8 +108,9 @@ pub enum Resolution {
 /// Reads and extracts every file in `files`, relative to `root`.
 ///
 /// The key set of `files` is the set of known repository files used for resolution. Library
-/// crates are discovered once from the `Cargo.toml` files next to the known `lib.rs` files. When several
-/// files fail, the error for the first path in sorted order is returned.
+/// crates are discovered once from the `Cargo.toml` files next to the known `lib.rs` files, and
+/// import aliases once from the `tsconfig.json` and `jsconfig.json` files at or above the
+/// TypeScript and JavaScript files. When several files fail, the error for the first path in sorted order is returned.
 ///
 /// # Errors
 /// Returns [`ImportsError::Io`] for a file that cannot be read or is not UTF-8, and the grammar
@@ -114,10 +121,11 @@ pub fn collect(
 ) -> Result<BTreeMap<PathBuf, FileImports>, ImportsError> {
     let known: BTreeSet<PathBuf> = files.keys().cloned().collect();
     let crates = library_crates(root, &known);
+    let aliases = alias_configs(root, files);
     let env = Environment {
         known: &known,
         crates: &crates,
-        aliases: &BTreeMap::new(),
+        aliases: &aliases,
     };
     let entries: Vec<(&PathBuf, &Language)> = files.iter().collect();
     // why: collected into an indexed Vec so the reported error never depends on thread scheduling.

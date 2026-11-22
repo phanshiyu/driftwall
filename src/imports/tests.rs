@@ -485,3 +485,50 @@ fn collect_reports_non_utf8_file_with_path() {
         other => panic!("expected Io error, got {other:?}"),
     }
 }
+
+#[test]
+fn collect_resolves_aliased_imports_end_to_end() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let files = [
+        (
+            "tsconfig.json",
+            "{\n  // aliases\n  \"compilerOptions\": { \"paths\": { \"@/*\": [\"./src/*\"], }, },\n}\n",
+        ),
+        (
+            "src/app/main.ts",
+            "import a from '@/foo/bar';\nimport r from 'react';\nimport m from '@/missing';\nimport l from './local';\n",
+        ),
+        ("src/foo/bar.ts", "export const bar = 1;\n"),
+        ("src/app/local.ts", "export const local = 1;\n"),
+        (
+            "packages/web/tsconfig.json",
+            "{ \"compilerOptions\": { \"paths\": { \"@/*\": [\"./lib/*\"] } } }\n",
+        ),
+        (
+            "packages/web/src/page.ts",
+            "import u from '@/util';\nimport b from '@/foo/bar';\n",
+        ),
+        ("packages/web/lib/util.ts", "export const util = 1;\n"),
+    ];
+    let mut map = BTreeMap::new();
+    for (path, content) in files {
+        let full = dir.path().join(path);
+        fs::create_dir_all(full.parent().expect("parent")).expect("mkdir");
+        fs::write(&full, content).expect("write");
+        if Path::new(path).extension().is_some_and(|e| e == "ts") {
+            map.insert(PathBuf::from(path), Language::TypeScript);
+        }
+    }
+
+    let first = collect(dir.path(), &map).expect("collect");
+    assert_eq!(first, collect(dir.path(), &map).expect("collect again"));
+
+    let main = first.get(Path::new("src/app/main.ts")).expect("main.ts");
+    assert_eq!(targets(main), ["src/foo/bar.ts", "src/app/local.ts"]);
+    assert_eq!(lines(main), [1, 4]);
+    assert_eq!(unresolved_specifiers(main), Vec::<&str>::new());
+    let page = first
+        .get(Path::new("packages/web/src/page.ts"))
+        .expect("page.ts");
+    assert_eq!(targets(page), ["packages/web/lib/util.ts"]);
+}
