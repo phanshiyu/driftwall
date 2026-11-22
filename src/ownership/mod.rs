@@ -2,6 +2,7 @@
 
 mod arch;
 mod error;
+mod exclude;
 mod language;
 mod module;
 
@@ -12,13 +13,15 @@ use std::io;
 use std::path::{Component, Path, PathBuf};
 
 use ignore::WalkBuilder;
+use ignore::gitignore::{Gitignore, GitignoreBuilder};
 
 pub use arch::Tag;
 pub use error::{ArchProblem, OwnershipError};
+pub use exclude::exclusion_of;
 pub use language::language_of;
 pub use module::module_name;
 
-use crate::model::{Location, NodeId, Ownership};
+use crate::model::{Exclusion, Location, NodeId, Ownership};
 
 /// Name of the file that tags a directory with a node.
 const ARCH_FILE: &str = ".arch";
@@ -71,6 +74,10 @@ impl Decision {
 /// entry per distinct derived node, all located at the `node: *` line, so the linter can check
 /// each derived name against the contract.
 ///
+/// Vendored and minified files (see [`exclusion_of`]) are not source: they appear in
+/// [`Ownership::excluded`] and nowhere else, unless the root `.driftwallignore` whitelists them
+/// with a negated pattern.
+///
 /// Honors `.gitignore` (with or without a `.git` directory) and `.driftwallignore`. Machine
 /// specific ignore sources (global git config, `.git/info/exclude`, parent directories) are
 /// deliberately not consulted so the result depends only on the contents of `root`.
@@ -79,7 +86,11 @@ impl Decision {
 /// Fails when the tree cannot be walked, a file cannot be read, a `.arch` file is invalid, or a
 /// `node: *` derives a name that is not a valid node id.
 pub fn scan(root: &Path) -> Result<Ownership, OwnershipError> {
-    let (sources, arch_files) = discover(root)?;
+    let Discovered {
+        sources,
+        arch_files,
+        excluded,
+    } = discover(root)?;
 
     let mut decisions: BTreeMap<PathBuf, Decision> = BTreeMap::new();
     let mut tags = Vec::new();
@@ -105,7 +116,10 @@ pub fn scan(root: &Path) -> Result<Ownership, OwnershipError> {
         );
     }
 
-    let mut ownership = Ownership::default();
+    let mut ownership = Ownership {
+        excluded,
+        ..Ownership::default()
+    };
     let mut derived: BTreeSet<(Location, String)> = BTreeSet::new();
     for source in sources {
         let owner = source
@@ -206,8 +220,22 @@ fn read_tag(root: &Path, arch_file: &Path) -> Result<arch::ArchTag, OwnershipErr
     arch::parse(arch_file, &contents)
 }
 
-/// Returns root-relative (source files, `.arch` files), each sorted.
-fn discover(root: &Path) -> Result<(Vec<PathBuf>, Vec<PathBuf>), OwnershipError> {
+/// What the walk found, root-relative and sorted.
+struct Discovered {
+    sources: Vec<PathBuf>,
+    arch_files: Vec<PathBuf>,
+    excluded: BTreeMap<Exclusion, BTreeSet<PathBuf>>,
+}
+
+/// The patterns of the root `.driftwallignore` that whitelist (`!pattern`) files.
+fn opt_ins(root: &Path) -> Gitignore {
+    let mut builder = GitignoreBuilder::new(root);
+    // why: a missing or partly malformed file only means fewer opt-ins, like the walker's view.
+    let _ = builder.add(root.join(IGNORE_FILE));
+    builder.build().unwrap_or_else(|_| Gitignore::empty())
+}
+
+fn discover(root: &Path) -> Result<Discovered, OwnershipError> {
     let mut builder = WalkBuilder::new(root);
     builder
         .hidden(false)
@@ -218,9 +246,13 @@ fn discover(root: &Path) -> Result<(Vec<PathBuf>, Vec<PathBuf>), OwnershipError>
         .require_git(false)
         .add_custom_ignore_filename(IGNORE_FILE)
         .filter_entry(|entry| entry.file_name() != OsStr::new(".git"));
+    let opted_in = opt_ins(root);
 
-    let mut sources = Vec::new();
-    let mut arch_files = Vec::new();
+    let mut found = Discovered {
+        sources: Vec::new(),
+        arch_files: Vec::new(),
+        excluded: BTreeMap::new(),
+    };
     for entry in builder.build() {
         let entry = entry.map_err(|source| OwnershipError::Walk {
             root: root.to_path_buf(),
@@ -234,19 +266,30 @@ fn discover(root: &Path) -> Result<(Vec<PathBuf>, Vec<PathBuf>), OwnershipError>
         };
         let relative: PathBuf = relative.components().collect();
         if relative.file_name() == Some(OsStr::new(ARCH_FILE)) {
-            arch_files.push(relative);
+            found.arch_files.push(relative);
         } else if language_of(&relative).is_some() {
-            sources.push(relative);
+            let reason = exclusion_of(&relative).filter(|_| {
+                !opted_in
+                    .matched_path_or_any_parents(&relative, false)
+                    .is_whitelist()
+            });
+            match reason {
+                Some(reason) => {
+                    found.excluded.entry(reason).or_default().insert(relative);
+                }
+                None => found.sources.push(relative),
+            }
         }
     }
-    sources.sort();
-    arch_files.sort();
-    Ok((sources, arch_files))
+    found.sources.sort();
+    found.arch_files.sort();
+    Ok(found)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::Exclusion;
     use tempfile::TempDir;
 
     fn tree(files: &[(&str, &str)]) -> TempDir {
@@ -730,17 +773,17 @@ mod tests {
         let dir = tree(&[
             ("src/.arch", "node: *\n"),
             ("src/a.rs", ""),
-            ("src/vendor/.arch", "node: third\n"),
-            ("src/vendor/x.rs", ""),
-            ("src/vendor/deep/y.rs", ""),
+            ("src/legacy/.arch", "node: third\n"),
+            ("src/legacy/x.rs", ""),
+            ("src/legacy/deep/y.rs", ""),
             ("src/split/.arch", "node: *\n"),
             ("src/split/p.rs", ""),
             ("src/split/q/r.rs", ""),
         ]);
         let o = scan(dir.path()).unwrap();
         assert_eq!(owner(&o, "src/a.rs").as_deref(), Some("a"));
-        assert_eq!(owner(&o, "src/vendor/x.rs").as_deref(), Some("third"));
-        assert_eq!(owner(&o, "src/vendor/deep/y.rs").as_deref(), Some("third"));
+        assert_eq!(owner(&o, "src/legacy/x.rs").as_deref(), Some("third"));
+        assert_eq!(owner(&o, "src/legacy/deep/y.rs").as_deref(), Some("third"));
         assert_eq!(owner(&o, "src/split/p.rs").as_deref(), Some("p"));
         assert_eq!(owner(&o, "src/split/q/r.rs").as_deref(), Some("q"));
     }
@@ -916,5 +959,79 @@ mod tests {
             o.owners.get(Path::new("src/lib.rs")).map(NodeId::as_str),
             Some("cli")
         );
+    }
+
+    fn excluded(ownership: &Ownership, reason: Exclusion) -> Vec<String> {
+        ownership
+            .excluded
+            .get(&reason)
+            .into_iter()
+            .flatten()
+            .map(|p| p.to_string_lossy().into_owned())
+            .collect()
+    }
+
+    #[test]
+    fn minified_and_vendored_files_are_counted_and_not_owned() {
+        let dir = tree(&[
+            (".arch", "node: app\n"),
+            ("src/app.js", ""),
+            ("static/htmx.min.js", ""),
+            ("static/site.min.css", ""),
+            ("ui/vendor/basecoat/basecoat.min.js", ""),
+            ("ui/vendor/other.js", ""),
+            ("third_party/lib.py", ""),
+            ("vendor/z.rs", ""),
+        ]);
+        let o = scan(dir.path()).unwrap();
+        assert_eq!(
+            o.owners.keys().collect::<Vec<_>>(),
+            [Path::new("src/app.js")]
+        );
+        assert!(o.unmapped.is_empty());
+        assert_eq!(excluded(&o, Exclusion::Minified), ["static/htmx.min.js"]);
+        assert_eq!(
+            excluded(&o, Exclusion::Vendored),
+            [
+                "third_party/lib.py",
+                "ui/vendor/basecoat/basecoat.min.js",
+                "ui/vendor/other.js",
+                "vendor/z.rs"
+            ]
+        );
+    }
+
+    #[test]
+    fn a_negated_pattern_in_the_root_driftwallignore_opts_files_back_in() {
+        let dir = tree(&[
+            (".driftwallignore", "!vendor/mine/\n!static/keep.min.js\n"),
+            (".arch", "node: app\n"),
+            ("vendor/mine/a.js", ""),
+            ("vendor/theirs/b.js", ""),
+            ("static/keep.min.js", ""),
+            ("static/drop.min.js", ""),
+        ]);
+        let o = scan(dir.path()).unwrap();
+        assert_eq!(
+            o.owners.keys().collect::<Vec<_>>(),
+            [
+                Path::new("static/keep.min.js"),
+                Path::new("vendor/mine/a.js")
+            ]
+        );
+        assert_eq!(excluded(&o, Exclusion::Minified), ["static/drop.min.js"]);
+        assert_eq!(excluded(&o, Exclusion::Vendored), ["vendor/theirs/b.js"]);
+    }
+
+    #[test]
+    fn an_ignored_vendor_file_is_not_counted_as_excluded() {
+        let dir = tree(&[
+            (".gitignore", "vendor/\n"),
+            (".arch", "node: app\n"),
+            ("vendor/a.js", ""),
+            ("b.js", ""),
+        ]);
+        let o = scan(dir.path()).unwrap();
+        assert!(o.excluded.is_empty());
     }
 }

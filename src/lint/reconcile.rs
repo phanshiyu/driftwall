@@ -242,7 +242,7 @@ mod tests {
                 .map(|&(file, owner)| (PathBuf::from(file), node(owner)))
                 .collect(),
             unmapped: unmapped.iter().map(PathBuf::from).collect(),
-            tags: Vec::new(),
+            ..Ownership::default()
         }
     }
 

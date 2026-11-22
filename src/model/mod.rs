@@ -118,6 +118,26 @@ pub struct Location {
     pub line: u32,
 }
 
+/// Why the scan left a source file out of the repository's own source.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Exclusion {
+    /// The file is below a directory named `vendor` or `third_party`.
+    Vendored,
+    /// The file name has the form `<name>.min.<ext>`.
+    Minified,
+}
+
+impl Exclusion {
+    /// The reason as a lowercase word, for reports.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Vendored => "vendored",
+            Self::Minified => "minified",
+        }
+    }
+}
+
 /// Which node owns each source file, plus the tags that named unknown nodes.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Ownership {
@@ -127,6 +147,8 @@ pub struct Ownership {
     pub unmapped: BTreeSet<PathBuf>,
     /// `.arch` tags, as (tag file, line, raw node name), for validating against the contract.
     pub tags: Vec<(Location, String)>,
+    /// Source files the scan left out, by reason. They are neither owned nor unmapped.
+    pub excluded: BTreeMap<Exclusion, BTreeSet<PathBuf>>,
 }
 
 /// A symbol an import uses from its target file, exactly as the importing code writes it.
