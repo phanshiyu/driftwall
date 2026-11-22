@@ -39,6 +39,8 @@ nested `.arch` overrides it. Source files are found by walking the repo with the
 supported extension count as source. One exception: an HTML file
 (`.html`, `.htm`) counts as source only when it holds a `<script` element, see "Svelte and HTML";
 any other HTML file is an asset, so documentation and fixture pages never become unmapped files.
+A file with no extension counts as source when its first line is a shebang that names a supported
+interpreter, see "Source languages by file".
 
 `scope: here` limits the tag to the files directly in its directory: it is not inherited by any
 subdirectory, so a source file added below it finds the next `.arch` further up, or none and is
@@ -47,6 +49,40 @@ accepted value, and a `scope:` line without a `node:` line is the same `missing 
 empty file. The scope is a typed field of the tag (`Scope::Subtree`, the default, or `Scope::Here`).
 `where` and `scan` answer through the same rule: a `scope: here` file is skipped for any file that is
 not directly in its directory, and the search continues in the directories above it.
+
+### Source languages by file
+
+The table of file names to languages is data in `src/ownership/language.rs`. Matching is
+case-sensitive.
+
+| Language | Files |
+| --- | --- |
+| TypeScript | `.ts`, `.tsx`, `.mts`, `.cts` |
+| JavaScript | `.js`, `.jsx`, `.mjs`, `.cjs` |
+| Python | `.py`, and extensionless files whose shebang names Python |
+| Rust | `.rs` |
+| Svelte | `.svelte` |
+| Html | `.html`, `.htm`, only with a `<script` element |
+| Swift | `.swift` |
+| Shell | `.sh`, `.bash`, `.zsh`, and extensionless files whose shebang names a shell |
+
+**Extensionless scripts.** Only a file whose name has no extension (`deploy`, `pre-commit`, and a
+hidden name such as `.profile`: no `.` followed by text) is sniffed, so `deploy.old` or `run.txt`
+never is. The first line must start with `#!` (no space, no byte order mark before it; later lines
+are never read, and at most the first 256 bytes of the line). After `#!`, spaces are skipped and the
+interpreter is the first word, and the name is the last `/` segment of that word. When the name is
+`env`, the interpreter is instead the first following word that does not start with `-` and holds
+no `=` (`#!/usr/bin/env -S python3 -u` is `python3`), and again its last segment is the name. Then:
+
+- `sh`, `bash`, `zsh` or `dash` makes the file Shell;
+- `python`, or `python` followed only by digits and dots (`python3`, `python3.12`), makes it Python;
+- anything else (`node`, `perl`, `fish`, `ksh`, a missing interpreter) does not: the file is an
+  asset.
+
+A file whose first line is not UTF-8, or that cannot be read, is an asset, so sniffing never fails a
+scan. A sniffed script is source like any other: it is owned or unmapped, excluded under `vendor/`,
+and an import target. An extensionless Python script is never imported by Python code: only `.py`
+files are Python import targets.
 
 ### Excluded files
 
@@ -177,6 +213,8 @@ declare at the `node: *` line of its `.arch` file.
   TypeScript and JavaScript). Python handles relative imports, `__init__.py`, and absolute imports against
   an ordered list of import roots, see "Python resolution" below. Rust handles `use crate::`, `use super::`, and `mod` declarations are
   containment, not edges.
+  Swift imports resolve through the targets of `Package.swift` (see "Swift resolution") and shell
+  `source` commands through literal and script-relative paths (see "Shell resolution").
 - Extraction is tree-sitter based and driven by a per-language table (extensions, grammar, query),
   not a trait hierarchy. Adding a language means adding a table entry and a query.
 
@@ -416,6 +454,106 @@ Every other argument (a name, a call, an f-string, a concatenation, a bytes or e
 literal that is not a dotted name) stays `dynamic-specifier` with the source text of the argument as
 specifier.
 
+### Swift resolution
+
+Files of one Swift module never import each other: the compiler sees the module as a whole. The
+dependencies are between modules, so Swift imports resolve to modules that a `Package.swift`
+declares, never to files by path.
+
+**Targets.** `collect` reads every known file named exactly `Package.swift` and finds the calls
+`.target(`, `.executableTarget(`, `.testTarget(`, `.macro(` and `.plugin(` (the leading `.` written,
+in any position of the file). The manifest is parsed with the Swift grammar, so comments and strings
+never produce a target. For each call:
+
+- `name:` and `path:` are read from the arguments of the call itself, never from a nested call
+  (`dependencies: [.product(name: "X", package: "Y")]` names nothing). Each must be a plain string
+  literal: no interpolation, no escape. A target whose `name:` is missing or not such a literal, or
+  whose `path:` is present and not such a literal, is skipped, because its directory is unknown;
+- a call nested inside another matched call (`dependencies: [.target(name: "Core")]`) is a reference
+  to a target and declares none;
+- `.plugin(` declares a target only when it has a `capability:` argument; without one it is the
+  plugin product of `products:`;
+- the directory of the target is `path:` or, without it, `Sources/<name>` (`Tests/<name>` for
+  `.testTarget(`), joined onto the directory of the `Package.swift` and normalised lexically. A
+  directory that leaves the repository is dropped. `sources:` and `exclude:` are not read, and the
+  fallback directories SwiftPM tries (`Source`, `src`, `srcs`) are not consulted;
+- the module name is the target name with every character other than ASCII letters, digits and `_`
+  replaced by `_` (`app-cli` is `app_cli`), as SwiftPM names it.
+
+A manifest that cannot be read declares no targets, like an unreadable `Cargo.toml`.
+
+**Imports.** `import X`, `@testable import X`, `@_exported import X`, `import X.Y` and
+`import struct X.Y` are read from the `import` declarations of the grammar, so an import inside a
+comment or a string is not one, and an import inside `#if` is. The module is `X`, the first dotted
+segment. When `X` is the module name of no target, the import is ignored: Foundation, SwiftUI and
+every other package are not repository files. Otherwise the target is chosen, then its entry file:
+
+1. Among the targets with that module name, the nearest to the importer. A package that contains
+   the importer (its `Package.swift` directory is an ancestor of the importing file) beats one that
+   does not; then the longer shared leading directory path between the package directory and the
+   importer wins; then the package directory first in path order. So a module name declared by
+   several manifests resolves to the nearest one.
+2. The entry file of the target is, among the known files:
+   `<dir>/<name>.swift` for the target name, else `<dir>/<module>.swift` for the module name when it
+   differs, else the first `.swift` file below `<dir>` (at any depth) in path order, ignoring a file
+   named `Package.swift`. A target with no such file is ignored: its directory may be generated or
+   excluded, and that is not an error.
+
+The import is a resolved import of kind `runtime` at the line where the declaration starts (its
+`@testable` or `@_exported` attribute included), and uses no symbol. The exception is an import
+qualified with a declaration keyword (`struct`, `class`, `enum`, `protocol`, `func`, `var`, `let`,
+`typealias`) and a dotted path `X.Y`: it uses the last segment, so `import struct AppCore.Frame`
+uses `Frame`. `import X.Y` without a keyword imports a submodule and uses no symbol. Because an
+import always lands on the entry file, a node must own the whole target directory: see "Code
+units" for why `init` makes one node per target.
+
+### Shell resolution
+
+A Shell file is read with the bash grammar; zsh and dash scripts are read the same way.
+
+**Commands.** `source X` and `. X`: a command whose name is exactly `source` or exactly `.` (so
+`./x.sh` and `bash x.sh` are not imports), found anywhere in the file, in functions, conditionals and
+loops, but not in comments, strings or here-documents. Only the first argument is the path, later
+ones are ignored. The import is located at the line where the command starts, has kind `runtime`
+and uses no symbol. The path has a value, or the reference is skipped as `dynamic-specifier` with the
+source text of the argument as specifier.
+
+**The value of a path.** A word or string made of parts joined together. A part is
+
+- literal text: a bare word, a single-quoted string or the text of a double-quoted one. Text with a
+  backslash is not literal;
+- the script file, `$0`, `${0}`, `$BASH_SOURCE`, `${BASH_SOURCE}` and `${BASH_SOURCE[0]}`, only as the
+  argument of `dirname` below;
+- the script directory: `$(dirname F)` or `` `dirname F` `` with `F` the script file (quoted or not),
+  `${0%/*}`, `${BASH_SOURCE%/*}` and `${BASH_SOURCE[0]%/*}`. It is the directory of the importing
+  file;
+- `$(cd P && pwd)`, also `pwd -P` and `pwd -L`, with `P` a path whose first part is a script
+  directory: the directory `P` names;
+- `$NAME` or `${NAME}`: the value of the nearest earlier assignment of `NAME` in the same file,
+  where earlier is by position and an assignment may sit anywhere (also after `export`, `local`,
+  `readonly` and `declare`). Only an assignment whose value is a path starting with a script
+  directory (the forms above, optionally followed by literal text such as `/..`) has a value; when
+  the nearest earlier assignment is any other, or there is none, the path is dynamic. An older
+  assignment is never used instead of the nearest. `ROOT="$(cd "$(dirname "$0")/.." && pwd)"`
+  followed by `. "$ROOT/device/lib/x.sh"` is the standard case.
+
+Any other part (`$HOME`, `$f`, `${x:-y}`, a command substitution that is none of the above, an
+arithmetic expansion, a `dirname` of anything but the script file) makes the path dynamic. A path
+that starts with a script directory is anchored: the importing file's directory with the rest of the
+text appended, `.` and `..` segments resolved lexically; a path that leaves the repository is
+ignored. A path that is all literal text is a literal path.
+
+**Resolution.** An anchored path is probed once, against the known files. A literal path that starts
+with `/` or `~` names something outside the repository and is ignored. Any other literal path is
+tried against the directory of the importing file and then against the repository root; the first
+base where it finds a file wins. A path that finds no known file is an `unresolved-import`, except
+when it names an existing asset (a tracked `.env`, a config file), which is ignored.
+
+**Globs.** A path with `*` or `?` in its literal text is a pattern: matched against every known file
+(any language), `*` and `?` staying inside one `/` segment, and every match, in path order, is an
+import. A pattern that matches nothing is an `unresolved-import`. A path that holds `[`, `{`, or a
+segment `**` is dynamic.
+
 ### Svelte and HTML
 
 Two more source languages carry TypeScript or JavaScript inside markup. Their scripts are resolved,
@@ -540,6 +678,9 @@ callers can decide what a type-only or test import is worth.
   `test` or `tests` directory at any depth.
 - Python: files named `test_*.py`, `*_test.py` or `conftest.py`, or under a `tests` or `test`
   directory at any depth.
+- Swift: files under a directory named `Tests`, `Test`, `tests` or `test` at any depth.
+- Shell: files whose name up to the first `.` starts with `test_` or ends with `_test`, or under a
+  `tests` or `test` directory at any depth.
 
 `brief` and `neighbors` show the kinds. An edge whose sites are all `type-only`, `embed` or `asset`, or
 all `test_only`, is annotated after its import count, `a --> b (3 imports) (type-only)`, one
@@ -577,7 +718,7 @@ a location, the specifier as written and a typed reason (kebab-case in serializa
 | Reason | When |
 | --- | --- |
 | `undeclared-package` | TypeScript or JavaScript specifier that is not relative, matches no `tsconfig` or `jsconfig` `paths` alias, is not a workspace package, is not a Node builtin and is not a declared dependency |
-| `dynamic-specifier` | `import(expr)` or `require(expr)` whose argument is not a string literal or a template without substitutions; Python `importlib.import_module(..)` and `__import__(..)` whose first argument is not a plain string literal, or whose relative literal has no usable package (see "Python resolution") |
+| `dynamic-specifier` | a shell `source` or `.` whose path has no value, see "Shell resolution"; `import(expr)` or `require(expr)` whose argument is not a string literal or a template without substitutions; Python `importlib.import_module(..)` and `__import__(..)` whose first argument is not a plain string literal, or whose relative literal has no usable package (see "Python resolution") |
 | `embed-non-source` | a Rust embed whose target is not a known source file |
 | `unreachable-module` | a Python absolute import that no import root resolves, whose top-level name matches a first-party module or package elsewhere in the repository (see "Python resolution") |
 
@@ -665,7 +806,7 @@ module and no symbol and adds nothing to `uses:`.
 | `undeclared-edge` | error | code imports across nodes and the diagram has no such edge |
 | `stale-edge` | warning | solid edge with no import backing it |
 | `planned-realized` | warning | dotted edge now backed by code, promote it to solid |
-| `unresolved-import` | warning | relative import resolves to nothing, whatever its extension; Python absolute import into a first-party package that holds no such module |
+| `unresolved-import` | warning | relative import resolves to nothing, whatever its extension; Python absolute import into a first-party package that holds no such module; shell `source` of a path that finds no file |
 | `private-symbol` | error | an import uses a symbol outside the target node's declared surface |
 
 A dotted edge permits the import. `--strict` turns every warning into a failure.
@@ -715,15 +856,20 @@ A unit is a directory. Units are found from manifests and the file layout:
   workspace files are not read either).
 - **Python package**: a directory with an `__init__.py` that has no ancestor directory with an
   `__init__.py` (the outermost package; sub-packages belong to it).
+- **Swift target**: the directory of every target a `Package.swift` declares, see "Swift
+  resolution". The repository root is never a Swift target (a target with `path: "."` is not a
+  unit), and manifests are read only in directories that hold, or lie above, a source file, like the
+  others.
 
 Manifests are read only in directories that hold, or lie above, a source file, so ignored trees are
 never consulted. A `Cargo.toml` that cannot be read or parsed is skipped, like a broken one is for
 import resolution. The existence of a `package.json`, `tsconfig.json` or `jsconfig.json` is enough
 for a JavaScript unit: their contents are not read. A unit with no unowned source file is dropped.
 A directory found by two rules is one unit, of the first kind in the order Rust crate, JavaScript
-unit, Python package.
+unit, Python package, Swift target. Two Swift targets that share a directory are one unit, named
+after the first target in name order.
 
-**Every unit is decomposed.** A file belongs to the unit of its deepest ancestor unit directory.
+**Every unit is decomposed, except a Swift target.** A file belongs to the unit of its deepest ancestor unit directory.
 Each unit has a source directory: a crate's `src/`; a JavaScript unit's `src/` when it holds a
 source file there, else the unit directory; a Python package's own directory.
 
@@ -741,6 +887,16 @@ source file there, else the unit directory; a Python package's own directory.
 - **A unit that is not decomposed.** The primary unit (below) decides nothing: its files are cut
   by rule 3 like any other. Every other unit is one directory node covering its whole directory,
   where a nested unit and nearer tags still win.
+
+- **A Swift target is one node, never decomposed.** Files of a Swift module never import each other
+  and every import of the module resolves to a single entry file (see "Swift resolution"), so a
+  `node: *` cut would put each file in a node of its own: the edges to the module would land on the
+  entry file's node and every other file of the module would be a node nothing points at. The whole
+  target directory is one directory node, tagged with a plain `node:`, and its id is the target
+  name sanitised (see "Ids"), without the prefix of any unit. A Swift target is never the primary
+  unit and never counts when the primary unit is chosen. Where a Swift target lies inside another
+  unit (a `package.json` above `Sources/`), its own files belong to the target, as for every nested
+  unit.
 
 A unit that sits inside another unit takes its own files, so a root `package.json` next to a
 sub-project `ui/` with its own `package.json` is two units. A sole unit is decomposed like any
@@ -789,6 +945,9 @@ is "taken" when `<prefix><name>` is.
   directories of a unit that has a prefix (see "Prefixes") are the exception: they use their whole
   path, which does not count for the shared prefix, so the `test/` directory of the unit `ui/` is
   `ui-test`, in step with its module ids `ui-...`, and the group of the unit `ui/` is `ui`.
+- A Swift target directory is named by its target name: the name sanitised as above replaces the
+  path derivation, and the directory does not count for the shared prefix of the others. The same
+  collision rules as for any directory node apply.
 - Module ids (`node: *`) are fixed by the module rule and are never renamed. Node ids named by
   existing tags are fixed too. Two existing tags may name the same node on purpose (that is
   grouping); `init` itself never merges two units silently.
