@@ -34,7 +34,7 @@ flowchart LR
   init -.-> ownership
   init -.-> imports
   init -.-> model
-  diagram -.-> model
-  ownership -.-> model
+  diagram --> model
+  ownership --> model
   imports -.-> model
   report -.-> model

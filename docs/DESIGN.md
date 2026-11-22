@@ -10,14 +10,19 @@ line an agent can act on.
 hard error with a line number. Silently ignoring syntax would let a typo become a missing edge.
 
 ```
-%% comment line (also blank lines)
-flowchart LR                      %% direction: LR | RL | TB | BT, must be first statement
-  subgraph shared["Shared"]       %% boundary: grouping only, no semantics, one level deep
-    model["model: ids, edges"]    %% node: id["label"] or bare id
+%% Comment lines start with %% and must be on their own line (no trailing comments).
+%% Direction is LR, RL, TB or BT and must be the first statement.
+flowchart LR
+  subgraph shared["Shared"]
+    model["model: ids, edges"]
   end
-  lint -.-> model                 %% planned edge (tolerated until built)
-  cli --> lint                    %% implemented edge (must be backed by code)
-  cli -->|label| report           %% optional label, ignored by the linter
+  %% node: id["label"] or a bare id. Boundaries group nodes, one level deep, no semantics.
+  %% Planned edge, tolerated until built:
+  lint -.-> model
+  %% Implemented edge, must be backed by code:
+  cli --> lint
+  %% Optional label, ignored by the linter:
+  cli -->|label| report
 ```
 
 - Node ids match `[A-Za-z][A-Za-z0-9_-]*`. Labels are display only.
