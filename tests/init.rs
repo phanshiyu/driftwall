@@ -699,18 +699,19 @@ fn this_repository_baselines_clean_without_its_contract() {
         "{}",
         read(&dir, "architecture.mmd")
     );
+    let declared =
+        driftwall::diagram::parse(&fs::read_to_string(root.join("architecture.mmd")).unwrap())
+            .unwrap();
+    let mut expected: Vec<String> = declared
+        .nodes
+        .keys()
+        .map(|id| id.as_str().to_owned())
+        .chain(["lib".to_owned()])
+        .collect();
+    expected.sort();
     assert_eq!(
         node_ids(&dir),
-        [
-            "cli",
-            "diagram",
-            "imports",
-            "init",
-            "lib",
-            "lint",
-            "model",
-            "ownership",
-            "report"
-        ]
+        expected,
+        "init must rediscover every node of the hand-written contract, plus lib for src/lib.rs"
     );
 }

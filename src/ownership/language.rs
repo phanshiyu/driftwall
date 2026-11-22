@@ -3,7 +3,8 @@
 use std::fs;
 use std::path::Path;
 
-use crate::model::{Language, markup};
+use crate::markup;
+use crate::model::Language;
 
 /// Extension (without the dot) to language. The only place that decides what counts as source.
 const EXTENSIONS: &[(&str, Language)] = &[

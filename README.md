@@ -36,6 +36,7 @@ flowchart LR
     diagram["diagram: parse + render contract"]
     ownership["ownership: walk, .arch, ignores"]
     imports["imports: tree-sitter extract + resolve"]
+    markup["markup: HTML and Svelte script scanner"]
   end
 
   subgraph shared["Shared"]
@@ -57,7 +58,9 @@ flowchart LR
   init --> imports
   init --> model
   diagram --> model
+  ownership --> markup
   ownership --> model
+  imports --> markup
   imports --> model
   report --> model
 ```

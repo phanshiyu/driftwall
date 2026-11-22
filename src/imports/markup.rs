@@ -1,7 +1,7 @@
 //! Svelte and HTML files: the script elements of a markup file as regions of TypeScript or
 //! JavaScript, and the files an HTML page loads through attributes.
 //!
-//! The scanner of `model::markup` finds the elements, see "Svelte and HTML" in `docs/DESIGN.md`.
+//! The scanner in `markup` finds the elements, see "Svelte and HTML" in `docs/DESIGN.md`.
 //! A region keeps the positions of the file, so every line is a line of the markup file.
 
 use std::path::{Path, PathBuf};
@@ -12,7 +12,7 @@ use super::extract::literal_text;
 use super::package::MANIFEST_FILE;
 use super::spec::{Grammar, JAVASCRIPT_GRAMMAR, Load, Region, Scan, TYPESCRIPT_GRAMMAR};
 use super::{Environment, Reference, Resolution, ecmascript_symbols, resolve};
-use crate::model::markup::{self, Tag};
+use crate::markup::{self, Tag};
 
 /// The values of a script's `type` that make it JavaScript, besides no `type` at all.
 const SCRIPT_TYPES: [&str; 3] = ["module", "text/javascript", "application/javascript"];

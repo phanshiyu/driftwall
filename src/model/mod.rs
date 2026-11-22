@@ -3,8 +3,6 @@
 //! Every collection here is ordered (`BTreeMap`, `BTreeSet`, sorted `Vec`) so output is
 //! deterministic regardless of filesystem or thread ordering.
 
-pub mod markup;
-
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::path::PathBuf;

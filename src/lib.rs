@@ -8,6 +8,7 @@ pub mod diagram;
 pub mod imports;
 pub mod init;
 pub mod lint;
+pub mod markup;
 pub mod model;
 pub mod ownership;
 pub mod report;

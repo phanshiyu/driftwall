@@ -31,9 +31,7 @@ pub fn repo(files: &[(&str, &str)]) -> Repo {
             Some("js" | "jsx" | "mjs" | "cjs") => Some(Language::JavaScript),
             Some("py") => Some(Language::Python),
             Some("svelte") => Some(Language::Svelte),
-            Some("html" | "htm") if crate::model::markup::has_script(content) => {
-                Some(Language::Html)
-            }
+            Some("html" | "htm") if crate::markup::has_script(content) => Some(Language::Html),
             _ => None,
         };
         match language {
