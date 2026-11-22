@@ -25,6 +25,8 @@ mod spec;
 #[cfg(test)]
 mod python_tests;
 #[cfg(test)]
+mod rust_dogfood_tests;
+#[cfg(test)]
 mod rust_tests;
 #[cfg(test)]
 mod tests;
