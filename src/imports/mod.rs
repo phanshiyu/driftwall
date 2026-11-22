@@ -24,6 +24,8 @@ mod rust_syntax;
 mod spec;
 
 #[cfg(test)]
+mod alias_resolve_tests;
+#[cfg(test)]
 mod alias_tests;
 #[cfg(test)]
 mod python_tests;
@@ -66,6 +68,10 @@ pub struct Environment<'a> {
     /// Library crate name, as imported, to the repository-relative directory holding its `lib.rs`.
     /// Only Rust resolution reads it.
     pub crates: &'a BTreeMap<String, PathBuf>,
+    /// Repository-relative directory holding a `tsconfig.json` or `jsconfig.json` to the alias
+    /// configuration it defines. A file is governed by the nearest directory at or above it, see
+    /// [`nearest`]. Only TypeScript and JavaScript resolution reads it.
+    pub aliases: &'a BTreeMap<PathBuf, AliasConfig>,
 }
 
 /// One query match handed to a language resolver: the module reference as written and, for
@@ -111,6 +117,7 @@ pub fn collect(
     let env = Environment {
         known: &known,
         crates: &crates,
+        aliases: &BTreeMap::new(),
     };
     let entries: Vec<(&PathBuf, &Language)> = files.iter().collect();
     // why: collected into an indexed Vec so the reported error never depends on thread scheduling.

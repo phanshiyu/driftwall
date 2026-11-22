@@ -31,6 +31,7 @@ pub fn extract(
     known: &BTreeSet<PathBuf>,
 ) -> Result<FileImports, ImportsError> {
     let crates = BTreeMap::new();
+    let aliases = BTreeMap::new();
     extract_in(
         source,
         language,
@@ -38,6 +39,7 @@ pub fn extract(
         &Environment {
             known,
             crates: &crates,
+            aliases: &aliases,
         },
     )
 }

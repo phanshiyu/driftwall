@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 use std::ffi::OsString;
 use std::path::{Component, Path, PathBuf};
 
-use super::{Environment, Reference, Resolution};
+use super::{Environment, Reference, Resolution, nearest};
 
 /// Extensions tried, in order, for extension probing and directory index files.
 const SOURCE_EXTENSIONS: [&str; 8] = ["ts", "tsx", "mts", "cts", "js", "jsx", "mjs", "cjs"];
@@ -24,13 +24,16 @@ pub fn ecmascript(
     importer: &Path,
     env: &Environment<'_>,
 ) -> Vec<Resolution> {
-    vec![resolve(reference.specifier, importer, env.known)]
+    let specifier = reference.specifier;
+    vec![if is_relative(specifier) {
+        resolve(specifier, importer, env.known)
+    } else {
+        resolve_aliased(specifier, importer, env)
+    }]
 }
 
-/// Resolves `specifier`, written in `importer`, to a file in `known`.
-///
-/// Only relative specifiers are resolved. `tsconfig` `paths` aliases are not supported yet, so
-/// bare packages and aliases are ignored.
+/// Resolves the relative `specifier`, written in `importer`, to a file in `known`. A specifier
+/// that is not relative is ignored here; see [`resolve_aliased`].
 pub fn resolve(specifier: &str, importer: &Path, known: &BTreeSet<PathBuf>) -> Resolution {
     if !is_relative(specifier) {
         return Resolution::Ignored;
@@ -48,6 +51,23 @@ pub fn resolve(specifier: &str, importer: &Path, known: &BTreeSet<PathBuf>) -> R
         None if is_asset => Resolution::Ignored,
         None => Resolution::Unresolved,
     }
+}
+
+/// Resolves a non-relative `specifier` through the alias configuration that governs `importer`.
+///
+/// Each candidate path is probed like a relative import: exact, appended extensions, the
+/// JavaScript to TypeScript mapping and directory index files. The first that names a known file
+/// wins. When nothing does, or no pattern matches, the specifier is ignored rather than reported
+/// unresolved, because it may be a package.
+fn resolve_aliased(specifier: &str, importer: &Path, env: &Environment<'_>) -> Resolution {
+    let Some(config) = nearest(env.aliases, importer) else {
+        return Resolution::Ignored;
+    };
+    config
+        .candidates(specifier)
+        .iter()
+        .find_map(|candidate| probe(&candidate.path, candidate.directory_only, env.known))
+        .map_or(Resolution::Ignored, Resolution::Resolved)
 }
 
 fn is_relative(specifier: &str) -> bool {
