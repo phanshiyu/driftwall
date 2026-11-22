@@ -5,6 +5,8 @@
 
 mod error;
 mod parse;
+mod render;
 
 pub use error::DiagramError;
 pub use parse::parse;
+pub use render::render;
