@@ -18,16 +18,26 @@ const DIRECTORY_SUFFIX: &str = "dir";
 /// `fixed` are the ids that cannot change (module nodes and nodes named by existing tags). A
 /// directory whose plain id is one of them becomes `<id>-dir`, then `<id>-dir-2`, ...; any other
 /// collision, and the reserved words, get `-2`, `-3`, ...
+///
+/// The ids come from the path below the longest prefix the directories share, except for the
+/// directories in `whole_paths` (those of units that have a prefix), which use their whole path so
+/// that ids stay in step with the prefixes of unit modules. They do not count for the shared prefix.
 pub(super) fn assign(
     dirs: &BTreeSet<PathBuf>,
     fixed: &BTreeSet<NodeId>,
+    whole_paths: &BTreeSet<PathBuf>,
 ) -> BTreeMap<PathBuf, NodeId> {
-    let common = common_prefix(dirs);
+    let others: BTreeSet<PathBuf> = dirs.difference(whole_paths).cloned().collect();
+    let common = common_prefix(&others);
     let fixed: BTreeSet<String> = fixed.iter().map(ToString::to_string).collect();
     let mut taken = fixed.clone();
     let mut ids = BTreeMap::new();
     for dir in dirs {
-        let plain = base_name(dir, &common);
+        let plain = if whole_paths.contains(dir) {
+            base_name(dir, Path::new(""))
+        } else {
+            base_name(dir, &common)
+        };
         let family = if fixed.contains(&plain) {
             format!("{plain}-{DIRECTORY_SUFFIX}")
         } else {
@@ -93,7 +103,7 @@ fn base_name(dir: &Path, common: &Path) -> String {
 
 /// Turns arbitrary text into `[A-Za-z][A-Za-z0-9_-]*`: other characters become `-`, repeated and
 /// edge dashes are dropped, and a non-letter start gets an `n-` prefix.
-fn sanitize(raw: &str) -> String {
+pub(super) fn sanitize(raw: &str) -> String {
     let mut out = String::new();
     for c in raw.chars() {
         let kept = if c.is_ascii_alphanumeric() || c == '_' {
@@ -127,7 +137,7 @@ mod tests {
     }
 
     fn ids(paths: &[&str], taken: &[&str]) -> Vec<String> {
-        assign(&dirs(paths), &fixed(taken))
+        assign(&dirs(paths), &fixed(taken), &BTreeSet::new())
             .values()
             .map(ToString::to_string)
             .collect()

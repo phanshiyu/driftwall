@@ -22,6 +22,11 @@
 - TypeScript and JavaScript resolution: workspace packages imported by name (`exports`, `module`,
   `main`, `types`), tsconfig `references`, package `imports` (`#internal/*`), `.d.ts` probing,
   bundler query suffixes (`?raw`, `?url`), and every ancestor `package.json` for declared packages.
+- `init` v3: every unit (crate, directory with a `package.json`, `tsconfig.json` or `jsconfig.json`,
+  Python package) has its source directory split into module nodes, other units get prefixed ids
+  (`node: ui-*`), the root group is tagged `scope: here` so new directories are `unmapped-file`,
+  `__main__.py` and leading underscores are valid module names, and `dist/` and `@generated` files
+  are excluded as `generated`. `init` counts asset imports like `lint`.
 - Asset imports: a relative import of an existing non-source file (`./data.json`, `./style.css`) is a
   dependency on the node that owns it, with the new import kind `asset`. A relative import of a
   missing file of any extension is now `unresolved-import`. The import kind `typeonly` is now

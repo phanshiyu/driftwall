@@ -37,6 +37,7 @@ fn import(from: &str, to: &str) -> (PathBuf, FileImports) {
 fn plan_of(paths: &[&str], depth: Option<usize>) -> InitPlan {
     plan(
         &files(paths),
+        &BTreeSet::new(),
         &BTreeMap::new(),
         &InitOptions { depth },
         &[],
@@ -158,6 +159,7 @@ fn module_nodes_get_edges_between_modules_and_directories() {
     .collect();
     let p = plan(
         &all,
+        &BTreeSet::new(),
         &imports,
         &InitOptions::default(),
         &[],
@@ -286,6 +288,7 @@ fn edges_are_solid_deduplicated_and_cross_owner_only() {
     .collect();
     let p = plan(
         &all,
+        &BTreeSet::new(),
         &imports,
         &InitOptions::default(),
         &[],

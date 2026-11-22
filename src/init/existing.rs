@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use super::layout::label_of;
-use crate::model::{NodeId, Ownership, Tag};
+use crate::model::{DirTag, NodeId, Ownership, Tag};
 
 /// What the existing `.arch` files decided. `init` plans only for files they do not cover.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -14,6 +14,9 @@ pub struct Existing {
     pub nodes: BTreeMap<NodeId, String>,
     /// The owner of every source file an existing tag covers.
     pub owners: BTreeMap<PathBuf, NodeId>,
+    /// What each existing `.arch` file says, by its directory, so that the owner of a file that is
+    /// not source (an asset) can be asked of the existing and the planned tags together.
+    pub tags: BTreeMap<PathBuf, DirTag>,
 }
 
 impl Existing {
@@ -38,6 +41,7 @@ impl Existing {
         Self {
             nodes,
             owners: ownership.owners.clone(),
+            tags: ownership.tag_dirs.clone(),
         }
     }
 }

@@ -574,8 +574,9 @@ unit, Python package.
 Each unit has a source directory: a crate's `src/`; a JavaScript unit's `src/` when it holds a
 source file there, else the unit directory; a Python package's own directory.
 
-- **Module nodes.** When the source directory directly holds two or more modules (distinct derived
-  names, `a.ts` and `a.test.ts` are one; only files of that unit count), it is tagged `node: *`
+- **Module nodes.** When the source directory directly holds two or more modules (source files and
+  subdirectories both count, by distinct derived name: `a.ts` and `a.test.ts` are one, and so are
+  `a.rs` and `a/`; only files of that unit count), it is tagged `node: *`
   (see "Prefixes"), so every module and subdirectory of it is a node named by the module rule.
   When a derived id is not valid, is reserved or is already taken (see "Ids"), the source
   directory is not decomposed.
@@ -605,7 +606,9 @@ and `components` when it is.
   source-bearing children) is the fork; N is its depth plus one. So code under `src/` alone yields
   `src/auth` and `src/billing`, not one `src` node, while a repo with one root module plus `lib/`
   yields `root` and `lib`, and one directory holding one module yields a single node.
-- When the fork directly holds two or more modules, it gets `node: *` and every module and
+- When the fork directly holds two or more modules (here only source files directly in the fork
+  count, not subdirectories: a fork with one file and two subdirectories keeps directory nodes,
+  unlike a unit's source directory), it gets `node: *` and every module and
   subdirectory is a node named by the module rule, so contract ids are exactly the ids the linter
   derives, labelled `<fork>/<id>`. A fork holding one module keeps directory nodes. When any file
   under the fork would derive an id the contract cannot declare (`.eslintrc.js`, `end.rs`) or an id
@@ -629,7 +632,10 @@ is "taken" when `<prefix><name>` is.
   longest prefix all new directory nodes share, segments joined with `-`, other characters replaced
   by `-` (repeats collapsed, ends trimmed, `n-` prepended to a non-letter start). A directory that
   is the shared prefix itself is named by its last segment, and the root directory is `root`. So
-  `engine/core` and `engine/cli` next to `src` are `engine-core`, `engine-cli` and `src`.
+  `engine/core` and `engine/cli` next to `src` are `engine-core`, `engine-cli` and `src`. The
+  directories of a unit that has a prefix (see "Prefixes") are the exception: they use their whole
+  path, which does not count for the shared prefix, so the `test/` directory of the unit `ui/` is
+  `ui-test`, in step with its module ids `ui-...`, and the group of the unit `ui/` is `ui`.
 - Module ids (`node: *`) are fixed by the module rule and are never renamed. Node ids named by
   existing tags are fixed too. Two existing tags may name the same node on purpose (that is
   grouping); `init` itself never merges two units silently.
@@ -644,7 +650,11 @@ is "taken" when `<prefix><name>` is.
 ### Contract and writing
 
 - Every resolved import between files with different owners becomes one solid edge. Nothing is
-  dotted, so a fresh baseline has no stale or planned-realized findings.
+  dotted, so a fresh baseline has no stale or planned-realized findings. Imports are resolved with
+  the walked non-source files (assets) known, as `lint` does: an asset (a `.json`, a `.css`) has the
+  owner the tags give it, the existing ones and the ones `init` writes, and an import of an asset
+  owned by another declared node is an edge. An asset no tag covers, or one whose derived name is
+  no declared node, adds no edge, exactly as in `lint`.
 - A directory tag that is a group also gets `scope: here`: the repository root group (the node of
   the files directly in the root, usually `node: root`) and a unit group (see "Code units"),
   provided every file the tag owns sits directly in its directory. A directory added later is then

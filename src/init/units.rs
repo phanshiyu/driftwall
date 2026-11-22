@@ -12,7 +12,8 @@ use serde::de::IgnoredAny;
 use crate::model::Language;
 
 const CARGO_MANIFEST: &str = "Cargo.toml";
-const PACKAGE_MANIFEST: &str = "package.json";
+/// File names that make a directory a JavaScript unit.
+const JAVASCRIPT_MARKERS: [&str; 3] = ["package.json", "tsconfig.json", "jsconfig.json"];
 const PYTHON_INIT: &str = "__init__.py";
 /// Directory that holds a Rust crate's source.
 pub(super) const CRATE_SOURCE: &str = "src";
@@ -22,7 +23,8 @@ pub(super) const CRATE_SOURCE: &str = "src";
 pub enum UnitKind {
     /// A Rust crate: a `[package]` manifest next to a `src/` directory, or a workspace member.
     Crate,
-    /// A JavaScript package named by a `workspaces` list.
+    /// A JavaScript or TypeScript unit: a directory with a `package.json`, `tsconfig.json` or
+    /// `jsconfig.json`.
     Package,
     /// An outermost Python package: a directory with an `__init__.py` and no package above it.
     PythonPackage,
@@ -51,27 +53,13 @@ struct CargoWorkspace {
     exclude: Vec<String>,
 }
 
-#[derive(Deserialize)]
-struct PackageManifest {
-    workspaces: Option<Workspaces>,
-}
-
-#[derive(Deserialize)]
-#[serde(untagged)]
-enum Workspaces {
-    List(Vec<String>),
-    Object {
-        #[serde(default)]
-        packages: Vec<String>,
-    },
-}
-
-/// Finds the crate and JavaScript package units of the repository, from the manifests that sit in
-/// a directory holding or above a file of `files`, read under `root`.
+/// Finds the crate and JavaScript units of the repository, from the manifests that sit in a
+/// directory holding or above a file of `files`, read under `root`.
 ///
-/// A manifest that cannot be read or parsed is skipped: a broken manifest elsewhere in the
-/// repository must not stop `init`. Directories named by a workspace list but missing on disk are
-/// not units. The result is sorted.
+/// A `Cargo.toml` that cannot be read or parsed is skipped: a broken manifest elsewhere in the
+/// repository must not stop `init`. A directory with a `package.json`, `tsconfig.json` or
+/// `jsconfig.json` is a JavaScript unit whatever those files hold. Directories named by a
+/// workspace list but missing on disk are not units. The result is sorted.
 #[must_use]
 pub fn detect_units(root: &Path, files: &BTreeMap<PathBuf, Language>) -> Vec<Unit> {
     let dirs: BTreeSet<&Path> = files
@@ -81,7 +69,7 @@ pub fn detect_units(root: &Path, files: &BTreeMap<PathBuf, Language>) -> Vec<Uni
     let mut found = BTreeSet::new();
     for dir in dirs {
         found.extend(crates_at(root, dir));
-        found.extend(packages_at(root, dir));
+        found.extend(package_at(root, dir));
     }
     found.into_iter().collect()
 }
@@ -134,32 +122,15 @@ fn crate_unit(dir: &Path) -> Unit {
     }
 }
 
-fn packages_at(root: &Path, dir: &Path) -> BTreeSet<Unit> {
-    let Some(manifest) = read_manifest::<PackageManifest, _>(root, dir, PACKAGE_MANIFEST, |text| {
-        serde_json::from_str(text).ok()
-    }) else {
-        return BTreeSet::new();
-    };
-    let Some(Workspaces::List(patterns) | Workspaces::Object { packages: patterns }) =
-        manifest.workspaces
-    else {
-        return BTreeSet::new();
-    };
-    let (excluded, included): (Vec<String>, Vec<String>) = patterns
-        .into_iter()
-        .partition(|pattern| pattern.starts_with('!'));
-    let excluded: Vec<String> = excluded
+/// The JavaScript unit at `dir`, when a marker file sits there.
+fn package_at(root: &Path, dir: &Path) -> Option<Unit> {
+    JAVASCRIPT_MARKERS
         .iter()
-        .filter_map(|pattern| pattern.strip_prefix('!').map(str::to_owned))
-        .collect();
-    members(root, dir, &included, &excluded)
-        .into_iter()
-        .filter(|package| root.join(package).join(PACKAGE_MANIFEST).is_file())
-        .map(|package| Unit {
-            dir: package,
+        .any(|marker| root.join(dir).join(marker).is_file())
+        .then(|| Unit {
+            dir: dir.to_path_buf(),
             kind: UnitKind::Package,
         })
-        .collect()
 }
 
 fn read_manifest<T, F: FnOnce(&str) -> Option<T>>(
@@ -358,42 +329,55 @@ mod tests {
     }
 
     #[test]
-    fn workspaces_of_a_package_json_name_packages() {
+    fn every_directory_with_a_package_json_is_a_javascript_unit() {
         let dir = tree(&[
-            (
-                "package.json",
-                "{\"workspaces\": [\"packages/*\", \"!packages/old\"]}",
-            ),
+            ("package.json", "{\"workspaces\": [\"packages/*\"]}"),
             ("packages/web/package.json", "{}"),
-            ("packages/api/package.json", "{}"),
-            ("packages/old/package.json", "{}"),
+            ("packages/api/package.json", "not even json"),
             ("packages/nomanifest/index.js", ""),
-            ("packages/web/index.js", ""),
+            ("ui/package.json", "{}"),
         ]);
-        let units = detect_units(dir.path(), &files(&["packages/web/index.js"]));
+        let units = detect_units(
+            dir.path(),
+            &files(&[
+                "packages/web/index.js",
+                "packages/api/x.js",
+                "packages/nomanifest/index.js",
+                "ui/src/a.ts",
+            ]),
+        );
         assert_eq!(
             dirs_of(&units, UnitKind::Package),
-            ["packages/api", "packages/web"]
+            ["", "packages/api", "packages/web", "ui"]
         );
     }
 
     #[test]
-    fn the_object_form_of_workspaces_is_read_too() {
+    fn a_tsconfig_or_jsconfig_makes_a_javascript_unit_too() {
         let dir = tree(&[
-            (
-                "package.json",
-                "{\"workspaces\": {\"packages\": [\"apps/*\"]}}",
-            ),
-            ("apps/one/package.json", "{}"),
-            ("apps/one/index.js", ""),
+            ("tsconfig.json", "{}"),
+            ("ui/jsconfig.json", "{}"),
+            ("ui/package.json", "{}"),
+            ("tools/tsconfig.base.json", "{}"),
+            ("tools/x.ts", ""),
         ]);
-        let units = detect_units(dir.path(), &files(&["apps/one/index.js"]));
-        assert_eq!(dirs_of(&units, UnitKind::Package), ["apps/one"]);
+        let units = detect_units(
+            dir.path(),
+            &files(&["ui/src/a.js", "tools/x.ts", "src/b.ts"]),
+        );
+        assert_eq!(dirs_of(&units, UnitKind::Package), ["", "ui"]);
     }
 
     #[test]
-    fn a_package_json_without_workspaces_has_no_units() {
-        let dir = tree(&[("package.json", "{\"name\": \"x\"}"), ("index.js", "")]);
+    fn manifests_are_only_looked_for_above_source_files() {
+        let dir = tree(&[("package.json", "{}"), ("empty/package.json", "{}")]);
+        let units = detect_units(dir.path(), &files(&["src/a.ts"]));
+        assert_eq!(dirs_of(&units, UnitKind::Package), [""]);
+    }
+
+    #[test]
+    fn a_directory_without_a_manifest_has_no_units() {
+        let dir = tree(&[("index.js", "")]);
         assert_eq!(detect_units(dir.path(), &files(&["index.js"])), []);
     }
 

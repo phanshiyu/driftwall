@@ -393,7 +393,7 @@ fn flat_layout_gets_a_root_node() {
     let dir = repo(&ts_flat());
     let output = init(&dir, &[]);
     assert_eq!(code(&output), 0);
-    assert_eq!(read(&dir, ".arch"), "node: root\n");
+    assert_eq!(read(&dir, ".arch"), "node: root\nscope: here\n");
     assert_eq!(arch_files(&dir), [".arch", "lib/.arch"]);
     assert!(read(&dir, "architecture.mmd").contains("root --> lib"));
 }
@@ -706,11 +706,11 @@ fn this_repository_baselines_clean_without_its_contract() {
             "diagram",
             "imports",
             "init",
+            "lib",
             "lint",
             "model",
             "ownership",
-            "report",
-            "src"
+            "report"
         ]
     );
 }

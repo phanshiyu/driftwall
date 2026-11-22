@@ -15,9 +15,11 @@ mod write;
 #[cfg(test)]
 mod plan_tests;
 #[cfg(test)]
+mod scope_tests;
+#[cfg(test)]
 mod tests;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io;
 use std::path::{Path, PathBuf};
 
@@ -132,8 +134,16 @@ pub fn run(
     if files.is_empty() {
         return Err(InitError::NoSources);
     }
-    let imports = imports::collect(root, &files)?;
+    // why: assets reach import resolution as in `lint`, so edges into JSON or CSS files match.
+    let assets: BTreeSet<PathBuf> = ownership
+        .asset_owners
+        .keys()
+        .chain(&ownership.asset_unmapped)
+        .cloned()
+        .collect();
+    let imports = imports::collect_with_assets(root, &files, &assets)?;
     let units = detect_units(root, &files);
-    let baseline = plan(&files, &imports, options, &units, &Existing::of(&ownership));
+    let existing = Existing::of(&ownership);
+    let baseline = plan(&files, &assets, &imports, options, &units, &existing);
     write::apply(root, &baseline, write)
 }

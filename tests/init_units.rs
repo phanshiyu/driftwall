@@ -281,9 +281,21 @@ fn each_workspace_member_crate_is_a_node_with_the_edges_between_them() {
     init_ok(&dir, &[]);
     assert_eq!(
         node_ids(&dir),
-        ["engine-cli", "engine-core", "engine-wasm", "root", "src"]
+        [
+            "engine-cli",
+            "engine-core-helper",
+            "engine-core-lib",
+            "engine-core-tests",
+            "engine-wasm",
+            "main",
+            "root",
+            "util"
+        ]
     );
-    assert_eq!(edge_pairs(&dir), ["engine-cli engine-core"]);
+    assert_eq!(
+        edge_pairs(&dir),
+        ["engine-cli engine-core-lib", "main util"]
+    );
     assert_lints_clean(&dir);
 }
 
@@ -291,9 +303,14 @@ fn each_workspace_member_crate_is_a_node_with_the_edges_between_them() {
 fn root_config_files_are_grouped_into_one_root_node() {
     let dir = repo(&js_with_engine());
     init_ok(&dir, &[]);
-    assert_eq!(read(&dir, ".arch"), "node: root\n");
-    assert_eq!(read(&dir, "engine/core/.arch"), "node: engine-core\n");
-    assert_eq!(read(&dir, "src/.arch"), "node: src\n");
+    assert_eq!(read(&dir, ".arch"), "node: root\nscope: here\n");
+    assert_eq!(read(&dir, "engine/core/src/.arch"), "node: engine-core-*\n");
+    assert_eq!(
+        read(&dir, "engine/core/tests/.arch"),
+        "node: engine-core-tests\n"
+    );
+    assert_eq!(read(&dir, "engine/cli/.arch"), "node: engine-cli\n");
+    assert_eq!(read(&dir, "src/.arch"), "node: *\n");
     assert_lints_clean(&dir);
 }
 
@@ -353,20 +370,23 @@ fn outermost_python_packages_are_units_wherever_they_sit() {
     assert_eq!(
         node_ids(&dir),
         [
-            "libs-common",
+            "libs-common-common",
+            "libs-common-util",
             "root",
             "scripts",
-            "services-auth",
-            "services-billing"
+            "services-auth-auth",
+            "services-auth-login",
+            "services-billing-billing",
+            "services-billing-invoice"
         ]
     );
     assert_eq!(
         edge_pairs(&dir),
         [
-            "root services-auth",
-            "services-auth libs-common",
-            "services-billing libs-common",
-            "services-billing services-auth"
+            "root services-auth-login",
+            "services-auth-login libs-common-util",
+            "services-billing-invoice libs-common-util",
+            "services-billing-invoice services-auth-login"
         ]
     );
     assert_lints_clean(&dir);
@@ -395,8 +415,16 @@ fn js_workspaces() -> Files {
 fn javascript_workspace_packages_are_nodes() {
     let dir = repo(&js_workspaces());
     init_ok(&dir, &[]);
-    assert_eq!(node_ids(&dir), ["packages-api", "packages-web", "tools"]);
-    assert_eq!(edge_pairs(&dir), ["packages-web packages-api"]);
+    assert_eq!(
+        node_ids(&dir),
+        [
+            "packages-api",
+            "packages-web-page",
+            "packages-web-src",
+            "tools"
+        ]
+    );
+    assert_eq!(edge_pairs(&dir), ["packages-web-src packages-api"]);
     assert_lints_clean(&dir);
 }
 

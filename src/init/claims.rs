@@ -1,61 +1,78 @@
 //! Rule 2 of `init`: what the code units decide, before the automatic cut sees the rest.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use super::layout::{Draft, Owner};
+use super::ids::sanitize;
+use super::layout::{Counted, Draft, Owner};
 use super::units::{CRATE_SOURCE, Unit, UnitKind};
-
-/// Every kind of unit, each decided on its own.
-const KINDS: [UnitKind; 3] = [UnitKind::Crate, UnitKind::Package, UnitKind::PythonPackage];
+use crate::model::Prefix;
 
 /// Lets the units of the repository decide the files in `fresh` they cover, and returns the files
 /// nobody decided yet.
 ///
-/// Two or more units of a kind become one directory node each, covering the whole directory (a
-/// crate that contains another crate covers only its `src/`). Exactly one Rust crate is
-/// decomposed: `node: *` in its `src/` when that directly holds two or more modules. Exactly one
-/// unit of another kind decides nothing. Units without a file in `fresh` do not count.
+/// Every unit is decomposed (see `docs/DESIGN.md`, "Code units"): its source directory gets
+/// `node: <prefix>*` when it directly holds two or more modules, and the rest of the unit becomes
+/// directory nodes. A unit that cannot be decomposed is one directory node, except the primary
+/// unit, whose files are left to the automatic cut. Units without a file in `fresh` do not count.
 pub(super) fn claim<'a>(draft: &mut Draft, fresh: &[&'a Path], units: &[Unit]) -> Vec<&'a Path> {
-    let mut regions: BTreeSet<PathBuf> = BTreeSet::new();
-    let mut taken: BTreeSet<&Path> = BTreeSet::new();
-    for kind in KINDS {
-        let dirs: BTreeSet<&Path> = units
-            .iter()
-            .filter(|unit| unit.kind == kind)
-            .map(|unit| unit.dir.as_path())
-            .filter(|dir| fresh.iter().any(|file| file.starts_with(dir)))
-            .collect();
-        if dirs.len() >= 2 {
-            regions.extend(dirs.iter().map(|dir| region(kind, dir, &dirs)));
-        } else if let (UnitKind::Crate, Some(dir)) = (kind, dirs.first()) {
-            let source = dir.join(CRATE_SOURCE);
-            let inside: Vec<&Path> = fresh
-                .iter()
-                .copied()
-                .filter(|file| file.starts_with(&source))
-                .collect();
-            if draft.try_modules(&source, &inside) {
-                taken.extend(inside);
-            }
+    let mut kinds: BTreeMap<&Path, UnitKind> = BTreeMap::new();
+    for unit in units {
+        let kind = kinds.entry(unit.dir.as_path()).or_insert(unit.kind);
+        *kind = (*kind).min(unit.kind);
+    }
+    let mut files_of: BTreeMap<&Path, Vec<&'a Path>> = BTreeMap::new();
+    for file in fresh {
+        let deepest = kinds
+            .keys()
+            .filter(|dir| file.starts_with(dir))
+            .max_by_key(|dir| dir.components().count());
+        if let Some(dir) = deepest {
+            files_of.entry(dir).or_default().push(file);
         }
     }
-    let open: Vec<&Path> = fresh
-        .iter()
-        .copied()
-        .filter(|file| !taken.contains(file))
-        .collect();
-    for file in open {
-        let nearest = regions
+    let primary = primary_unit(&files_of);
+
+    let mut taken: BTreeSet<&Path> = BTreeSet::new();
+    for (dir, files) in &files_of {
+        let kind = kinds.get(dir).copied().unwrap_or(UnitKind::Package);
+        let is_primary = primary == Some(*dir);
+        let prefix = if is_primary {
+            Some(Prefix::default())
+        } else {
+            prefix_of(dir)
+        };
+        let source = source_dir(dir, kind, files);
+        let inside: Vec<&Path> = files
             .iter()
-            .filter(|region| file.starts_with(region))
-            .max_by_key(|region| region.components().count());
-        if let Some(region) = nearest {
-            draft.directories.insert(region.clone());
-            draft
-                .owners
-                .insert(file.to_path_buf(), Owner::Directory(region.clone()));
-            taken.insert(file);
+            .copied()
+            .filter(|file| file.starts_with(&source))
+            .collect();
+        let decomposed = prefix.as_ref().is_some_and(|prefix| {
+            draft.try_modules(&source, &inside, prefix, Counted::FilesAndDirectories)
+        });
+        if decomposed {
+            taken.extend(inside);
+            for file in files.iter().filter(|file| !file.starts_with(&source)) {
+                let owner = rest_directory(draft, dir, file);
+                draft.directories.insert(owner.clone());
+                if !is_primary {
+                    draft.whole_paths.insert(owner.clone());
+                }
+                draft
+                    .owners
+                    .insert((*file).to_path_buf(), Owner::Directory(owner));
+                taken.insert(file);
+            }
+        } else if !is_primary {
+            draft.directories.insert(dir.to_path_buf());
+            draft.whole_paths.insert(dir.to_path_buf());
+            for file in files {
+                draft
+                    .owners
+                    .insert((*file).to_path_buf(), Owner::Directory(dir.to_path_buf()));
+                taken.insert(file);
+            }
         }
     }
     fresh
@@ -65,15 +82,49 @@ pub(super) fn claim<'a>(draft: &mut Draft, fresh: &[&'a Path], units: &[Unit]) -
         .collect()
 }
 
-/// The directory a unit's node covers: the unit directory, or for a crate that contains another
-/// crate (a root package next to its members) just its `src/`.
-fn region(kind: UnitKind, dir: &Path, siblings: &BTreeSet<&Path>) -> PathBuf {
-    let contains_another = siblings
-        .iter()
-        .any(|other| *other != dir && other.starts_with(dir));
-    if kind == UnitKind::Crate && contains_another {
-        dir.join(CRATE_SOURCE)
-    } else {
-        dir.to_path_buf()
+/// The unit at the repository root, or else the only unit.
+fn primary_unit<'a>(files_of: &BTreeMap<&'a Path, Vec<&Path>>) -> Option<&'a Path> {
+    let root = files_of
+        .keys()
+        .copied()
+        .find(|dir| dir.as_os_str().is_empty());
+    match (root, files_of.len()) {
+        (Some(root), _) => Some(root),
+        (None, 1) => files_of.keys().copied().next(),
+        (None, _) => None,
     }
+}
+
+/// The prefix of a unit that is not primary: its directory path as an id, then `-`.
+fn prefix_of(dir: &Path) -> Option<Prefix> {
+    let joined = dir
+        .components()
+        .map(|part| part.as_os_str().to_string_lossy().into_owned())
+        .collect::<Vec<_>>()
+        .join("-");
+    Prefix::new(&format!("{}-", sanitize(&joined))).ok()
+}
+
+/// The directory whose modules are the unit's nodes: a crate's `src/`, a JavaScript unit's `src/`
+/// when `files` has a file there and else the unit directory, a Python package's own directory.
+fn source_dir(dir: &Path, kind: UnitKind, files: &[&Path]) -> PathBuf {
+    let source = dir.join(CRATE_SOURCE);
+    match kind {
+        UnitKind::Crate => source,
+        UnitKind::Package if files.iter().any(|file| file.starts_with(&source)) => source,
+        UnitKind::Package | UnitKind::PythonPackage => dir.to_path_buf(),
+    }
+}
+
+/// The directory node of a file of the unit at `dir` that lies outside its source directory: its
+/// first subdirectory below `dir`, or `dir` itself (a group) for a file directly in it.
+fn rest_directory(draft: &mut Draft, dir: &Path, file: &Path) -> PathBuf {
+    if file.parent() == Some(dir) {
+        draft.groups.insert(dir.to_path_buf());
+        return dir.to_path_buf();
+    }
+    file.strip_prefix(dir)
+        .ok()
+        .and_then(|below| below.components().next())
+        .map_or_else(|| dir.to_path_buf(), |first| dir.join(first))
 }

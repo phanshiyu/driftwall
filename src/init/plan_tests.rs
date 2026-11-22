@@ -1,6 +1,6 @@
 //! Unit tests of the plan's rules about units, existing tags, root files and collisions.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use super::*;
@@ -23,6 +23,7 @@ fn unit(dir: &str, kind: UnitKind) -> Unit {
 fn planned(paths: &[&str], units: &[Unit], existing: &Existing) -> InitPlan {
     plan(
         &files(paths),
+        &BTreeSet::new(),
         &BTreeMap::new(),
         &InitOptions::default(),
         units,
@@ -57,7 +58,7 @@ fn node_ids(plan: &InitPlan) -> Vec<String> {
 }
 
 #[test]
-fn two_crates_are_one_node_each_covering_their_directory() {
+fn every_crate_is_decomposed_and_one_without_two_modules_is_one_node() {
     let crates = [
         unit("crates/a", UnitKind::Crate),
         unit("crates/b", UnitKind::Crate),
@@ -72,7 +73,18 @@ fn two_crates_are_one_node_each_covering_their_directory() {
         &crates,
         &Existing::default(),
     );
-    assert_eq!(tags(&p), pairs(&[("crates/a", "a"), ("crates/b", "b")]));
+    assert_eq!(
+        tags(&p),
+        pairs(&[
+            ("crates/a/src", "crates-a-*"),
+            ("crates/a/tests", "crates-a-tests"),
+            ("crates/b", "crates-b")
+        ])
+    );
+    assert_eq!(
+        node_ids(&p),
+        ["crates-a-lib", "crates-a-tests", "crates-a-x", "crates-b"]
+    );
 }
 
 #[test]
@@ -90,35 +102,39 @@ fn a_root_package_next_to_its_members_covers_only_its_src() {
 }
 
 #[test]
-fn a_lone_crate_is_decomposed_but_a_lone_package_is_not() {
+fn a_lone_unit_is_decomposed_whatever_its_kind() {
     let paths = ["src/a.rs", "src/b.rs", "scripts/x.rs", "tests/y.rs"];
-    let lone_crate = planned(&paths, &[unit("", UnitKind::Crate)], &Existing::default());
-    assert_eq!(
-        tags(&lone_crate),
-        pairs(&[("scripts", "scripts"), ("src", "*"), ("tests", "tests")])
-    );
-    let lone_package = planned(
-        &paths,
-        &[unit("src", UnitKind::Package)],
-        &Existing::default(),
-    );
-    assert_eq!(
-        tags(&lone_package),
-        pairs(&[("scripts", "scripts"), ("src", "src"), ("tests", "tests")])
-    );
+    let expected = pairs(&[("scripts", "scripts"), ("src", "*"), ("tests", "tests")]);
+    for lone in [
+        unit("", UnitKind::Crate),
+        unit("", UnitKind::Package),
+        unit("src", UnitKind::PythonPackage),
+    ] {
+        let p = planned(&paths, std::slice::from_ref(&lone), &Existing::default());
+        assert_eq!(tags(&p), expected, "{lone:?}");
+        assert_eq!(node_ids(&p), ["a", "b", "scripts", "tests"], "{lone:?}");
+    }
 }
 
 #[test]
-fn a_lone_crate_with_one_module_in_src_decides_nothing() {
+fn a_units_source_directory_counts_subdirectories_as_modules() {
     let p = planned(
         &["src/main.rs", "src/a/x.rs", "src/b/y.rs"],
         &[unit("", UnitKind::Crate)],
         &Existing::default(),
     );
-    assert_eq!(
-        tags(&p),
-        pairs(&[("src", "src"), ("src/a", "a"), ("src/b", "b")])
+    assert_eq!(tags(&p), pairs(&[("src", "*")]));
+    assert_eq!(node_ids(&p), ["a", "b", "main"]);
+}
+
+#[test]
+fn a_lone_crate_with_one_module_in_src_decides_nothing() {
+    let p = planned(
+        &["src/a/x.rs", "src/a/y.rs", "scripts/z.rs"],
+        &[unit("", UnitKind::Crate)],
+        &Existing::default(),
     );
+    assert_eq!(tags(&p), pairs(&[("scripts", "scripts"), ("src", "src")]));
 }
 
 #[test]
@@ -126,6 +142,7 @@ fn modules_that_collide_with_an_existing_node_fall_back_to_directories() {
     let existing = Existing {
         nodes: BTreeMap::from([(id("store"), "elsewhere".to_owned())]),
         owners: BTreeMap::from([(PathBuf::from("elsewhere/z.rs"), id("store"))]),
+        ..Existing::default()
     };
     let p = planned(
         &["elsewhere/z.rs", "src/main.rs", "src/store.rs"],
@@ -155,6 +172,7 @@ fn existing_owners_are_not_planned_again_and_their_nodes_are_declared() {
             (id("spare"), "spare".to_owned()),
         ]),
         owners: BTreeMap::from([(PathBuf::from("src/a.rs"), id("core"))]),
+        ..Existing::default()
     };
     let p = planned(&["src/a.rs", "other/b.rs"], &[], &existing);
     assert_eq!(tags(&p), pairs(&[("other", "other")]));
@@ -166,6 +184,7 @@ fn nothing_fresh_plans_no_tags() {
     let existing = Existing {
         nodes: BTreeMap::from([(id("core"), "src".to_owned())]),
         owners: BTreeMap::from([(PathBuf::from("src/a.rs"), id("core"))]),
+        ..Existing::default()
     };
     let p = planned(&["src/a.rs"], &[], &existing);
     assert!(p.tags.is_empty());

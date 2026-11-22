@@ -6,13 +6,22 @@ use std::ffi::OsString;
 use std::path::{Component, Path, PathBuf};
 
 use super::ids::RESERVED;
-use crate::model::NodeId;
+use crate::model::{NodeId, Prefix};
 use crate::ownership::module_name;
 
 /// Label of the repository root directory.
 const ROOT_LABEL: &str = ".";
 /// Distinct modules that must sit directly in a directory before it is worth `node: *`.
 const MIN_MODULES: usize = 2;
+
+/// What counts towards the two modules a directory needs before it is worth `node: *`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Counted {
+    /// Only source files directly in the directory (the automatic cut).
+    Files,
+    /// Source files and subdirectories directly in the directory (a unit's source directory).
+    FilesAndDirectories,
+}
 
 /// The node a file ends up in, before directory ids are assigned.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -28,8 +37,13 @@ pub(super) enum Owner {
 pub(super) struct Draft {
     /// Directories that get a `node: <id>` tag, the id assigned once all are known.
     pub directories: BTreeSet<PathBuf>,
-    /// Directories that get a `node: *` tag.
-    pub module_dirs: BTreeSet<PathBuf>,
+    /// Directories that get a `node: <prefix>*` tag, with the prefix.
+    pub module_dirs: BTreeMap<PathBuf, Prefix>,
+    /// Directory nodes of units that have a prefix: their ids are made of the whole path.
+    pub whole_paths: BTreeSet<PathBuf>,
+    /// Directory nodes that are groups (the files directly in a unit directory), which may get
+    /// `scope: here`. The repository root is a group too, without being listed.
+    pub groups: BTreeSet<PathBuf>,
     /// Module nodes decided so far, with their labels.
     pub modules: BTreeMap<NodeId, String>,
     /// The node of every file decided so far.
@@ -59,40 +73,47 @@ impl Draft {
         }
     }
 
-    /// Tags `fork` with `node: *` and gives each file of `files` (all below `fork`) its module
-    /// node. Fails, changing nothing, when fewer than two distinct modules sit directly in
-    /// `fork`, or a derived name is not a valid id, is reserved, or is already fixed.
-    pub fn try_modules(&mut self, fork: &Path, files: &[&Path]) -> bool {
-        let mut derived: BTreeMap<PathBuf, NodeId> = BTreeMap::new();
+    /// Tags `fork` with `node: <prefix>*` and gives each file of `files` (all below `fork`) its
+    /// module node. Fails, changing nothing, when fewer than two distinct modules sit directly in
+    /// `fork` (what is a module is up to `counted`), or a derived id is not valid, is reserved, or
+    /// is already fixed.
+    pub fn try_modules(
+        &mut self,
+        fork: &Path,
+        files: &[&Path],
+        prefix: &Prefix,
+        counted: Counted,
+    ) -> bool {
+        let mut derived: BTreeMap<PathBuf, (NodeId, String)> = BTreeMap::new();
         let mut direct: BTreeSet<&NodeId> = BTreeSet::new();
         for file in files {
             let Some(name) = module_name(fork, file) else {
                 return false;
             };
-            let Ok(id) = NodeId::new(&name) else {
+            let Ok(id) = prefix.derive(&name) else {
                 return false;
             };
             if RESERVED.contains(&id.as_str()) || self.fixed.contains(&id) {
                 return false;
             }
-            derived.insert((*file).to_path_buf(), id);
+            derived.insert((*file).to_path_buf(), (id, name));
         }
-        for (file, id) in &derived {
-            if file.parent() == Some(fork) {
+        for (file, (id, _)) in &derived {
+            if counted == Counted::FilesAndDirectories || file.parent() == Some(fork) {
                 direct.insert(id);
             }
         }
         if direct.len() < MIN_MODULES {
             return false;
         }
-        for (file, id) in derived {
+        for (file, (id, name)) in derived {
             self.modules
                 .entry(id.clone())
-                .or_insert_with(|| label_of(&fork.join(id.as_str())));
+                .or_insert_with(|| label_of(&fork.join(name)));
             self.fixed.insert(id.clone());
             self.owners.insert(file, Owner::Module(id));
         }
-        self.module_dirs.insert(fork.to_path_buf());
+        self.module_dirs.insert(fork.to_path_buf(), prefix.clone());
         true
     }
 
@@ -104,7 +125,9 @@ impl Draft {
         let fork = automatic_fork(&source_dirs);
         let root_with_directories = fork.as_os_str().is_empty()
             && source_dirs.iter().any(|dir| !dir.as_os_str().is_empty());
-        if root_with_directories || !self.try_modules(&fork, files) {
+        if root_with_directories
+            || !self.try_modules(&fork, files, &Prefix::default(), Counted::Files)
+        {
             self.cut_directories(files, component_count(&fork) + 1);
         }
     }

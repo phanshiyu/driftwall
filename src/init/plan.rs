@@ -1,6 +1,6 @@
 //! The pure core of `init`: from the repository's files and imports to a contract plus tags.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use super::claims::claim;
@@ -9,9 +9,8 @@ use super::ids;
 use super::layout::{Draft, Owner, label_of};
 use super::units::{Unit, python_units};
 use crate::imports::FileImports;
-use crate::model::{
-    Contract, DirTag, Edge, EdgeKind, Language, NodeId, NodeInfo, Prefix, Scope, Tag,
-};
+use crate::model::{Contract, DirTag, Edge, EdgeKind, Language, NodeId, NodeInfo, Scope, Tag};
+use crate::ownership::owner_in;
 
 /// Settings for [`plan`].
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -41,10 +40,15 @@ pub struct InitPlan {
 /// shallower. Without one, the code `units` decide first, then the depth is chosen from the layout
 /// and, when the directory it descends to directly holds two or more modules, that directory is
 /// tagged `node: *` and each module and subdirectory becomes a node instead. Imports of or from
-/// files outside `files` are ignored.
+/// files outside `files` and `assets` are ignored.
+///
+/// `assets` are the walked files that are not source. An asset has the owner the tags give it (the
+/// existing ones and the ones planned here, see [`owner_in`]), and an import of an asset whose
+/// owner is another declared node is an edge, exactly as `lint` counts it.
 #[must_use]
 pub fn plan(
     files: &BTreeMap<PathBuf, Language>,
+    assets: &BTreeSet<PathBuf>,
     imports: &BTreeMap<PathBuf, FileImports>,
     options: &InitOptions,
     units: &[Unit],
@@ -70,7 +74,7 @@ pub fn plan(
         }
     }
 
-    let directory_ids = ids::assign(&draft.directories, &draft.fixed);
+    let directory_ids = ids::assign(&draft.directories, &draft.fixed, &draft.whole_paths);
     let mut owners = existing.owners.clone();
     for (file, owner) in &draft.owners {
         let id = match owner {
@@ -99,48 +103,78 @@ pub fn plan(
             },
         );
     }
-    add_edges(&mut contract, imports, &owners);
 
-    let plain = |tag| DirTag {
-        tag,
-        scope: Scope::Subtree,
-    };
-    let mut tags: BTreeMap<PathBuf, DirTag> = directory_ids
-        .into_iter()
-        .map(|(dir, id)| (dir, plain(Tag::Node(id))))
-        .collect();
-    tags.extend(
-        draft
-            .module_dirs
-            .into_iter()
-            .map(|dir| (dir, plain(Tag::Modules(Prefix::default())))),
-    );
+    let mut tags: BTreeMap<PathBuf, DirTag> = BTreeMap::new();
+    for (dir, id) in &directory_ids {
+        let scope = scope_of(dir, &draft);
+        let tag = Tag::Node(id.clone());
+        tags.insert(dir.clone(), DirTag { tag, scope });
+    }
+    for (dir, prefix) in std::mem::take(&mut draft.module_dirs) {
+        let tag = Tag::Modules(prefix);
+        tags.insert(
+            dir,
+            DirTag {
+                tag,
+                scope: Scope::Subtree,
+            },
+        );
+    }
+
+    let mut all_tags = existing.tags.clone();
+    all_tags.extend(tags.clone());
+    for asset in assets {
+        if let Some(owner) = owner_in(&all_tags, asset) {
+            owners.insert(asset.clone(), owner);
+        }
+    }
+    add_edges(&mut contract, imports, &owners);
     InitPlan { contract, tags }
 }
 
-/// One solid edge per pair of different owners with an import between them.
+/// The scope of the directory node at `dir`: only a group (the repository root, or the files
+/// directly in a unit directory) is limited to its own directory, and only when every file the
+/// draft gives it sits directly in it.
+fn scope_of(dir: &Path, draft: &Draft) -> Scope {
+    let is_group = dir.as_os_str().is_empty() || draft.groups.contains(dir);
+    let all_direct = draft
+        .owners
+        .iter()
+        .filter(|(_, owner)| matches!(owner, Owner::Directory(found) if found == dir))
+        .all(|(file, _)| file.parent() == Some(dir));
+    if is_group && all_direct {
+        Scope::Here
+    } else {
+        Scope::Subtree
+    }
+}
+
+/// One solid edge per pair of different owners with an import between them. Both owners must be
+/// declared in the contract, as `lint` requires.
 fn add_edges(
     contract: &mut Contract,
     imports: &BTreeMap<PathBuf, FileImports>,
     owners: &BTreeMap<PathBuf, NodeId>,
 ) {
+    let declared = |id: &&NodeId| contract.nodes.contains_key(*id);
+    let mut found = BTreeSet::new();
     for (file, file_imports) in imports {
-        let Some(from) = owners.get(file) else {
+        let Some(from) = owners.get(file).filter(declared) else {
             continue;
         };
         for import in &file_imports.resolved {
-            let Some(to) = owners.get(&import.target) else {
+            let Some(to) = owners.get(&import.target).filter(declared) else {
                 continue;
             };
             if from != to {
-                contract.edges.insert(
-                    Edge {
-                        from: from.clone(),
-                        to: to.clone(),
-                    },
-                    EdgeKind::Implemented,
-                );
+                found.insert(Edge {
+                    from: from.clone(),
+                    to: to.clone(),
+                });
             }
         }
+    }
+    for edge in found {
+        contract.edges.insert(edge, EdgeKind::Implemented);
     }
 }
