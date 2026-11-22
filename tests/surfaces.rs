@@ -49,6 +49,47 @@ mod support {
             .unwrap()
     }
 
+    /// Runs `driftwall diff --base HEAD <extra> <root>`.
+    pub fn diff(root: &Path, extra: &[&str]) -> Output {
+        clean(Command::new(env!("CARGO_BIN_EXE_driftwall")))
+            .args(["diff", "--base", "HEAD"])
+            .args(extra)
+            .arg(root)
+            .output()
+            .unwrap()
+    }
+
+    /// Runs git in `dir` with a fixed identity and no signing or hooks.
+    fn git(dir: &Path, args: &[&str]) {
+        let output = clean(Command::new("git"))
+            .current_dir(dir)
+            .args([
+                "-c",
+                "user.name=Test",
+                "-c",
+                "user.email=test@example.com",
+                "-c",
+                "commit.gpgsign=false",
+                "-c",
+                "core.hooksPath=/dev/null",
+            ])
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "git {args:?}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    /// Initialises a repository in `dir` and commits everything in it.
+    pub fn commit_all(dir: &Path) {
+        git(dir, &["init", "-q"]);
+        git(dir, &["add", "-A"]);
+        git(dir, &["commit", "-q", "-m", "base"]);
+    }
+
     pub fn code(output: &Output) -> i32 {
         output.status.code().unwrap()
     }
@@ -58,7 +99,7 @@ mod support {
     }
 }
 
-use support::{code, driftwall, repo, stdout};
+use support::{code, commit_all, diff, driftwall, repo, stdout, write};
 
 /// `a` imports `b`; `b` declares a surface.
 const SURFACE_CONTRACT: &str =
@@ -174,4 +215,75 @@ fn a_side_effect_import_lists_no_symbols() {
         "{}",
         stdout(&output)
     );
+}
+
+const BEFORE: &str =
+    "flowchart LR\n  a[\"a\"]\n  b[\"b\"]\n  a --> b\n  %% exports b: Client, fetch\n";
+
+#[test]
+fn diff_reports_surface_changes_as_plus_and_minus_lines() {
+    let dir = repo(&ts_files(BEFORE, "import { fetch } from '../b/lib';\n"));
+    commit_all(dir.path());
+    write(
+        dir.path(),
+        &[(
+            "architecture.mmd",
+            "flowchart LR\n  a[\"a\"]\n  b[\"b\"]\n  a --> b\n  %% exports b: fetch, secret\n",
+        )],
+    );
+    let output = diff(dir.path(), &[]);
+    assert_eq!(code(&output), 0);
+    assert_eq!(
+        stdout(&output),
+        "+ exports b: secret\n- exports b: Client\n"
+    );
+    let gated = diff(dir.path(), &["--exit-code"]);
+    assert_eq!(code(&gated), 1);
+}
+
+#[test]
+fn diff_reports_a_new_and_a_dropped_surface_and_json_lists_them() {
+    let dir = repo(&ts_files(BEFORE, "import { fetch } from '../b/lib';\n"));
+    commit_all(dir.path());
+    write(
+        dir.path(),
+        &[(
+            "architecture.mmd",
+            "flowchart LR\n  a[\"a\"]\n  b[\"b\"]\n  a --> b\n  %% exports a: main\n",
+        )],
+    );
+    let output = diff(dir.path(), &[]);
+    assert_eq!(
+        stdout(&output),
+        "+ exports a: main\n- exports b: Client\n- exports b: fetch\n"
+    );
+    let output = diff(dir.path(), &["--format", "json"]);
+    let value: Value = serde_json::from_str(&stdout(&output)).unwrap();
+    assert_eq!(
+        value["added_exports"],
+        json!([{ "node": "a", "symbol": "main" }])
+    );
+    assert_eq!(
+        value["removed_exports"],
+        json!([
+            { "node": "b", "symbol": "Client" },
+            { "node": "b", "symbol": "fetch" }
+        ])
+    );
+}
+
+#[test]
+fn diff_without_surface_changes_stays_quiet_about_exports() {
+    let dir = repo(&ts_files(BEFORE, "import { fetch } from '../b/lib';\n"));
+    commit_all(dir.path());
+    write(
+        dir.path(),
+        &[(
+            "architecture.mmd",
+            "flowchart LR\n  b[\"b\"]\n  a[\"a\"]\n  a --> b\n  %% exports b: fetch, Client\n",
+        )],
+    );
+    let output = diff(dir.path(), &["--exit-code"]);
+    assert_eq!(code(&output), 0);
+    assert_eq!(stdout(&output), "driftwall: no contract changes\n");
 }

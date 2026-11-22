@@ -12,8 +12,10 @@ use super::json::SCHEMA_VERSION;
 
 /// Renders `diff` as uncoloured text, one line per change, or a line saying nothing changed.
 ///
-/// Order: added nodes, removed nodes, added edges, removed edges, changed edges. A planned edge
-/// is written `a -.-> b (planned)`; an implemented one needs no suffix.
+/// Order: added nodes, removed nodes, added edges, removed edges, changed edges, added exports,
+/// removed exports. A planned edge is written `a -.-> b (planned)`; an implemented one needs no
+/// suffix. An exported name is written `+ exports node: Name`, one line per name, so a node that
+/// loses every name (and with that its surface) shows only `-` lines.
 #[must_use]
 pub fn render_diff_text(diff: &ContractDiff) -> String {
     if diff.is_empty() {
@@ -43,6 +45,12 @@ pub fn render_diff_text(diff: &ContractDiff) -> String {
             edge_kind_str(*new),
         );
     }
+    for (node, name) in &diff.added_exports {
+        let _ = writeln!(out, "+ exports {node}: {name}");
+    }
+    for (node, name) in &diff.removed_exports {
+        let _ = writeln!(out, "- exports {node}: {name}");
+    }
     out
 }
 
@@ -57,6 +65,8 @@ pub fn render_diff_json(diff: &ContractDiff) -> Result<String, ReportError> {
         removed_nodes: &diff.removed_nodes,
         added_edges: declared(&diff.added_edges),
         removed_edges: declared(&diff.removed_edges),
+        added_exports: exported(&diff.added_exports),
+        removed_exports: exported(&diff.removed_exports),
         changed_edges: diff
             .changed_edges
             .iter()
@@ -81,6 +91,24 @@ struct Document<'a> {
     added_edges: Vec<Declared<'a>>,
     removed_edges: Vec<Declared<'a>>,
     changed_edges: Vec<Changed<'a>>,
+    added_exports: Vec<Exported<'a>>,
+    removed_exports: Vec<Exported<'a>>,
+}
+
+#[derive(Serialize)]
+struct Exported<'a> {
+    node: &'a NodeId,
+    symbol: &'a str,
+}
+
+fn exported(names: &[(NodeId, String)]) -> Vec<Exported<'_>> {
+    names
+        .iter()
+        .map(|(node, symbol)| Exported {
+            node,
+            symbol: symbol.as_str(),
+        })
+        .collect()
 }
 
 #[derive(Serialize)]
@@ -150,6 +178,8 @@ mod tests {
                 (edge("a", "d"), EdgeKind::Planned, EdgeKind::Implemented),
                 (edge("d", "a"), EdgeKind::Implemented, EdgeKind::Planned),
             ],
+            added_exports: vec![(id("a"), "X".to_owned()), (id("a"), "Z".to_owned())],
+            removed_exports: vec![(id("b"), "Y".to_owned())],
         }
     }
 
@@ -164,8 +194,20 @@ mod tests {
 - edge c -.-> a (planned)
 ~ edge a -.-> d (planned) => a --> d (planned -> implemented)
 ~ edge d --> a => d -.-> a (planned) (implemented -> planned)
++ exports a: X
++ exports a: Z
+- exports b: Y
 ";
         assert_eq!(render_diff_text(&sample()), expected);
+    }
+
+    #[test]
+    fn an_export_change_alone_is_a_change() {
+        let diff = ContractDiff {
+            removed_exports: vec![(id("gitlab"), "Y".to_owned())],
+            ..ContractDiff::default()
+        };
+        assert_eq!(render_diff_text(&diff), "- exports gitlab: Y\n");
     }
 
     #[test]
@@ -207,6 +249,14 @@ mod tests {
             value["changed_edges"][0],
             json!({ "from": "a", "to": "d", "old": "planned", "new": "implemented" })
         );
+        assert_eq!(
+            value["added_exports"],
+            json!([{ "node": "a", "symbol": "X" }, { "node": "a", "symbol": "Z" }])
+        );
+        assert_eq!(
+            value["removed_exports"],
+            json!([{ "node": "b", "symbol": "Y" }])
+        );
     }
 
     #[test]
@@ -218,6 +268,8 @@ mod tests {
             "added_edges",
             "removed_edges",
             "changed_edges",
+            "added_exports",
+            "removed_exports",
         ] {
             assert_eq!(value[key], json!([]), "{key}");
         }

@@ -356,10 +356,15 @@ pub struct ContractDiff {
     pub removed_edges: Vec<(Edge, EdgeKind)>,
     /// Edges both declare with a different kind, as `(edge, old kind, new kind)`, sorted.
     pub changed_edges: Vec<(Edge, EdgeKind, EdgeKind)>,
+    /// Names only the new contract exports, as `(node, name)`, sorted.
+    pub added_exports: Vec<(NodeId, String)>,
+    /// Names only the old contract exports, as `(node, name)`, sorted. A node that lost its whole
+    /// surface lists every name it had: it is unrestricted from then on.
+    pub removed_exports: Vec<(NodeId, String)>,
 }
 
 impl ContractDiff {
-    /// True when the two contracts declare the same nodes and edges with the same kinds.
+    /// True when the two contracts declare the same nodes, edges with the same kinds, and surfaces.
     #[must_use]
     pub const fn is_empty(&self) -> bool {
         self.added_nodes.is_empty()
@@ -367,6 +372,8 @@ impl ContractDiff {
             && self.added_edges.is_empty()
             && self.removed_edges.is_empty()
             && self.changed_edges.is_empty()
+            && self.added_exports.is_empty()
+            && self.removed_exports.is_empty()
     }
 }
 
@@ -421,6 +428,14 @@ mod tests {
             },
             ContractDiff {
                 changed_edges: vec![(edge, EdgeKind::Planned, EdgeKind::Implemented)],
+                ..ContractDiff::default()
+            },
+            ContractDiff {
+                added_exports: vec![(NodeId::new("a").unwrap(), "X".to_owned())],
+                ..ContractDiff::default()
+            },
+            ContractDiff {
+                removed_exports: vec![(NodeId::new("a").unwrap(), "X".to_owned())],
                 ..ContractDiff::default()
             },
         ];

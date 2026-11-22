@@ -1,7 +1,9 @@
 //! Compares two versions of the contract, for reviewers of a contract change.
 
+use std::collections::BTreeSet;
+
 use crate::diagram;
-use crate::model::{Contract, ContractDiff, Edge, EdgeKind};
+use crate::model::{Contract, ContractDiff, Edge, EdgeKind, NodeId};
 
 use super::LintError;
 
@@ -10,8 +12,8 @@ pub const EMPTY_CONTRACT: &str = "flowchart LR\n";
 
 /// Parses both contract texts and reports what the new one adds, removes and changes.
 ///
-/// Pure: both texts come from the caller. Only nodes and edge kinds are compared; labels and
-/// boundaries are display only. Every list is sorted.
+/// Pure: both texts come from the caller. Nodes, edge kinds and exported names are compared;
+/// labels and boundaries are display only. Every list is sorted.
 ///
 /// # Errors
 /// [`LintError::OldContract`] or [`LintError::NewContract`] when a text is not a valid contract.
@@ -52,7 +54,24 @@ fn diff(old: &Contract, new: &Contract) -> ContractDiff {
                 (old_kind != new_kind).then(|| (edge.clone(), *old_kind, *new_kind))
             })
             .collect(),
+        added_exports: names_only_in(new, old),
+        removed_exports: names_only_in(old, new),
     }
+}
+
+/// The `(node, name)` pairs that `from` exports and `other` does not, sorted. A node with no
+/// surface exports nothing, so its absence and an empty surface are the same.
+fn names_only_in(from: &Contract, other: &Contract) -> Vec<(NodeId, String)> {
+    let none = BTreeSet::new();
+    from.surfaces
+        .iter()
+        .flat_map(|(node, names)| {
+            let theirs = other.surfaces.get(node).unwrap_or(&none);
+            names
+                .difference(theirs)
+                .map(|name| (node.clone(), name.clone()))
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -169,6 +188,51 @@ mod tests {
         assert_eq!(first.added_nodes, vec![node("m"), node("z")]);
         assert_eq!(first.added_edges[0].0, edge("m", "z"));
         assert_eq!(first, diff_of(EMPTY_CONTRACT, new));
+    }
+
+    fn pair(node_id: &str, name: &str) -> (NodeId, String) {
+        (node(node_id), name.to_owned())
+    }
+
+    const EXPORTING: &str = "flowchart LR\n  a\n  b\n  %% exports a: X, Y\n";
+
+    #[test]
+    fn a_new_surface_lists_every_name_as_added() {
+        let d = diff_of("flowchart LR\n  a\n  b\n", EXPORTING);
+        assert_eq!(d.added_exports, vec![pair("a", "X"), pair("a", "Y")]);
+        assert_eq!(d.removed_exports, Vec::new());
+        assert!(!d.is_empty());
+    }
+
+    #[test]
+    fn a_dropped_surface_lists_every_name_as_removed() {
+        let d = diff_of(EXPORTING, "flowchart LR\n  a\n  b\n");
+        assert_eq!(d.removed_exports, vec![pair("a", "X"), pair("a", "Y")]);
+        assert_eq!(d.added_exports, Vec::new());
+    }
+
+    #[test]
+    fn a_changed_surface_lists_only_the_names_that_differ() {
+        let new = "flowchart LR\n  a\n  b\n  %% exports a: Y, Z\n  %% exports b: W\n";
+        let d = diff_of(EXPORTING, new);
+        assert_eq!(d.added_exports, vec![pair("a", "Z"), pair("b", "W")]);
+        assert_eq!(d.removed_exports, vec![pair("a", "X")]);
+    }
+
+    #[test]
+    fn the_order_of_names_and_lines_is_not_a_change() {
+        let new = "flowchart LR\n  b\n  a\n  %% exports a: Y, X\n";
+        assert!(diff_of(EXPORTING, new).is_empty());
+    }
+
+    #[test]
+    fn surfaces_of_added_and_removed_nodes_count() {
+        let d = diff_of(
+            "flowchart LR\n  a\n  %% exports a: X\n",
+            "flowchart LR\n  b\n  %% exports b: Y\n",
+        );
+        assert_eq!(d.removed_exports, vec![pair("a", "X")]);
+        assert_eq!(d.added_exports, vec![pair("b", "Y")]);
     }
 
     #[test]
