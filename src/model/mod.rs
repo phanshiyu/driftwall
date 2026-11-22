@@ -10,6 +10,9 @@ use std::path::PathBuf;
 use serde::Serialize;
 use thiserror::Error;
 
+/// Contract path used when none is given, relative to the repository root.
+pub const DEFAULT_CONTRACT: &str = "architecture.mmd";
+
 /// Errors raised when constructing model values.
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum ModelError {

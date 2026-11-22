@@ -18,13 +18,10 @@ use thiserror::Error;
 
 use crate::diagram::{self, DiagramError};
 use crate::imports::{self, ImportsError};
-use crate::model::{Language, LintReport};
+use crate::model::{DEFAULT_CONTRACT, Language, LintReport};
 use crate::ownership::{self, OwnershipError};
 
 pub use reconcile::reconcile;
-
-/// Contract path used when none is given, relative to the repository root.
-const DEFAULT_CONTRACT: &str = "architecture.mmd";
 
 /// Settings for [`run`].
 #[derive(Debug, Clone, PartialEq, Eq)]
