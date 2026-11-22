@@ -45,7 +45,8 @@ exclusions. Only files with a supported extension count as source.
   dropped.
 - Files with no owner never produce edge findings (no cascade from `unmapped-file`).
 - Resolution per language: TypeScript and JavaScript handle relative specifiers, directory
-  `index.*`, extension probing (`.ts .tsx .js .jsx .mjs .cjs`), and `tsconfig` `paths` (later).
+  `index.*`, extension probing (`.ts .tsx .js .jsx .mjs .cjs`), and `tsconfig`/`jsconfig` `paths` and
+  `baseUrl` with relative `extends` chains. Project `references` are not followed.
   Python handles relative imports, `__init__.py`, and absolute imports rooted at the repo root or
   at `src/`. Rust handles `use crate::`, `use super::`, and `mod` declarations are containment,
   not edges.
