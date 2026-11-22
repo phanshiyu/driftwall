@@ -4,6 +4,7 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use super::{Environment, Reference, Resolution};
+use crate::model::Symbol;
 
 /// Directory prefixes that absolute imports are tried against, in order: the repository root, then
 /// `src/`.
@@ -14,6 +15,10 @@ const ABSOLUTE_ROOTS: [&str; 2] = ["", "src"];
 ///
 /// With names, each name resolves on its own: the submodule `<module>/<name>` first, then the
 /// module itself. Without names (`import a.b`, `from a import *`) only the module resolves.
+///
+/// The symbols used follow what each name resolved to. A name that is a submodule file uses the
+/// submodule as a whole ([`Symbol::All`]); a name found inside the module uses that name. A
+/// statement without names uses the module as a whole.
 /// Absolute modules that match no file are third party or standard library and are ignored;
 /// relative ones that match nothing are unresolved.
 pub fn resolve(
@@ -59,8 +64,10 @@ pub fn resolve(
                 first_known(&candidates(&base, name, !module.is_empty()), known)
             });
             match hit {
-                Some(target) if target == importer => Resolution::Ignored,
-                Some(target) => Resolution::resolved(target),
+                Some((target, _)) if target == importer => Resolution::Ignored,
+                Some((target, symbol)) => {
+                    Resolution::resolved(target).using(BTreeSet::from([symbol]))
+                }
                 None if dots == 0 => Resolution::Ignored,
                 None => Resolution::Unresolved,
             }
@@ -86,26 +93,33 @@ fn join(root: &Path, segments: &[&str]) -> PathBuf {
     path
 }
 
-/// Files `base` plus `name` can mean, best first: the submodule as a module file or package, then
-/// the module itself. A relative import with no module (`from . import x`) has the package
-/// `__init__.py` as its module.
-fn candidates(base: &Path, name: &[&str], has_module: bool) -> Vec<PathBuf> {
+/// Files `base` plus `name` can mean, best first, each with the symbol it makes the import use:
+/// the submodule as a module file or package (all of it), then the module itself (the name inside
+/// it, or all of it when there is no name). A relative import with no module (`from . import x`)
+/// has the package `__init__.py` as its module.
+fn candidates(base: &Path, name: &[&str], has_module: bool) -> Vec<(PathBuf, Symbol)> {
+    let inside = name
+        .first()
+        .map_or(Symbol::All, |name| Symbol::Name((*name).to_owned()));
     let mut found = Vec::new();
     if !name.is_empty() {
         let sub = join(base, name);
-        found.push(sub.with_extension("py"));
-        found.push(sub.join("__init__.py"));
+        found.push((sub.with_extension("py"), Symbol::All));
+        found.push((sub.join("__init__.py"), Symbol::All));
     }
     if has_module {
-        found.push(base.with_extension("py"));
+        found.push((base.with_extension("py"), inside.clone()));
     }
-    found.push(base.join("__init__.py"));
+    found.push((base.join("__init__.py"), inside));
     found
 }
 
-fn first_known(candidates: &[PathBuf], known: &BTreeSet<PathBuf>) -> Option<PathBuf> {
+fn first_known(
+    candidates: &[(PathBuf, Symbol)],
+    known: &BTreeSet<PathBuf>,
+) -> Option<(PathBuf, Symbol)> {
     candidates
         .iter()
-        .find(|candidate| known.contains(*candidate))
+        .find(|(candidate, _)| known.contains(candidate))
         .cloned()
 }
