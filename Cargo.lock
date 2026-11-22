@@ -177,6 +177,7 @@ dependencies = [
  "anyhow",
  "clap",
  "ignore",
+ "jsonc-parser",
  "rayon",
  "serde",
  "serde_json",
@@ -303,6 +304,15 @@ name = "itoa"
 version = "1.0.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3bd1574e617a9a6c1f8f8181bd7e841e1f20e4277607ef28945765188d6284d4"
+
+[[package]]
+name = "jsonc-parser"
+version = "0.34.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0ecded084f9b9a718d39668a42657c32253663d1f6afb3fbb9134f0305f73f48"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "libc"
