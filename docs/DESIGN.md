@@ -823,8 +823,9 @@ callers can decide what a type-only or test import is worth.
 
 - TypeScript and JavaScript: `import type ...`, `export type ... from`, an import or re-export where
   every specifier is written `type X` (`import { type A, type B } from`), every import in a
-  declaration file (`.d.ts`, `.d.mts`, `.d.cts`), and every JSDoc `import('x')` type (see "JSDoc type
-  imports"). `import { type A, B }` is `runtime`, as is a
+  declaration file (`.d.ts`, `.d.mts`, `.d.cts`), every JSDoc `import('x')` type (see "JSDoc type
+  imports"), and every `import("x")` written in a TypeScript type (see "Symbols and public
+  surfaces"). `import { type A, B }` is `runtime`, as is a
   default or namespace import beside type specifiers, `import {} from`, and `require(..)` or
   `import(..)`.
 - Python: an import anywhere inside the body of `if TYPE_CHECKING:` or `if typing.TYPE_CHECKING:`
@@ -944,6 +945,12 @@ Every resolved import records the symbols it uses, exactly as written in the cod
   uses `a` and `b`, and `const { a } = await import('x')` uses `a`. A rest element or a computed key
   in the pattern adds `*`, since the names it takes are not written. Any other `require(..)` or
   `import(..)` (`const m = require('x')`, `require('x').y`, an array pattern) uses `*`.
+  An `import("x")` written in a type is `type-only` and uses the member written right after it,
+  `import("x").A.B` uses `A`, and `typeof import("x")` uses `*`. It is in a type when it is
+  below a type annotation (`let v: import("x").T`, a field or parameter), a `typeof` type
+  query, type arguments, an `extends` or `implements` clause, the value of a type alias, or the
+  type of `as` or `satisfies`; an `import()` in an expression is a dynamic import, whatever
+  surrounds it. Its location is the line of the `import` word.
 - Python: `from a import b, c` uses `b`, `c` when they resolve to names inside `a`. `from a import *`
   uses `*`. A module binding (`import a.b`, `import a.b as c`, `from a import submodule`, a literal
   `importlib.import_module("a.b")`) uses no symbol, as in Rust: it is a dependency on the module file.

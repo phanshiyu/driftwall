@@ -4,6 +4,7 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use super::*;
+use crate::model::ImportKind;
 
 fn known(paths: &[&str]) -> BTreeSet<PathBuf> {
     paths.iter().map(PathBuf::from).collect()
@@ -194,4 +195,39 @@ fn different_lines_stay_separate_entries() {
 fn symbols_are_sorted_with_all_last() {
     assert_eq!(ts("import b, * as ns from './a';"), ["default", "*"]);
     assert_eq!(ts("import { z, a, m } from './a';"), ["a", "m", "z"]);
+}
+
+fn kinds(source: &str) -> Vec<ImportKind> {
+    let file = Path::new("src/main.ts");
+    let got = extract(source, Language::TypeScript, file, &known(&["src/a.ts"])).unwrap();
+    got.resolved.iter().map(|import| import.kind).collect()
+}
+
+#[test]
+fn an_import_in_a_type_is_type_only_and_uses_its_member() {
+    for (source, symbols) in [
+        ("let x: import('./a').T = 1;", &["T"][..]),
+        ("let x: import('./a').A.B = 1;", &["A"]),
+        ("type Z = typeof import('./a');", &["*"]),
+        ("interface I { s: import('./a').Scene; }", &["Scene"]),
+        ("class C { s: import('./a').Scene = x; }", &["Scene"]),
+        ("let y = z as import('./a').T;", &["T"]),
+    ] {
+        let got = used(source, Language::TypeScript, "ts");
+        assert_eq!(got.len(), 1, "{source}: {got:?}");
+        assert_eq!(got[0].2, symbols, "{source}");
+        assert_eq!(kinds(source), [ImportKind::TypeOnly], "{source}");
+    }
+}
+
+#[test]
+fn an_import_call_in_an_expression_stays_runtime() {
+    for source in [
+        "const m = import('./a');",
+        "let x: T = await import('./a');",
+        "const a = (await import('./a')).T;",
+        "import('./a').then(f);",
+    ] {
+        assert_eq!(kinds(source), [ImportKind::Runtime], "{source}");
+    }
 }

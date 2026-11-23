@@ -5,6 +5,7 @@ use std::collections::BTreeSet;
 use tree_sitter::Node;
 
 use super::extract::plain_string;
+use super::statement::in_type_position;
 use crate::model::Symbol;
 
 /// The exported name of a default import, as the module exports it.
@@ -39,6 +40,11 @@ pub fn used(specifier: Node<'_>, source: &str) -> BTreeSet<Symbol> {
         }
         "export_statement" => export_symbols(statement, source, &mut symbols),
         // why: `import x = require('a')`, `require('a')` and `import('a')` hand over the module.
+        _ if statement.parent().is_some_and(in_type_position) => {
+            if let Some(call) = statement.parent() {
+                symbols.insert(type_member(call, source));
+            }
+        }
         _ => {
             let destructured = statement
                 .parent()
@@ -52,6 +58,19 @@ pub fn used(specifier: Node<'_>, source: &str) -> BTreeSet<Symbol> {
         }
     }
     symbols
+}
+
+/// The symbol the type `import("x").A.B` names, the member written first (`A`), or [`Symbol::All`]
+/// when none follows the call, as in `typeof import("x")`.
+fn type_member(call: Node<'_>, source: &str) -> Symbol {
+    call.parent()
+        .filter(|parent| {
+            parent.kind() == "member_expression"
+                && parent.child_by_field_name("object") == Some(call)
+        })
+        .and_then(|parent| parent.child_by_field_name("property"))
+        .and_then(|property| property.utf8_text(source.as_bytes()).ok())
+        .map_or(Symbol::All, |name| Symbol::Name(name.to_owned()))
 }
 
 /// The names a `const { a, b: c } = <call>` takes from the module the `call` (`require(..)` or

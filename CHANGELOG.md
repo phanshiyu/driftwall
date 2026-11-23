@@ -93,3 +93,5 @@
   relative to the config directory, and `process.cwd()` is the config directory, so
   `alias: { w: path.resolve('wasm/pkg/w.js') }` is `alias-target-missing` instead of
   `undeclared-package`.
+- TypeScript types: `let x: import("./a").T`, a field typed `import("./a").T` and `typeof import("./a")`
+  are `type-only` imports using `T` (the first member) or `*`, not runtime `*`.

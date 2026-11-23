@@ -79,15 +79,47 @@ impl Flags {
 
 /// The flags of the TypeScript or JavaScript `anchor` (see [`ecmascript_anchor`]) written in `file`.
 ///
-/// Type-only: a declaration file, `import type` and `export type ... from`, and a statement whose
-/// every specifier is written `type X`. A default or namespace import beside type specifiers, an
-/// empty specifier list, `require()` and `import()` are runtime. Test code: a `*.test.*` or
+/// Type-only: a declaration file, `import type` and `export type ... from`, a statement whose
+/// every specifier is written `type X`, and an `import("x")` written in a type (see
+/// [`in_type_position`]). A default or namespace import beside type specifiers, an empty
+/// specifier list, `require()` and an `import()` in an expression are runtime. Test code: a `*.test.*` or
 /// `*.spec.*` file, or one under a `__tests__`, `test` or `tests` directory.
 pub fn ecmascript_flags(anchor: Node<'_>, source: &str, file: &Path) -> Flags {
     Flags::new(
-        is_declaration_file(file) || ecmascript_type_only(anchor, source),
+        is_declaration_file(file)
+            || ecmascript_type_only(anchor, source)
+            || in_type_position(anchor),
         ecmascript_test_file(file),
     )
+}
+
+/// Whether the `import("x")` call `call` is written in a type: below a type annotation, a `typeof`
+/// type query, type arguments, a heritage clause or the value of a type alias, or as the type of an
+/// `as` or `satisfies` expression. An `import()` in an expression is not, even beside a type.
+pub fn in_type_position(call: Node<'_>) -> bool {
+    if call.kind() != "call_expression" {
+        return false;
+    }
+    let mut child = call;
+    while let Some(parent) = child.parent() {
+        match parent.kind() {
+            "type_annotation"
+            | "type_query"
+            | "type_arguments"
+            | "extends_type_clause"
+            | "implements_clause" => return true,
+            "type_alias_declaration" => {
+                return parent.child_by_field_name("value") == Some(child);
+            }
+            "as_expression" | "satisfies_expression" => {
+                return parent.named_child(0) != Some(child);
+            }
+            "member_expression" => {}
+            _ => return false,
+        }
+        child = parent;
+    }
+    false
 }
 
 /// The flags of an import that loads a whole file (an HTML `<script src>`) written in `file`:
