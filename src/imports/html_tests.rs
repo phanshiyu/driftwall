@@ -238,6 +238,26 @@ fn a_page_in_a_test_directory_is_test_code() {
 }
 
 #[test]
+fn a_relative_resource_link_into_public_is_ignored_and_a_missing_one_is_not() {
+    let page = "<html>
+<link rel=\"icon\" href=\"./icons/a.svg\">
+<link rel=\"icon\" href=\"icons/gone.svg\">
+<script>1</script>
+</html>";
+    let r = repo(&[
+        ("web/package.json", "{}"),
+        ("web/index.html", page),
+        ("web/public/icons/a.svg", ""),
+    ]);
+    let got = r.imports("web/index.html");
+    assert_eq!(got.resolved, []);
+    assert_eq!(
+        r.unresolved("web/index.html"),
+        pairs(&[(3, "icons/gone.svg")])
+    );
+}
+
+#[test]
 fn a_link_to_a_resource_is_an_asset_reference() {
     let page = "<html>
 <link rel=\"stylesheet\" href=\"/src/app.css?v=1\">

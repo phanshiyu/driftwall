@@ -135,23 +135,46 @@ pub fn resolve_inline(
     resolve::ecmascript(reference, importer, env)
 }
 
-/// Resolves the `src` or `href` written in the HTML file `importer`. It is a document-relative
-/// URL: `main.js` means `./main.js`.
-pub fn resolve_load(specifier: &str, importer: &Path, env: &Environment<'_>) -> Resolution {
-    let path = resolve::strip_suffix(specifier.trim());
+/// Resolves the `src` or `href` of `load`, written in the HTML file `importer`. It is a
+/// document-relative URL: `main.js` means `./main.js`. A resource link (see [`Load::asset`]) turns a
+/// source file it finds into an asset, and a relative path that finds nothing is ignored when the
+/// file is below `public` of the Vite root, where Vite serves it from.
+pub fn resolve_load(load: &Load, importer: &Path, env: &Environment<'_>) -> Resolution {
+    let path = resolve::strip_suffix(&load.specifier);
     if path.is_empty() || path.starts_with('#') || is_remote(path) {
         return Resolution::Ignored;
     }
-    if is_root_absolute(path) {
-        return root_absolute(path, importer, env);
+    let resolution = if is_root_absolute(path) {
+        root_absolute(path, importer, env)
+    } else {
+        let relative =
+            if path == "." || path == ".." || path.starts_with("./") || path.starts_with("../") {
+                path.to_owned()
+            } else {
+                format!("./{path}")
+            };
+        resolve::resolve(&relative, importer, env)
+    };
+    match resolution {
+        Resolution::Resolved { target, .. } if load.asset => Resolution::Asset { target },
+        Resolution::Unresolved if load.asset && in_public(path, importer, env) => {
+            Resolution::Ignored
+        }
+        other => other,
     }
-    let relative =
-        if path == "." || path == ".." || path.starts_with("./") || path.starts_with("../") {
-            path.to_owned()
-        } else {
-            format!("./{path}")
-        };
-    resolve::resolve(&relative, importer, env)
+}
+
+/// Whether the document-relative `path` of the page `importer` names a file below `public` of the
+/// Vite root: the path joined onto the directory of the page, with the root taken off and `public`
+/// put in its place.
+fn in_public(path: &str, importer: &Path, env: &Environment<'_>) -> bool {
+    let root = vite_root(importer, env);
+    let Some(target) = resolve::join_normalised(importer.parent(), path) else {
+        return false;
+    };
+    target
+        .strip_prefix(&root)
+        .is_ok_and(|below| resolve::find(&root.join("public").join(below), false, env).is_some())
 }
 
 /// Whether `specifier` is a URL on another origin: it starts with `//`, or with a scheme (a

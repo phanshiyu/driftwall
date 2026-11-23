@@ -88,12 +88,7 @@ pub fn extract_in(
                 file: file.to_path_buf(),
                 line: load.line,
             };
-            let mut resolution = (loads.resolve)(&load.specifier, file, env);
-            if let (true, Resolution::Resolved { target, .. }) = (load.asset, &resolution) {
-                resolution = Resolution::Asset {
-                    target: target.clone(),
-                };
-            }
+            let resolution = (loads.resolve)(load, file, env);
             found.record(resolution, &at, &load.specifier, (loads.flags)(file));
         }
     }

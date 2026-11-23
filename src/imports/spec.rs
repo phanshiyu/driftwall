@@ -51,8 +51,8 @@ pub struct Load {
 
 /// How a language resolves the files its markup loads, see [`Scan::loads`].
 pub struct Loads {
-    /// Resolves one path written in `importer`. The import it makes uses no symbol.
-    pub resolve: fn(&str, &Path, &Environment<'_>) -> Resolution,
+    /// Resolves one load written in `importer`. The import it makes uses no symbol.
+    pub resolve: fn(&Load, &Path, &Environment<'_>) -> Resolution,
     /// Decides from the importing file whether the import is written in test code.
     pub flags: fn(&Path) -> Flags,
 }

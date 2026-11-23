@@ -721,7 +721,10 @@ Its value is trimmed and resolved as a document-relative URL: `main.js` means `.
 and `./x.js` are relative to the directory of the HTML file, and a query or fragment is dropped as
 for any specifier. The file is probed like every relative path (see "Probing"), and a path that
 finds nothing is an `unresolved-import`, or `unresolved-root-path` when root-absolute, for a
-resource link as for a script. A remote `href` and an empty one are ignored.
+resource link as for a script. A remote `href` and an empty one are ignored. A relative `href` of a
+resource link that finds no file is ignored too when the path, taken from the Vite root, names a file
+below `<root>/public/` (`./icons/a.svg` in `<root>/index.html` for `<root>/public/icons/a.svg`),
+where Vite serves it from, as a root-absolute one is.
 
 **Vite root.** A root-absolute specifier is one that starts with a single `/`. In an HTML file, in a
 `src` or `href` and in an `import`, `export ... from`, `import()` or `require()` of its inline
