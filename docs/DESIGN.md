@@ -16,7 +16,7 @@ flowchart LR
   subgraph shared["Shared"]
     model["model: ids, edges"]
   end
-  %% node: id["label"] or a bare id. Boundaries group nodes, one level deep, no semantics.
+  %% node: id["label"] or a bare id. Boundaries group nodes, one level deep; an edge may name one.
   %% Planned edge, tolerated until built:
   lint -.-> model
   %% Implemented edge, must be backed by code:
@@ -27,6 +27,8 @@ flowchart LR
   lint -->|test| model
   %% Type edge: allows only type-only imports, see "Type edges":
   cli -->|type| report
+  %% Boundary edge: an endpoint may be a subgraph id, see "Boundary edges":
+  entry --> shared
 ```
 
 - Node ids match `[A-Za-z][A-Za-z0-9_-]*`. Labels are display only.
@@ -35,7 +37,8 @@ flowchart LR
   first, and two subgraphs cannot share an id either (as two nodes cannot). Each is a contract
   error at the line of the second declaration, naming the first: `line 3: `shared` is already
   declared as a boundary on line 2` (or `as a node`).
-- Edge endpoints must be declared nodes. Chained edges (`a --> b --> c`) and `&` fan-out are errors.
+- Edge endpoints must be declared nodes or boundaries (`subgraph` ids), see "Boundary edges". Chained
+  edges (`a --> b --> c`) and `&` fan-out are errors.
 - `-->` is `EdgeKind::Implemented`. `-.->` is `EdgeKind::Planned`. With the label `test`
   (`-->|test|`, `-.->|test|`) they are `EdgeKind::Test` and `EdgeKind::PlannedTest`, see "Test edges".
 - With the label `type` (`-->|type|`, `-.->|type|`) they are `EdgeKind::Type` and
@@ -51,7 +54,8 @@ flowchart LR
   the existing duplicate-edge error. A solid edge already allows test imports, so the test edge would
   be redundant, and a test edge beside a solid one would be contradictory; an error says it clearly
   and a warning would let the contract mean two things.
-- Edges between nodes in different boundaries are normal. Boundaries never carry edges.
+- Edges between nodes in different boundaries are normal. A boundary may carry an edge, which is
+  shorthand for the node edges between its members, see "Boundary edges".
 - A comment whose first word is `exports` is the surface directive (see "Symbols and public
   surfaces"), and one whose first word is `map` is the mapping directive (see "Contract map").
   The comments whose first word is `order:` (see "Layer order"), `no-cycles` or `no-cycles:` (see
@@ -133,6 +137,89 @@ existing names, and `diff` writes them the same way (`a -->|type| b (type)`). An
 `could be -->|type|` after its annotations in `brief` and `neighbors` text, and has
 `"type_candidate": true` in JSON (absent otherwise), so a designer can choose to tighten it.
 
+### Boundary edges
+
+An edge endpoint may be a boundary (a `subgraph` id) as well as a node: `a --> b`, `a --> sub`,
+`sub --> a` and `sub --> sub` are all edges, with every arrow and label of the other edges (`-->`,
+`-.->`, `|test|`, `|type|`, `|type, test|`). A node and a boundary never share an id, so an endpoint
+is never ambiguous. Mermaid draws these edges between the subgraph boxes, so the diagram still
+renders (checked with Mermaid 12, including a boundary to itself and a node to its own boundary).
+
+A boundary edge is shorthand: it declares an edge of its own kind for every pair it covers.
+
+- Covered pairs. A side is the node itself, or every node of the boundary. The edge `S --> T` covers
+  every ordered pair `(x, y)` with `x` in the side `S`, `y` in the side `T`, and `x` different from
+  `y`: an import inside one node is never an edge, so no pair has the same node on both sides.
+- Members. Nesting is a contract error (see "Contract format"), so the contract has one level and the
+  members of a boundary are exactly the nodes declared between its `subgraph` line and its `end`. A
+  node is in at most one boundary, and a node in no boundary is reachable only as a node endpoint.
+- A boundary to itself, `features --> features`, means the members may depend on each other: it
+  covers every ordered pair of distinct members. Without it, imports between two nodes of one
+  boundary need node edges like any others: a boundary is a grouping and grants nothing by itself.
+  A node to its own boundary, `a --> features` with `a` in `features`, covers `a` to every other
+  member, and `features --> a` every other member to `a`.
+- A boundary endpoint with no nodes is a contract error: the edge would cover nothing, and a typo
+  must not become a silent no-op. An edge that covers no pair for another reason (a boundary with
+  one node to itself) is legal and, being unrealised, stale like any edge.
+- A pair of endpoints has at most one edge, as for nodes: `features --> core` twice, or with two
+  different arrows, is the duplicate-edge error naming both lines. Edges with different endpoints
+  may overlap freely: `features --> core` beside `a --> core` (with `a` in `features`), or beside a
+  node edge between two of the nodes it covers.
+- A node edge is identified by its two nodes, and a boundary edge also keeps its line, because
+  findings and `brief` name it.
+
+Lint treats the covered pairs as declared, with these rules.
+
+- Allowed. A dependency from `x` to `y` is allowed when some edge covers `(x, y)`, node edge or
+  boundary edge, and the kind of that edge allows the site, by the rules of "Test edges" and "Type
+  edges": each covering edge is judged alone, and a site is allowed when any covering edge allows it.
+  Nothing covers the pair: `undeclared-edge` exactly as before. Some edge covers it and none allows
+  the site: `undeclared-edge` with the restricted-edge message of "Test edges" or "Type edges", which
+  names the winning cover (below), `features -->|test| core` (line 31) when it is a boundary edge.
+- Precedence. When several edges cover one pair, the most permissive wins, in this fixed order:
+  unrestricted (`-->`, `-.->`), then `type, test`, then `type`, then `test`; at equal restriction a
+  solid edge before a dotted one, a node edge before a boundary edge, then the lower contract line.
+  The winner is the edge that `brief` and `neighbors` name for the pair (`via`, below) and that the
+  restricted-edge message names. It never changes whether a site is allowed (any covering edge that
+  allows it is enough), and never changes staleness (each edge is judged alone, below). A solid node
+  edge beside a `-->|test|` boundary edge on one pair: the solid edge wins.
+- Stale. A boundary edge is stale (`stale-edge`) only when none of the pairs it covers is realised
+  by a site the edge allows (the test of its kind in "Test edges" and "Type edges", over all its
+  pairs). One realised pair is enough, so a boundary edge is not stale because some members do not
+  use it. The other findings on an edge follow its kind in the same way, over all pairs: a dotted
+  boundary edge is `planned-realized` once any covered pair is realised by a site it allows (the same
+  meaning as for a node edge of that kind, so a test-only site realises a dotted unrestricted edge
+  here as it does there), and a solid unrestricted one is `test-only-edge` when every site on its
+  pairs is test-only. The messages name the boundary arrow (`edge features --> core is declared but
+  no import realises it`).
+- Redundant. A node edge `a --> b` that a boundary edge covers, with a kind at least as wide, is the
+  warning `redundant-edge`, without a source location like `stale-edge`, naming the covering edge
+  and its line: "edge a --> b is redundant: features --> core (line 31) already covers it". At least
+  as wide means the boundary edge allows every site the node edge does (unrestricted covers any
+  kind, `type, test` covers `type`, `test` and itself, any kind covers itself), and it is solid
+  unless the node edge is dotted (a dotted boundary edge does not require the dependency to be
+  built, so a solid node edge under it is not redundant). A narrower cover is not redundant: a solid
+  node edge beside a `-->|test|` boundary edge is needed. It is a warning because the contract still
+  means one thing, only longer than needed; `--strict` fails on it. The edge named is the first wide
+  enough one in the precedence order. A boundary edge covered by another boundary edge is not
+  reported.
+- Layer order and no-cycles treat a boundary edge as its pairs, see "Layer order" and "No cycles".
+- `init` is unchanged: it writes node edges only.
+
+`brief` and `neighbors` show, for each realised pair, the edge that allows it. A pair a node edge
+declares has nothing extra. A pair a boundary edge allows is annotated `via features --> core, line
+31` after its import count, and a pair no edge allows stays `UNDECLARED`. In JSON an edge has `via`
+(`{"edge": "features --> core", "line": 31}`, absent for a node edge or an undeclared pair) and its
+`kind` is the winning edge's. The `brief` summary line counts a boundary edge once, as itself, and not the pairs it allows.
+`brief` lists the boundary edges in a `boundary edges:` block before
+the `rules:` block, one per line with the arrow, the line, how many pairs it covers and how many of
+them code realises (`features --> core (line 31): 6 of 24 pairs realised`); in JSON they are
+`boundary_edges` (`from`, `to`, `kind`, `line`, `covers`, `realised`), absent when there are none.
+`diff` treats a boundary edge like a node edge, keyed by its two endpoints: added, removed and
+changed kind, in the same text forms as node edges (`a --> b` becomes `features --> core`), in JSON as
+`added_boundary_edges`, `removed_boundary_edges` and `changed_boundary_edges` with the endpoints as
+strings.
+
 ### Contract rules
 
 Rules that are not about one pair of nodes are directives, one `%%` line each, parsed with the
@@ -171,11 +258,17 @@ contract need not draw every arrow to forbid the wrong direction.
   missing edge and the wrong direction are two findings with two fixes. The message names the two
   nodes and boundaries.
 - A declared arrow that points upward in some chain (dotted ones too) is a contract error at its
-  line, naming the order line: the contract contradicts itself, so there is no lint to run. The exception is a
+  line, naming the order line: the contract contradicts itself, so there is no lint to run. A boundary
+  edge (see "Boundary edges") is judged on every pair it covers: if any pair goes from a lower listed
+  boundary to a higher one in some chain, the edge is that error, naming its own endpoints (`edge
+  `core` to `features` points upward: `core` is below `features` ...`). So `core --> features` is an
+  error when a chain puts `features` above `core`, `features --> core` is fine, and a boundary edge
+  inside one boundary, or between boundaries no chain lists together, is allowed. The exception is a
   `-->|test|` or `-.->|test|` edge, see below. A type edge (`|type|`, `|type, test|`) is not an
   exception: a type-only import is a dependency, and the layer order forbids it too.
 - Test sites. A site that is test-only (see "Import kind") is exempt only when the pair has a test
-  edge `a -->|test| b` (or `-.->|test|`): the designer then approved test code
+  edge `a -->|test| b` (or `-.->|test|`), declared on the pair or covering it as a boundary edge: the
+  designer then approved test code
   reaching up explicitly, one pair at a time, and the arrow is not a contract error. Without
   that edge, test code is held to the order like production code (a test of a low layer that
   drives it from the entry point must say so with a test edge). The exemption is for sites the
@@ -189,7 +282,8 @@ contract need not draw every arrow to forbid the wrong direction.
 most once, and both are checks of the contract alone: code that crosses an undeclared pair is
 already `undeclared-edge`, so a cycle in code can only come from a declared one.
 
-- Nodes: every declared edge counts, solid or dotted (a planned cycle is still a cycle you intend to
+- Nodes: a boundary edge counts as the node edges of its covered pairs (see "Boundary edges"), so a
+  cycle through `features --> core` and a node edge back is found. Every declared edge counts, solid or dotted (a planned cycle is still a cycle you intend to
   build), type edges included, and test edges (`-->|test|`, `-.->|test|`) excluded. A test edge
   expresses that tests reach across the design, and the usual shape of tests is the reverse of the
   production dependency, so it would read as a cycle without being one. A `type, test` edge counts:
@@ -197,7 +291,9 @@ already `undeclared-edge`, so a cycle in code can only come from a declared one.
 - Boundaries: there is an edge from boundary `X` to boundary `Y` when a counted node edge goes from
   a node in `X` to a node in `Y`. Edges inside one boundary and nodes in no boundary add nothing.
 - A cycle is a contract error at the line of the directive: `line 12: `%% no-cycles` but the
-  declared edges form a cycle: a --> b (line 20), b --> c (line 21), c --> a (line 22)`. Only one is
+  declared edges form a cycle: a --> b (line 20), b --> c (line 21), c --> a (line 22)`. A step that
+  comes from a boundary edge names it and its line, `a --> b (via features --> core, line 31)`; when a
+  node edge and boundary edges cover the pair the node edge is named, else the lowest line. Only one is
   listed: the shortest cycle through the smallest node id (boundary id) that is on any cycle, so
   the message is the same on every run. Fix it and run again for the next one. The boundary form
   lists boundaries without lines: `a --> b --> a`.
@@ -1605,6 +1701,7 @@ module and no symbol and adds nothing to `uses:`.
 | `undeclared-edge` | error | code imports across nodes and the diagram has no such edge |
 | `stale-edge` | warning | solid edge with no import backing it |
 | `planned-realized` | warning | dotted edge now backed by code, promote it to solid (a dotted test or type edge to `-->|test|` or `-->|type|`) |
+| `redundant-edge` | warning | node edge that a boundary edge already covers with a kind at least as wide, see "Boundary edges" |
 | `test-only-edge` | warning | solid edge whose every import site is test-only, declare it `-->|test|` |
 | `unresolved-import` | warning | relative import resolves to nothing, whatever its extension; Python absolute import into a first-party package that holds no such module; shell `source` of a path that finds no file |
 | `private-symbol` | error | an import uses a symbol outside the target node's declared surface |
@@ -1616,7 +1713,8 @@ module and no symbol and adds nothing to `uses:`.
 | `stale-package` | warning | an entry of a `%% packages` line that no non-test package use of the node matches |
 | `ignored-tag-files` | warning | the contract has `%% map` lines and `.arch` files exist, which are not read |
 
-A dotted edge permits the import. `--strict` turns every warning into a failure. A test edge permits
+A boundary edge permits the import of every pair it covers, by the rules of its kind (see "Boundary
+edges"). A dotted edge permits the import. `--strict` turns every warning into a failure. A test edge permits
 only test-only imports (see "Test edges"): a production import on it is `undeclared-edge`. A type edge
 permits only type-only imports (see "Type edges"): a runtime import on it is `undeclared-edge`.
 
@@ -2090,7 +2188,7 @@ needs a valid contract: with none, `where` answers as before and lists nothing.
   `skipped` per reason, `unresolved`; every item has its `node`, and `lines` for unread files). An
   unknown node is a tool error that lists the declared ids.
 - `diff --base <REF>` compares the contract at a git ref with the working tree (nodes and edge
-  kinds; labels and boundaries are ignored). The old text comes from `git show REF:./<contract>`;
+  kinds, boundary edges included, see "Boundary edges"; labels and boundaries are ignored). The old text comes from `git show REF:./<contract>`;
   a contract absent at that ref counts as empty, any other git failure is exit `2`. Exit `0`
   normally; with `--exit-code`, `1` when anything changed, so CI can require approval.
 
