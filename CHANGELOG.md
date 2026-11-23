@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `brief` and `init`: summary lines count in the singular when there is one (`1 error`, `1 edge`, `1 .arch file`), as `lint` does.
 - README: rewritten in plain language (the idea, a worked example with real output, quick start, a contract cheat sheet linked to DESIGN.md). `tests/readme.rs` now fails when a README command or flag is not in the CLI, or a link or DESIGN.md anchor is missing.
 
 - Release: the npm package is published through npm trusted publishing (an OIDC id-token from

@@ -141,7 +141,7 @@ fn brief_on_a_clean_repo_lists_nodes_and_edges() {
     let output = driftwall(&["brief", dir.path().to_str().unwrap()]);
     assert_eq!(code(&output), 0);
     let expected = "\
-driftwall: 2 nodes, 1 edges (1 implemented, 0 planned), 0 errors, 0 warnings
+driftwall: 2 nodes, 1 edge (1 implemented, 0 planned), 0 errors, 0 warnings
 nodes:
   a: a (1 file)
   b: b (1 file)
@@ -166,7 +166,7 @@ fn brief_marks_an_undeclared_observed_edge_and_still_exits_0() {
     let out = stdout(&output);
     assert!(
         out.starts_with(
-            "driftwall: 2 nodes, 1 edges (1 implemented, 0 planned), 1 errors, 0 warnings\n"
+            "driftwall: 2 nodes, 1 edge (1 implemented, 0 planned), 1 error, 0 warnings\n"
         ),
         "{out}"
     );
@@ -194,7 +194,7 @@ fn brief_draws_planned_edges_dotted_and_counts_them() {
     let out = stdout(&output);
     assert!(
         out.starts_with(
-            "driftwall: 2 nodes, 1 edges (0 implemented, 1 planned), 0 errors, 0 warnings\n"
+            "driftwall: 2 nodes, 1 edge (0 implemented, 1 planned), 0 errors, 0 warnings\n"
         ),
         "{out}"
     );

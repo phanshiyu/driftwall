@@ -133,7 +133,7 @@ driftwall brief .
 ```
 
 ```text
-driftwall: 3 nodes, 2 edges (2 implemented, 0 planned), 1 errors, 0 warnings
+driftwall: 3 nodes, 2 edges (2 implemented, 0 planned), 1 error, 0 warnings
 nodes:
   api: src/api/ (1 file)
   db: src/db/ (1 file)

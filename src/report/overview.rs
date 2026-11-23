@@ -46,11 +46,11 @@ pub fn render_overview_text(overview: &Overview) -> String {
         let _ = write!(extra, ", {typed} type");
     }
     let mut out = format!(
-        "driftwall: {} nodes, {} edges ({implemented} implemented, {planned} planned{extra}), {} errors, {} warnings\n",
-        overview.nodes.len(),
-        implemented + planned + test + typed,
-        overview.errors,
-        overview.warnings,
+        "driftwall: {}, {} ({implemented} implemented, {planned} planned{extra}), {}, {}\n",
+        plural(overview.nodes.len(), "node"),
+        plural(implemented + planned + test + typed, "edge"),
+        plural(overview.errors, "error"),
+        plural(overview.warnings, "warning"),
     );
     out.push_str("nodes:\n");
     if overview.nodes.is_empty() {
@@ -522,7 +522,7 @@ mod tests {
     #[test]
     fn overview_text_is_exact() {
         let expected = "\
-driftwall: 3 nodes, 2 edges (1 implemented, 1 planned), 1 errors, 2 warnings
+driftwall: 3 nodes, 2 edges (1 implemented, 1 planned), 1 error, 2 warnings
 nodes:
   cli: src (3 files)
   lint: src/lint, src/lint2 (1 file)

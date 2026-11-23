@@ -97,15 +97,24 @@ fn with_note(mut text: String, blind: &BlindSummary) -> String {
 fn render_init_summary(summary: &InitSummary) -> String {
     let tags = match (summary.map_lines, summary.tag_files) {
         (0, 0) => "no .arch files".to_owned(),
-        (0, count) => format!("{count} .arch files"),
-        (lines, _) => format!("{lines} `%% map` lines"),
+        (0, count) => counted(count, ".arch file"),
+        (lines, _) => counted(lines, "`%% map` line"),
     };
     format!(
-        "driftwall: wrote {} ({} nodes, {} edges) and {tags}\n",
+        "driftwall: wrote {} ({}, {}) and {tags}\n",
         summary.contract.display(),
-        summary.nodes,
-        summary.edges,
+        counted(summary.nodes, "node"),
+        counted(summary.edges, "edge"),
     )
+}
+
+/// `1 node`, `2 nodes`: `noun` with an `s` unless `n` is one.
+fn counted(n: usize, noun: &str) -> String {
+    if n == 1 {
+        format!("{n} {noun}")
+    } else {
+        format!("{n} {noun}s")
+    }
 }
 
 /// Fails unless `path` exists and is a directory.
@@ -144,7 +153,7 @@ mod tests {
         );
         assert_eq!(
             render_init_summary(&summary(1, 0, 0)),
-            "driftwall: wrote architecture.mmd (1 nodes, 0 edges) and no .arch files\n"
+            "driftwall: wrote architecture.mmd (1 node, 0 edges) and no .arch files\n"
         );
     }
 }

@@ -137,7 +137,7 @@ fn brief_lists_the_symbols_each_edge_uses_and_marks_a_surface() {
     let output = driftwall(&["brief"], dir.path());
     assert_eq!(code(&output), 0);
     let expected = "\
-driftwall: 2 nodes, 1 edges (1 implemented, 0 planned), 0 errors, 0 warnings
+driftwall: 2 nodes, 1 edge (1 implemented, 0 planned), 0 errors, 0 warnings
 nodes:
   a: a (1 file)
   b: b (1 file) exports: Client, fetch

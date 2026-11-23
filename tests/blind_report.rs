@@ -106,7 +106,7 @@ fn brief_ends_with_the_blind_spots_block_and_every_node_line_counts_its_own() {
     let output = driftwall(&dir, &["brief"]);
     assert_eq!(code(&output), 0);
     let expected = "\
-driftwall: 2 nodes, 1 edges (1 implemented, 0 planned), 0 errors, 1 warnings
+driftwall: 2 nodes, 1 edge (1 implemented, 0 planned), 0 errors, 1 warning
 nodes:
   a: a (1 file) packages: left-pad (third-party, 1) blind: 3 not read, 1 excluded, 1 ignored, 2 skipped, 1 unresolved
   b: b (1 file) blind: 1 not read
@@ -138,7 +138,7 @@ fn brief_says_none_when_nothing_is_blind_and_node_lines_stay_plain() {
     assert_eq!(
         stdout(&output),
         "\
-driftwall: 2 nodes, 1 edges (1 implemented, 0 planned), 0 errors, 0 warnings
+driftwall: 2 nodes, 1 edge (1 implemented, 0 planned), 0 errors, 0 warnings
 nodes:
   a: a (1 file)
   b: b (1 file)
