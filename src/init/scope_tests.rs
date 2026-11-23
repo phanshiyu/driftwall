@@ -33,6 +33,7 @@ fn plan_of(paths: &[&str], depth: Option<usize>) -> InitPlan {
     plan(
         &files(paths),
         &BTreeSet::new(),
+        &BTreeSet::new(),
         &BTreeMap::new(),
         &InitOptions { depth },
         &[],
@@ -117,6 +118,7 @@ fn a_unit_group_is_limited_and_a_unit_prefix_is_its_directory_path() {
     let p = plan(
         &files(&paths),
         &BTreeSet::new(),
+        &BTreeSet::new(),
         &BTreeMap::new(),
         &InitOptions::default(),
         &units,
@@ -165,6 +167,7 @@ fn an_import_of_an_asset_is_an_edge_to_the_node_the_tags_give_the_asset() {
     let p = plan(
         &all,
         &assets,
+        &BTreeSet::new(),
         &imports,
         &InitOptions::default(),
         &[],

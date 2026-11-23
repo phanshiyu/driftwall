@@ -42,14 +42,18 @@ pub struct InitPlan {
 /// tagged `node: *` and each module and subdirectory becomes a node instead. Imports of or from
 /// files outside `files` and `assets` are ignored.
 ///
-/// `assets` are the walked files that are not source, and the excluded source files, which imports
-/// resolve to like assets. An asset has the owner the tags give it (the
-/// existing ones and the ones planned here, see [`owner_in`]), and an import of an asset whose
-/// owner is another declared node is an edge, exactly as `lint` counts it.
+/// `assets` are the walked files that are not source, and `excluded` the source files the scan
+/// left out, which imports resolve to like assets. Either has the owner the tags give it (the
+/// existing ones and the ones planned here, see [`owner_in`]), and an import of one whose owner is
+/// another declared node is an edge, exactly as `lint` counts it. The owner of every asset, and of
+/// every excluded file that something imports, is declared as a node when no source names it (a
+/// module of a `node: *` directory that holds nothing else): the baseline never makes `lint` record
+/// an `undeclared-owner` reference of its own.
 #[must_use]
 pub fn plan(
     files: &BTreeMap<PathBuf, Language>,
     assets: &BTreeSet<PathBuf>,
+    excluded: &BTreeSet<PathBuf>,
     imports: &BTreeMap<PathBuf, FileImports>,
     options: &InitOptions,
     units: &[Unit],
@@ -135,7 +139,14 @@ pub fn plan(
 
     let mut all_tags = existing.tags.clone();
     all_tags.extend(tags.clone());
-    for asset in assets {
+    // why: an excluded file is real code only when something imports it, so only those get a declared owner.
+    let imported: BTreeSet<&PathBuf> = imports
+        .values()
+        .flat_map(|found| &found.resolved)
+        .map(|import| &import.target)
+        .collect();
+    let imported_excluded = excluded.iter().filter(|file| imported.contains(file));
+    for asset in assets.iter().chain(imported_excluded) {
         if let Some(owner) = owner_in(&all_tags, asset) {
             // why: an owner no source file names must still be declared, or `lint` records the import as `undeclared-owner`.
             contract

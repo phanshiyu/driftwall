@@ -152,9 +152,9 @@ pub fn run(
     let imports = imports::collect_with_assets(root, &files, &assets, &excluded)?;
     let units = detect_units(root, &files);
     let existing = Existing::of(&ownership);
-    // why: an import of an excluded file is an edge to its owner in `lint`, so `init` must declare it.
-    let targets: BTreeSet<PathBuf> = assets.union(&excluded).cloned().collect();
-    let baseline = plan(&files, &targets, &imports, options, &units, &existing);
+    let baseline = plan(
+        &files, &assets, &excluded, &imports, options, &units, &existing,
+    );
     let mut summary = write::apply(root, &baseline, write)?;
     // why: init has no owners or line counts to give, and the note shows neither.
     summary.blind_spots = BlindSpots::build(

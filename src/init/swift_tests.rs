@@ -14,6 +14,7 @@ fn planned(paths: &[&str], units: &[Unit]) -> InitPlan {
     plan(
         &files,
         &BTreeSet::new(),
+        &BTreeSet::new(),
         &BTreeMap::new(),
         &InitOptions::default(),
         units,

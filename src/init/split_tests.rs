@@ -18,6 +18,7 @@ fn planned(paths: &[String]) -> InitPlan {
     plan(
         &files,
         &BTreeSet::new(),
+        &BTreeSet::new(),
         &BTreeMap::new(),
         &InitOptions::default(),
         &[],
