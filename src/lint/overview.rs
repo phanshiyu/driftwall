@@ -4,9 +4,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use crate::model::{
-    BlindSpots, Contract, DirTag, Edge, EdgeKind, EdgeSummary, ImportKind, LintReport, MapTarget,
-    NodeBudget, NodeId, NodeSummary, NodeView, Overview, Ownership, PackageSummary, Scope, Site,
-    Symbol, Tag,
+    BlindSpots, BoundaryEdgeSummary, Contract, Declared, DirTag, Edge, EdgeKind, EdgeSummary,
+    ImportKind, LintReport, MapTarget, NodeBudget, NodeId, NodeSummary, NodeView, Overview,
+    Ownership, PackageSummary, Scope, Site, Symbol, Tag, ViaEdge,
 };
 
 /// Combines the contract, ownership, observed edges, the symbols they use and the lint report
@@ -91,30 +91,14 @@ pub fn overview(
         })
         .collect();
 
-    let all_edges: BTreeSet<&Edge> = contract.edges.keys().chain(observed.keys()).collect();
-    let edges = all_edges
-        .into_iter()
-        .map(|edge| {
-            let sites = observed.get(edge).map_or(&[][..], Vec::as_slice);
-            EdgeSummary {
-                from: edge.from.clone(),
-                to: edge.to.clone(),
-                kind: contract.edges.get(edge).copied(),
-                realised: sites.len(),
-                sites: sites.to_vec(),
-                symbols: symbols.get(edge).cloned().unwrap_or_default(),
-                module: sites.iter().any(|site| site.module),
-                type_candidate: contract.edges.get(edge) == Some(&EdgeKind::Implemented)
-                    && !sites.is_empty()
-                    && sites.iter().all(|site| site.kind == ImportKind::TypeOnly),
-            }
-        })
-        .collect();
+    let edges = edge_summaries(contract, observed, symbols);
+    let boundary_edges = boundary_edge_summaries(contract, observed);
 
     let (errors, warnings) = report.counts();
     Overview {
         nodes,
         edges,
+        boundary_edges,
         errors,
         warnings,
         blind_spots: blind.summary(),
@@ -123,6 +107,74 @@ pub fn overview(
         skipped_references: blind.skipped.clone(),
         rules: contract.rules.summary(),
     }
+}
+
+/// Every declared or observed edge as the overview presents it, sorted by `(from, to)`.
+fn edge_summaries(
+    contract: &Contract,
+    observed: &BTreeMap<Edge, Vec<Site>>,
+    symbols: &BTreeMap<Edge, BTreeSet<Symbol>>,
+) -> Vec<EdgeSummary> {
+    let all_edges: BTreeSet<&Edge> = contract.edges.keys().chain(observed.keys()).collect();
+    all_edges
+        .into_iter()
+        .map(|edge| {
+            let sites = observed.get(edge).map_or(&[][..], Vec::as_slice);
+            // why: the winner of the precedence of "Boundary edges" speaks for the pair.
+            let winner = contract.covers(edge).into_iter().next();
+            let kind = winner.map(|cover| cover.kind);
+            EdgeSummary {
+                from: edge.from.clone(),
+                to: edge.to.clone(),
+                kind,
+                realised: sites.len(),
+                sites: sites.to_vec(),
+                symbols: symbols.get(edge).cloned().unwrap_or_default(),
+                module: sites.iter().any(|site| site.module),
+                type_candidate: kind == Some(EdgeKind::Implemented)
+                    && !sites.is_empty()
+                    && sites.iter().all(|site| site.kind == ImportKind::TypeOnly),
+                via: winner.and_then(|cover| match cover.by {
+                    Declared::Boundary(declared) => Some(ViaEdge {
+                        edge: declared.text(),
+                        line: declared.line,
+                    }),
+                    Declared::Node => None,
+                }),
+            }
+        })
+        .collect()
+}
+
+/// Every boundary edge with the number of pairs it covers and the number code realises.
+fn boundary_edge_summaries(
+    contract: &Contract,
+    observed: &BTreeMap<Edge, Vec<Site>>,
+) -> Vec<BoundaryEdgeSummary> {
+    contract
+        .boundary_edges
+        .iter()
+        .map(|declared| {
+            let pairs = declared.pairs(&contract.nodes);
+            BoundaryEdgeSummary {
+                from: declared.from.clone(),
+                to: declared.to.clone(),
+                kind: declared.kind,
+                line: declared.line,
+                covers: pairs.len(),
+                realised: pairs
+                    .iter()
+                    .filter(|pair| {
+                        observed.get(*pair).is_some_and(|sites| {
+                            sites
+                                .iter()
+                                .any(|site| declared.kind.allows(site.kind, site.test_only))
+                        })
+                    })
+                    .count(),
+            }
+        })
+        .collect()
 }
 
 /// Gives every node of `overview` that has a `%% budget` its limits and current values.

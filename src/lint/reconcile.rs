@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 
 use crate::imports::FileImports;
 use crate::model::{
-    Contract, Edge, EdgeKind, LintReport, Location, Ownership, ResolvedImport, Symbol, Violation,
-    ViolationKind,
+    Contract, Cover, Declared, Edge, EdgeKind, LintReport, Location, Ownership, ResolvedImport,
+    Symbol, Violation, ViolationKind,
 };
 
 use super::isolation;
@@ -73,7 +73,8 @@ pub fn reconcile(
 
     let crossings = crossings(contract, ownership, imports);
     for (edge, import) in &crossings {
-        match contract.edges.get(edge) {
+        let covers = contract.covers(edge);
+        match covers.first() {
             None => violations.push(violation(
                 ViolationKind::UndeclaredEdge,
                 Some(import.at.clone()),
@@ -85,11 +86,16 @@ pub fn reconcile(
                     to = edge.to,
                 ),
             )),
-            Some(kind) if !kind.allows(import.kind, import.test_only) => {
+            // why: each covering edge is judged alone, so one that allows the site is enough.
+            Some(winner)
+                if !covers
+                    .iter()
+                    .any(|cover| cover.kind.allows(import.kind, import.test_only)) =>
+            {
                 violations.push(violation(
                     ViolationKind::UndeclaredEdge,
                     Some(import.at.clone()),
-                    restricted_site_message(*kind, edge, import, contract_file),
+                    restricted_site_message(winner, covers.len() - 1, edge, import, contract_file),
                 ));
             }
             Some(_) => {}
@@ -107,6 +113,8 @@ pub fn reconcile(
     }
 
     violations.extend(edge_findings(contract, &crossings));
+    violations.extend(boundary_edge_findings(contract, &crossings));
+    violations.extend(redundant_findings(contract));
     violations.extend(layers::upward_findings(contract, &crossings));
     violations.extend(isolation::findings(contract, imports));
     violations.extend(package_findings(
@@ -122,9 +130,11 @@ pub fn reconcile(
 }
 
 /// The message of a site `edge` does not allow: the pair has an edge, but only of a restricted
-/// kind (`test`, `type` or both), and the site is not one it allows.
+/// kind (`test`, `type` or both), and the site is not one it allows. `winner` is the covering edge
+/// that wins the precedence of "Boundary edges", and `others` how many more cover the pair.
 fn restricted_site_message(
-    kind: EdgeKind,
+    winner: &Cover<'_>,
+    others: usize,
     edge: &Edge,
     import: &ResolvedImport,
     contract_file: &Path,
@@ -132,16 +142,25 @@ fn restricted_site_message(
     let (from, to) = (&edge.from, &edge.to);
     let target = import.target.display();
     let contract = contract_file.display();
-    let arrow = kind.arrow();
-    match kind {
+    let arrow = winner.kind.arrow();
+    let declared = match winner.by {
+        Declared::Node => format!("{from} {arrow} {to}"),
+        Declared::Boundary(boundary) => format!("{} (line {})", boundary.text(), boundary.line),
+    };
+    let more = match others {
+        0 => String::new(),
+        1 => "; one more covering edge does not allow it either".to_owned(),
+        n => format!("; {n} more covering edges do not allow it either"),
+    };
+    match winner.kind {
         EdgeKind::Test | EdgeKind::PlannedTest => format!(
-            "`{from}` imports `{to}` ({target}) from production code but {contract} declares only a test edge {from} {arrow} {to}, which allows test imports only"
+            "`{from}` imports `{to}` ({target}) from production code but {contract} declares only a test edge {declared}, which allows test imports only{more}"
         ),
         EdgeKind::Type | EdgeKind::PlannedType => format!(
-            "`{from}` imports `{to}` ({target}) at run time but {contract} declares only a type edge {from} {arrow} {to}, which allows type-only imports only"
+            "`{from}` imports `{to}` ({target}) at run time but {contract} declares only a type edge {declared}, which allows type-only imports only{more}"
         ),
         _ => format!(
-            "`{from}` imports `{to}` ({target}) at run time from production code but {contract} declares only a type, test edge {from} {arrow} {to}, which allows type-only and test imports only"
+            "`{from}` imports `{to}` ({target}) at run time from production code but {contract} declares only a type, test edge {declared}, which allows type-only and test imports only{more}"
         ),
     }
 }
@@ -167,47 +186,131 @@ fn edge_findings(contract: &Contract, crossings: &[(Edge, &ResolvedImport)]) -> 
         .collect();
     let mut violations = Vec::new();
     for (edge, kind) in &contract.edges {
-        let (from, to) = (&edge.from, &edge.to);
-        let arrow = kind.arrow();
-        let sites = kind.allowed_sites();
-        let finding = match kind {
-            EdgeKind::Implemented if !realised.contains(edge) => Some((
-                ViolationKind::StaleEdge,
-                format!("edge {from} {arrow} {to} is declared but no import realises it"),
-            )),
-            EdgeKind::Implemented if !production.contains(edge) => Some((
-                ViolationKind::TestOnlyEdge,
-                format!(
-                    "edge {from} --> {to} is realised only by test code; declare it {from} -->|test| {to}"
-                ),
-            )),
-            EdgeKind::Test | EdgeKind::Type | EdgeKind::TypeTest if !allowed.contains(edge) => {
-                Some((
-                    ViolationKind::StaleEdge,
-                    format!(
-                        "edge {from} {arrow} {to} is declared but no {sites} import realises it"
-                    ),
-                ))
-            }
-            EdgeKind::Planned if realised.contains(edge) => Some((
-                ViolationKind::PlannedRealized,
-                format!("planned edge {from} {arrow} {to} is now realised by code"),
-            )),
-            EdgeKind::PlannedTest | EdgeKind::PlannedType | EdgeKind::PlannedTypeTest
-                if allowed.contains(edge) =>
-            {
-                Some((
-                    ViolationKind::PlannedRealized,
-                    format!("planned edge {from} {arrow} {to} is now realised by {sites} code"),
-                ))
-            }
-            _ => None,
+        let seen = Seen {
+            realised: realised.contains(edge),
+            allowed: allowed.contains(edge),
+            production: production.contains(edge),
         };
-        if let Some((kind, message)) = finding {
+        let ends = (edge.from.as_str(), edge.to.as_str());
+        if let Some((kind, message)) = declared_edge_finding(*kind, ends, seen) {
             violations.push(violation(kind, None, message));
         }
     }
     violations
+}
+
+/// What code does on the pairs one declared edge covers.
+#[derive(Clone, Copy)]
+struct Seen {
+    /// Some site, allowed or not.
+    realised: bool,
+    /// Some site the edge's kind allows.
+    allowed: bool,
+    /// Some site that is not test-only.
+    production: bool,
+}
+
+/// The stale, planned-realised or test-only finding of one declared edge `from` to `to` of `kind`
+/// given what code does on the pairs it covers, if any. Node edges and boundary edges share it.
+fn declared_edge_finding(
+    kind: EdgeKind,
+    (from, to): (&str, &str),
+    seen: Seen,
+) -> Option<(ViolationKind, String)> {
+    let arrow = kind.arrow();
+    let sites = kind.allowed_sites();
+    match kind {
+        EdgeKind::Implemented if !seen.realised => Some((
+            ViolationKind::StaleEdge,
+            format!("edge {from} {arrow} {to} is declared but no import realises it"),
+        )),
+        EdgeKind::Implemented if !seen.production => Some((
+            ViolationKind::TestOnlyEdge,
+            format!(
+                "edge {from} --> {to} is realised only by test code; declare it {from} -->|test| {to}"
+            ),
+        )),
+        EdgeKind::Test | EdgeKind::Type | EdgeKind::TypeTest if !seen.allowed => Some((
+            ViolationKind::StaleEdge,
+            format!("edge {from} {arrow} {to} is declared but no {sites} import realises it"),
+        )),
+        EdgeKind::Planned if seen.realised => Some((
+            ViolationKind::PlannedRealized,
+            format!("planned edge {from} {arrow} {to} is now realised by code"),
+        )),
+        EdgeKind::PlannedTest | EdgeKind::PlannedType | EdgeKind::PlannedTypeTest
+            if seen.allowed =>
+        {
+            Some((
+                ViolationKind::PlannedRealized,
+                format!("planned edge {from} {arrow} {to} is now realised by {sites} code"),
+            ))
+        }
+        _ => None,
+    }
+}
+
+/// The same findings for every boundary edge, over all the pairs it covers: it is stale only when
+/// no covered pair is realised (see "Boundary edges").
+fn boundary_edge_findings(
+    contract: &Contract,
+    crossings: &[(Edge, &ResolvedImport)],
+) -> Vec<Violation> {
+    contract
+        .boundary_edges
+        .iter()
+        .filter_map(|declared| {
+            let mut seen = Seen {
+                realised: false,
+                allowed: false,
+                production: false,
+            };
+            for (_, import) in crossings
+                .iter()
+                .filter(|(edge, _)| declared.covers(&contract.nodes, edge))
+            {
+                seen.realised = true;
+                seen.allowed |= declared.kind.allows(import.kind, import.test_only);
+                seen.production |= !import.test_only;
+            }
+            let (kind, message) = declared_edge_finding(
+                declared.kind,
+                (declared.from.as_str(), declared.to.as_str()),
+                seen,
+            )?;
+            Some(violation(kind, None, message))
+        })
+        .collect()
+}
+
+/// A `redundant-edge` warning for every node edge that a boundary edge of a kind at least as wide
+/// already covers, naming the first such edge in the precedence order.
+fn redundant_findings(contract: &Contract) -> Vec<Violation> {
+    contract
+        .edges
+        .iter()
+        .filter_map(|(edge, kind)| {
+            let covering = contract.covers(edge).into_iter().find_map(|cover| {
+                let Declared::Boundary(declared) = cover.by else {
+                    return None;
+                };
+                let wide = declared.kind.at_least_as_wide_as(*kind);
+                (wide && (kind.is_planned() || !declared.kind.is_planned())).then_some(declared)
+            })?;
+            Some(violation(
+                ViolationKind::RedundantEdge,
+                None,
+                format!(
+                    "edge {from} {arrow} {to} is redundant: {} (line {}) already covers it",
+                    covering.text(),
+                    covering.line,
+                    from = edge.from,
+                    arrow = kind.arrow(),
+                    to = edge.to,
+                ),
+            ))
+        })
+        .collect()
 }
 
 /// One finding per symbol `import` uses that the surface of the node it enters does not list.

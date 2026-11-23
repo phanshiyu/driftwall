@@ -11,6 +11,8 @@ mod render;
 mod rules;
 
 #[cfg(test)]
+mod boundary_tests;
+#[cfg(test)]
 mod rules_tests;
 
 pub use error::DiagramError;

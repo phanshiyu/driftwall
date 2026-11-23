@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- Boundary edges: an edge endpoint may be a `subgraph` id, so `features --> core` allows every node
+  of `features` to depend on every node of `core` (and `a --> sub`, `sub --> a`, `sub --> sub` work
+  too, with every arrow and label: dotted, `|test|`, `|type|`, `|type, test|`). `features --> features`
+  lets the members depend on each other. Lint allows a dependency when any covering edge allows its
+  site, and `undeclared-edge` stays as it was for a pair nothing covers. A boundary edge is stale
+  only when none of its pairs is realised, and `planned-realized` and `test-only-edge` follow the
+  same rule over all pairs. A node edge that a boundary edge of a kind at least as wide already
+  covers is the new warning `redundant-edge`. `%% order` rejects a boundary edge that points up, and
+  `%% no-cycles` expands boundary edges to node pairs and names their lines. `brief` and
+  `neighbors` show `via features --> core, line 31` for each pair and list the boundary edges
+  (JSON `via`, `boundary_edges`), and `diff` reports them (`added_boundary_edges` and friends).
+  `init` still writes node edges. An edge to a boundary with no node is a contract error.
+
 - `brief` and `init`: summary lines count in the singular when there is one (`1 error`, `1 edge`, `1 .arch file`), as `lint` does.
 - README: rewritten in plain language (the idea, a worked example with real output, quick start, a contract cheat sheet linked to DESIGN.md). `tests/readme.rs` now fails when a README command or flag is not in the CLI, or a link or DESIGN.md anchor is missing.
 

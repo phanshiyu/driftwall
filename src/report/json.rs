@@ -153,6 +153,7 @@ mod tests {
                 "production-imports-test",
                 "forbidden-package",
                 "stale-package",
+                "redundant-edge",
             ]
         );
     }

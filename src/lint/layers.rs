@@ -27,10 +27,10 @@ pub(super) fn upward_findings(
                     (from_rank > to_rank).then_some((order, from_boundary, to_boundary))
                 })?;
             let exempt = import.test_only
-                && matches!(
-                    contract.edges.get(edge),
-                    Some(EdgeKind::Test | EdgeKind::PlannedTest)
-                );
+                && contract
+                    .covers(edge)
+                    .iter()
+                    .any(|cover| matches!(cover.kind, EdgeKind::Test | EdgeKind::PlannedTest));
             (!exempt).then(|| {
                 violation(
                     ViolationKind::UpwardEdge,

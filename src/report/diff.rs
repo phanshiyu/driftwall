@@ -4,7 +4,9 @@ use std::fmt::Write as _;
 
 use serde::Serialize;
 
-use crate::model::{ContractDiff, Edge, EdgeKind, NodeId};
+use std::fmt::Display;
+
+use crate::model::{ContractDiff, Edge, EdgeEnds, EdgeKind, NodeId};
 
 use super::ReportError;
 use super::common::{arrow, edge_kind_str};
@@ -12,8 +14,8 @@ use super::json::SCHEMA_VERSION;
 
 /// Renders `diff` as uncoloured text, one line per change, or a line saying nothing changed.
 ///
-/// Order: added nodes, removed nodes, added edges, removed edges, changed edges, added exports,
-/// removed exports. A planned edge is written `a -.-> b (planned)`; an implemented one needs no
+/// Order: added nodes, removed nodes, added edges, removed edges, changed edges, then the same three
+/// for boundary edges, added exports, removed exports. A planned edge is written `a -.-> b (planned)`; an implemented one needs no
 /// suffix. An exported name is written `+ exports node: Name`, one line per name, so a node that
 /// loses every name (and with that its surface) shows only `-` lines.
 #[must_use]
@@ -45,6 +47,22 @@ pub fn render_diff_text(diff: &ContractDiff) -> String {
             edge_kind_str(*new),
         );
     }
+    for (ends, kind) in &diff.added_boundary_edges {
+        let _ = writeln!(out, "+ edge {}", ends_text(&ends.from, &ends.to, *kind));
+    }
+    for (ends, kind) in &diff.removed_boundary_edges {
+        let _ = writeln!(out, "- edge {}", ends_text(&ends.from, &ends.to, *kind));
+    }
+    for (ends, old, new) in &diff.changed_boundary_edges {
+        let _ = writeln!(
+            out,
+            "~ edge {} => {} ({} -> {})",
+            ends_text(&ends.from, &ends.to, *old),
+            ends_text(&ends.from, &ends.to, *new),
+            edge_kind_str(*old),
+            edge_kind_str(*new),
+        );
+    }
     for (node, name) in &diff.added_exports {
         let _ = writeln!(out, "+ exports {node}: {name}");
     }
@@ -65,6 +83,18 @@ pub fn render_diff_json(diff: &ContractDiff) -> Result<String, ReportError> {
         removed_nodes: &diff.removed_nodes,
         added_edges: declared(&diff.added_edges),
         removed_edges: declared(&diff.removed_edges),
+        added_boundary_edges: ended(&diff.added_boundary_edges),
+        removed_boundary_edges: ended(&diff.removed_boundary_edges),
+        changed_boundary_edges: diff
+            .changed_boundary_edges
+            .iter()
+            .map(|(ends, old, new)| ChangedEnds {
+                from: ends.from.as_str(),
+                to: ends.to.as_str(),
+                old: *old,
+                new: *new,
+            })
+            .collect(),
         added_exports: exported(&diff.added_exports),
         removed_exports: exported(&diff.removed_exports),
         changed_edges: diff
@@ -91,6 +121,12 @@ struct Document<'a> {
     added_edges: Vec<Declared<'a>>,
     removed_edges: Vec<Declared<'a>>,
     changed_edges: Vec<Changed<'a>>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    added_boundary_edges: Vec<DeclaredEnds<'a>>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    removed_boundary_edges: Vec<DeclaredEnds<'a>>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    changed_boundary_edges: Vec<ChangedEnds<'a>>,
     added_exports: Vec<Exported<'a>>,
     removed_exports: Vec<Exported<'a>>,
 }
@@ -118,6 +154,33 @@ struct Declared<'a> {
     kind: EdgeKind,
 }
 
+/// A boundary edge as JSON: its ends are ids, and the kind is one of the kinds of a node edge.
+#[derive(Serialize)]
+struct DeclaredEnds<'a> {
+    from: &'a str,
+    to: &'a str,
+    kind: EdgeKind,
+}
+
+#[derive(Serialize)]
+struct ChangedEnds<'a> {
+    from: &'a str,
+    to: &'a str,
+    old: EdgeKind,
+    new: EdgeKind,
+}
+
+fn ended(edges: &[(EdgeEnds, EdgeKind)]) -> Vec<DeclaredEnds<'_>> {
+    edges
+        .iter()
+        .map(|(ends, kind)| DeclaredEnds {
+            from: ends.from.as_str(),
+            to: ends.to.as_str(),
+            kind: *kind,
+        })
+        .collect()
+}
+
 #[derive(Serialize)]
 struct Changed<'a> {
     from: &'a NodeId,
@@ -139,11 +202,16 @@ fn declared(edges: &[(Edge, EdgeKind)]) -> Vec<Declared<'_>> {
 
 /// `a --> b` or `a -.-> b (planned)`.
 fn edge_text(edge: &Edge, kind: EdgeKind) -> String {
+    ends_text(&edge.from, &edge.to, kind)
+}
+
+/// The same for the two ends of a boundary edge, which may be nodes or boundaries.
+fn ends_text(from: &impl Display, to: &impl Display, kind: EdgeKind) -> String {
     let suffix = match kind {
         EdgeKind::Implemented => String::new(),
         _ => format!(" ({})", edge_kind_str(kind)),
     };
-    format!("{} {} {}{suffix}", edge.from, arrow(Some(kind)), edge.to)
+    format!("{from} {} {to}{suffix}", arrow(Some(kind)))
 }
 
 #[cfg(test)]
@@ -180,6 +248,7 @@ mod tests {
             ],
             added_exports: vec![(id("a"), "X".to_owned()), (id("a"), "Z".to_owned())],
             removed_exports: vec![(id("b"), "Y".to_owned())],
+            ..ContractDiff::default()
         }
     }
 

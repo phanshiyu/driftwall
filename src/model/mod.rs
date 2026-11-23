@@ -11,10 +11,12 @@ use serde::{Serialize, Serializer};
 use thiserror::Error;
 
 mod blind;
+mod boundary;
 mod map;
 mod package_rule;
 mod rules;
 
+pub use boundary::{BoundaryEdge, Cover, Declared, EdgeEnds, Endpoint};
 pub use map::{GlobError, MapGlob, MapRule, MapSite, MapTarget, Specificity};
 pub use package_rule::{PackagePattern, PackageRule, PackageRuleKind};
 pub use rules::{Budget, Layer, LayerOrder, Measure, NodeBudget, Rules, RulesSummary};
@@ -201,6 +203,20 @@ impl EdgeKind {
         )
     }
 
+    /// Whether every site `narrower` allows is allowed by `self` too, planned or solid aside: an
+    /// unrestricted edge covers any kind, `type, test` covers `type`, `test` and itself, and any
+    /// other kind covers itself.
+    #[must_use]
+    pub const fn at_least_as_wide_as(self, narrower: Self) -> bool {
+        if !self.is_restricted() {
+            return true;
+        }
+        if !narrower.is_restricted() {
+            return false;
+        }
+        (!narrower.is_type() || self.is_type()) && (!narrower.is_test() || self.is_test())
+    }
+
     /// Whether the label restricts the allowed sites (`type` or `test`).
     #[must_use]
     pub const fn is_restricted(self) -> bool {
@@ -254,6 +270,9 @@ pub struct Contract {
     pub nodes: BTreeMap<NodeId, NodeInfo>,
     /// Declared edges and whether each is enforced.
     pub edges: BTreeMap<Edge, EdgeKind>,
+    /// Edges with a boundary at one end or both, in file order. See "Boundary edges".
+    #[serde(skip)]
+    pub boundary_edges: Vec<BoundaryEdge>,
     /// Public surface per node, from `%% exports` lines. A node absent here is unrestricted, and a
     /// node present here has at least one name.
     pub surfaces: BTreeMap<NodeId, BTreeSet<String>>,
@@ -675,6 +694,8 @@ pub enum ViolationKind {
     PlannedRealized,
     /// A solid edge is realised only by test-only imports and should be declared `-->|test|`.
     TestOnlyEdge,
+    /// A node edge that a boundary edge already covers with a kind at least as wide.
+    RedundantEdge,
     /// A relative import could not be resolved to a file.
     UnresolvedImport,
     /// An import uses a symbol outside the public surface its target node declares.
@@ -878,6 +899,36 @@ pub struct EdgeSummary {
     /// is type-only: it could be declared `-->|type|`. Omitted from JSON when false.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub type_candidate: bool,
+    /// The boundary edge that allows the pair when it wins the precedence of "Boundary edges", as
+    /// opposed to a node edge or no edge. Omitted from JSON when none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub via: Option<ViaEdge>,
+}
+
+/// A boundary edge as `via` names it: its text and its line in the contract.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ViaEdge {
+    /// The edge as written, `features --> core`.
+    pub edge: String,
+    /// Its line in the contract.
+    pub line: u32,
+}
+
+/// One boundary edge as the overview presents it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct BoundaryEdgeSummary {
+    /// The importing end.
+    pub from: Endpoint,
+    /// The imported end.
+    pub to: Endpoint,
+    /// The declared kind.
+    pub kind: EdgeKind,
+    /// Its line in the contract.
+    pub line: u32,
+    /// How many pairs of nodes it covers.
+    pub covers: usize,
+    /// How many of those pairs code realises with a site the edge allows.
+    pub realised: usize,
 }
 
 /// The whole architecture at a glance: every node and every declared or observed edge.
@@ -887,6 +938,9 @@ pub struct Overview {
     pub nodes: Vec<NodeSummary>,
     /// Declared and observed edges, sorted by `(from, to)`.
     pub edges: Vec<EdgeSummary>,
+    /// The boundary edges in file order. Omitted from JSON when there are none.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub boundary_edges: Vec<BoundaryEdgeSummary>,
     /// Findings of error severity in the lint run behind this overview.
     pub errors: usize,
     /// Findings of warning severity in the lint run behind this overview.
@@ -935,6 +989,12 @@ pub struct ContractDiff {
     pub removed_edges: Vec<(Edge, EdgeKind)>,
     /// Edges both declare with a different kind, as `(edge, old kind, new kind)`, sorted.
     pub changed_edges: Vec<(Edge, EdgeKind, EdgeKind)>,
+    /// Boundary edges only the new contract declares, by their ends, sorted.
+    pub added_boundary_edges: Vec<(EdgeEnds, EdgeKind)>,
+    /// Boundary edges only the old contract declares, by their ends, sorted.
+    pub removed_boundary_edges: Vec<(EdgeEnds, EdgeKind)>,
+    /// Boundary edges both declare with a different kind, as `(ends, old kind, new kind)`, sorted.
+    pub changed_boundary_edges: Vec<(EdgeEnds, EdgeKind, EdgeKind)>,
     /// Names only the new contract exports, as `(node, name)`, sorted.
     pub added_exports: Vec<(NodeId, String)>,
     /// Names only the old contract exports, as `(node, name)`, sorted. A node that lost its whole
@@ -951,6 +1011,9 @@ impl ContractDiff {
             && self.added_edges.is_empty()
             && self.removed_edges.is_empty()
             && self.changed_edges.is_empty()
+            && self.added_boundary_edges.is_empty()
+            && self.removed_boundary_edges.is_empty()
+            && self.changed_boundary_edges.is_empty()
             && self.added_exports.is_empty()
             && self.removed_exports.is_empty()
     }

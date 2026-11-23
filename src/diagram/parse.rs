@@ -6,8 +6,8 @@ use super::error::DiagramError;
 use super::label;
 use super::rules::{self, RuleParser};
 use crate::model::{
-    Contract, Edge, EdgeKind, MapGlob, MapRule, MapTarget, NodeId, NodeInfo, PackagePattern,
-    PackageRule, PackageRuleKind, Prefix,
+    BoundaryEdge, Contract, Edge, EdgeKind, Endpoint, MapGlob, MapRule, MapTarget, NodeId,
+    NodeInfo, PackagePattern, PackageRule, PackageRuleKind, Prefix,
 };
 
 const DIRECTIONS: [&str; 4] = ["LR", "RL", "TB", "BT"];
@@ -71,6 +71,16 @@ struct PendingEdge {
     from: NodeId,
     to: NodeId,
     kind: EdgeKind,
+}
+
+/// The edges of a contract, checked.
+struct DeclaredEdges {
+    /// The edges between two nodes.
+    edges: BTreeMap<Edge, EdgeKind>,
+    /// The line of each of them.
+    edge_lines: BTreeMap<Edge, u32>,
+    /// The edges with a boundary at one end or both.
+    boundary_edges: Vec<BoundaryEdge>,
 }
 
 struct PendingExports {
@@ -378,6 +388,87 @@ impl Parser {
         Ok(())
     }
 
+    /// The node edges, their lines and the boundary edges, with every endpoint checked.
+    fn declared_edges(&self) -> Result<DeclaredEdges, DiagramError> {
+        let mut edges = BTreeMap::new();
+        let mut edge_lines: BTreeMap<Edge, u32> = BTreeMap::new();
+        let mut boundary_edges: Vec<BoundaryEdge> = Vec::new();
+        for pending in &self.edges {
+            // why: a boundary has no node form, so it is the endpoint only when no node has the id.
+            let endpoint = |id: &NodeId| {
+                if self.nodes.contains_key(id) {
+                    Ok(Endpoint::Node(id.clone()))
+                } else if self.boundaries.contains_key(id.as_str()) {
+                    Ok(Endpoint::Boundary(id.to_string()))
+                } else {
+                    Err(DiagramError::UndeclaredNode {
+                        line: pending.line,
+                        id: id.clone(),
+                    })
+                }
+            };
+            if pending.from == pending.to && !self.boundaries.contains_key(pending.from.as_str()) {
+                return Err(DiagramError::SelfEdge {
+                    line: pending.line,
+                    id: pending.from.clone(),
+                });
+            }
+            let (from, to) = (endpoint(&pending.from)?, endpoint(&pending.to)?);
+            let (Endpoint::Node(from), Endpoint::Node(to)) = (&from, &to) else {
+                for end in [&from, &to] {
+                    if let Endpoint::Boundary(id) = end
+                        && !self
+                            .nodes
+                            .values()
+                            .any(|info| info.boundary.as_deref() == Some(id.as_str()))
+                    {
+                        return Err(DiagramError::EmptyBoundary {
+                            line: pending.line,
+                            id: id.clone(),
+                        });
+                    }
+                }
+                if let Some(first) = boundary_edges
+                    .iter()
+                    .find(|declared| declared.from == from && declared.to == to)
+                {
+                    return Err(DiagramError::DuplicateEdge {
+                        line: pending.line,
+                        from,
+                        to,
+                        first_line: first.line,
+                    });
+                }
+                boundary_edges.push(BoundaryEdge {
+                    from,
+                    to,
+                    kind: pending.kind,
+                    line: pending.line,
+                });
+                continue;
+            };
+            let edge = Edge {
+                from: from.clone(),
+                to: to.clone(),
+            };
+            if let Some(first_line) = edge_lines.get(&edge) {
+                return Err(DiagramError::DuplicateEdge {
+                    line: pending.line,
+                    from: Endpoint::Node(edge.from),
+                    to: Endpoint::Node(edge.to),
+                    first_line: *first_line,
+                });
+            }
+            edge_lines.insert(edge.clone(), pending.line);
+            edges.insert(edge, pending.kind);
+        }
+        Ok(DeclaredEdges {
+            edges,
+            edge_lines,
+            boundary_edges,
+        })
+    }
+
     fn finish(self) -> Result<Contract, DiagramError> {
         if !self.header_seen {
             return Err(DiagramError::MissingHeader);
@@ -385,38 +476,11 @@ impl Parser {
         if let Some((id, line)) = self.open {
             return Err(DiagramError::UnclosedSubgraph { line, id });
         }
-        let mut edges = BTreeMap::new();
-        let mut edge_lines: BTreeMap<Edge, u32> = BTreeMap::new();
-        for pending in self.edges {
-            if pending.from == pending.to {
-                return Err(DiagramError::SelfEdge {
-                    line: pending.line,
-                    id: pending.from,
-                });
-            }
-            for endpoint in [&pending.from, &pending.to] {
-                if !self.nodes.contains_key(endpoint) {
-                    return Err(DiagramError::UndeclaredNode {
-                        line: pending.line,
-                        id: endpoint.clone(),
-                    });
-                }
-            }
-            let edge = Edge {
-                from: pending.from,
-                to: pending.to,
-            };
-            if let Some(first_line) = edge_lines.get(&edge) {
-                return Err(DiagramError::DuplicateEdge {
-                    line: pending.line,
-                    from: edge.from,
-                    to: edge.to,
-                    first_line: *first_line,
-                });
-            }
-            edge_lines.insert(edge.clone(), pending.line);
-            edges.insert(edge, pending.kind);
-        }
+        let DeclaredEdges {
+            edges,
+            edge_lines,
+            boundary_edges,
+        } = self.declared_edges()?;
         let mut surfaces = BTreeMap::new();
         for pending in self.exports {
             if !self.nodes.contains_key(&pending.node) {
@@ -437,9 +501,13 @@ impl Parser {
                 });
             }
         }
-        let rules = self
-            .rules
-            .finish(&self.nodes, &self.boundaries, &edges, &edge_lines)?;
+        let rules = self.rules.finish(
+            &self.nodes,
+            &self.boundaries,
+            &edges,
+            &edge_lines,
+            &boundary_edges,
+        )?;
         for rule in &self.package_rules {
             if !self.nodes.contains_key(&rule.node) {
                 return Err(DiagramError::UndeclaredPackagesNode {
@@ -452,6 +520,7 @@ impl Parser {
         Ok(Contract {
             nodes: self.nodes,
             edges,
+            boundary_edges,
             surfaces,
             maps: self.maps,
             rules,
@@ -814,16 +883,11 @@ mod tests {
     }
 
     #[test]
-    fn boundary_ids_are_not_nodes() {
-        let (err, line) = err_line("flowchart LR\na\nsubgraph g\nb\nend\na --> g\n");
-        assert_eq!(
-            err,
-            DiagramError::UndeclaredNode {
-                line: 6,
-                id: id("g")
-            }
-        );
-        assert_eq!(line, Some(6));
+    fn a_boundary_endpoint_is_a_boundary_edge_not_a_node_edge() {
+        let contract = parse("flowchart LR\na\nsubgraph g\nb\nend\na --> g\n").unwrap();
+        assert!(contract.edges.is_empty());
+        assert_eq!(contract.boundary_edges.len(), 1);
+        assert_eq!(contract.boundary_edges[0].line, 6);
     }
 
     #[test]
@@ -865,8 +929,8 @@ mod tests {
                     err,
                     DiagramError::DuplicateEdge {
                         line: 5,
-                        from: id("a"),
-                        to: id("b"),
+                        from: Endpoint::Node(id("a")),
+                        to: Endpoint::Node(id("b")),
                         first_line: 4
                     }
                 );

@@ -13,6 +13,7 @@ pub(super) const fn kind_str(kind: ViolationKind) -> &'static str {
         ViolationKind::StaleEdge => "stale-edge",
         ViolationKind::PlannedRealized => "planned-realized",
         ViolationKind::TestOnlyEdge => "test-only-edge",
+        ViolationKind::RedundantEdge => "redundant-edge",
         ViolationKind::UnresolvedImport => "unresolved-import",
         ViolationKind::PrivateSymbol => "private-symbol",
         ViolationKind::StaleMap => "stale-map",

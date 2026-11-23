@@ -4,7 +4,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use super::cycles::find_cycle;
 use super::error::DiagramError;
-use crate::model::{Budget, Edge, EdgeKind, LayerOrder, NodeId, NodeInfo, Rules};
+use crate::model::{
+    BoundaryEdge, Budget, Edge, EdgeKind, Endpoint, LayerOrder, NodeId, NodeInfo, Rules,
+};
 
 /// A rule directive found on a comment line, with the text after its keyword.
 pub(super) enum Directive<'a> {
@@ -227,9 +229,10 @@ impl RuleParser {
         boundaries: &BTreeMap<String, u32>,
         edges: &BTreeMap<Edge, EdgeKind>,
         edge_lines: &BTreeMap<Edge, u32>,
+        boundary_edges: &[BoundaryEdge],
     ) -> Result<Rules, DiagramError> {
         for order in &self.order {
-            check_order(order, nodes, boundaries, edges, edge_lines)?;
+            check_order(order, nodes, boundaries, edges, edge_lines, boundary_edges)?;
         }
         for (node, budget) in &self.budgets {
             if !nodes.contains_key(node) {
@@ -241,10 +244,10 @@ impl RuleParser {
             }
         }
         if let Some(line) = self.no_cycles {
-            check_node_cycles(line, nodes, edges, edge_lines)?;
+            check_node_cycles(line, nodes, edges, edge_lines, boundary_edges)?;
         }
         if let Some(line) = self.no_cycles_boundaries {
-            check_boundary_cycles(line, nodes, edges)?;
+            check_boundary_cycles(line, nodes, edges, boundary_edges)?;
         }
         Ok(Rules {
             order: self.order,
@@ -284,6 +287,7 @@ fn check_order(
     boundaries: &BTreeMap<String, u32>,
     edges: &BTreeMap<Edge, EdgeKind>,
     edge_lines: &BTreeMap<Edge, u32>,
+    boundary_edges: &[BoundaryEdge],
 ) -> Result<(), DiagramError> {
     for listed in &order.boundaries {
         if boundaries.contains_key(listed) {
@@ -307,21 +311,45 @@ fn check_order(
             .and_then(|info| info.boundary.as_deref())
             .and_then(|boundary| order.rank(boundary).map(|rank| (boundary, rank)))
     };
-    let upward = edges
+    let upward_pair = |edge: &Edge| {
+        let (from_boundary, from_rank) = rank_of(&edge.from)?;
+        let (to_boundary, to_rank) = rank_of(&edge.to)?;
+        (from_rank > to_rank).then(|| format!("`{from_boundary}` is below `{to_boundary}`"))
+    };
+    let counts = |kind: &EdgeKind| !matches!(kind, EdgeKind::Test | EdgeKind::PlannedTest);
+    let node_upward = edges
         .iter()
-        .filter(|(_, kind)| !matches!(kind, EdgeKind::Test | EdgeKind::PlannedTest))
+        .filter(|(_, kind)| counts(kind))
         .filter_map(|(edge, _)| {
-            let (from_boundary, from_rank) = rank_of(&edge.from)?;
-            let (to_boundary, to_rank) = rank_of(&edge.to)?;
-            (from_rank > to_rank).then_some((edge, from_boundary, to_boundary))
-        })
-        .min_by_key(|(edge, _, _)| edge_lines.get(*edge).copied().unwrap_or(u32::MAX));
-    match upward {
-        Some((edge, from_boundary, to_boundary)) => Err(DiagramError::UpwardArrow {
-            line: edge_lines.get(edge).copied().unwrap_or(order.line),
-            from: edge.from.clone(),
-            to: edge.to.clone(),
-            relation: format!("`{from_boundary}` is below `{to_boundary}`"),
+            Some((
+                edge_lines.get(edge).copied().unwrap_or(order.line),
+                Endpoint::Node(edge.from.clone()),
+                Endpoint::Node(edge.to.clone()),
+                upward_pair(edge)?,
+            ))
+        });
+    // why: a boundary edge is its pairs, and one upward pair makes the whole edge a contradiction.
+    let boundary_upward = boundary_edges
+        .iter()
+        .filter(|declared| counts(&declared.kind))
+        .filter_map(|declared| {
+            let relation = declared.pairs(nodes).iter().find_map(&upward_pair)?;
+            Some((
+                declared.line,
+                declared.from.clone(),
+                declared.to.clone(),
+                relation,
+            ))
+        });
+    match node_upward
+        .chain(boundary_upward)
+        .min_by_key(|(line, ..)| *line)
+    {
+        Some((line, from, to, relation)) => Err(DiagramError::UpwardArrow {
+            line,
+            from,
+            to,
+            relation,
             order_line: order.line,
         }),
         None => Ok(()),
@@ -339,16 +367,32 @@ fn check_node_cycles(
     nodes: &BTreeMap<NodeId, NodeInfo>,
     edges: &BTreeMap<Edge, EdgeKind>,
     edge_lines: &BTreeMap<Edge, u32>,
+    boundary_edges: &[BoundaryEdge],
 ) -> Result<(), DiagramError> {
     let mut graph: BTreeMap<String, BTreeSet<String>> = nodes
         .keys()
         .map(|id| (id.to_string(), BTreeSet::new()))
         .collect();
+    // why: what names a step in the message: its own line, else the first boundary edge to cover it.
+    let mut named: BTreeMap<(String, String), String> = BTreeMap::new();
     for (edge, _) in edges.iter().filter(|(_, kind)| counts_for_cycles(**kind)) {
-        graph
-            .entry(edge.from.to_string())
-            .or_default()
-            .insert(edge.to.to_string());
+        let (from, to) = (edge.from.to_string(), edge.to.to_string());
+        graph.entry(from.clone()).or_default().insert(to.clone());
+        if let Some(at) = edge_lines.get(edge) {
+            named.insert((from, to), format!("(line {at})"));
+        }
+    }
+    for declared in boundary_edges
+        .iter()
+        .filter(|declared| counts_for_cycles(declared.kind))
+    {
+        for pair in declared.pairs(nodes) {
+            let (from, to) = (pair.from.to_string(), pair.to.to_string());
+            graph.entry(from.clone()).or_default().insert(to.clone());
+            named
+                .entry((from, to))
+                .or_insert_with(|| format!("(via {}, line {})", declared.text(), declared.line));
+        }
     }
     let Some(cycle) = find_cycle(&graph) else {
         return Ok(());
@@ -357,13 +401,9 @@ fn check_node_cycles(
         .iter()
         .zip(cycle.iter().cycle().skip(1))
         .map(|(from, to)| {
-            let at = NodeId::new(from)
-                .ok()
-                .zip(NodeId::new(to).ok())
-                .and_then(|(from, to)| edge_lines.get(&Edge { from, to }));
-            at.map_or_else(
+            named.get(&(from.clone(), to.clone())).map_or_else(
                 || format!("{from} --> {to}"),
-                |at| format!("{from} --> {to} (line {at})"),
+                |at| format!("{from} --> {to} {at}"),
             )
         })
         .collect();
@@ -379,15 +419,27 @@ fn check_boundary_cycles(
     line: u32,
     nodes: &BTreeMap<NodeId, NodeInfo>,
     edges: &BTreeMap<Edge, EdgeKind>,
+    boundary_edges: &[BoundaryEdge],
 ) -> Result<(), DiagramError> {
     let boundary = |id: &NodeId| nodes.get(id)?.boundary.clone();
+    let pairs: Vec<Edge> = edges
+        .iter()
+        .filter(|(_, kind)| counts_for_cycles(**kind))
+        .map(|(edge, _)| edge.clone())
+        .chain(
+            boundary_edges
+                .iter()
+                .filter(|declared| counts_for_cycles(declared.kind))
+                .flat_map(|declared| declared.pairs(nodes)),
+        )
+        .collect();
     let mut graph: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     for info in nodes.values() {
         if let Some(name) = &info.boundary {
             graph.entry(name.clone()).or_default();
         }
     }
-    for (edge, _) in edges.iter().filter(|(_, kind)| counts_for_cycles(**kind)) {
+    for edge in &pairs {
         if let (Some(from), Some(to)) = (boundary(&edge.from), boundary(&edge.to))
             && from != to
         {

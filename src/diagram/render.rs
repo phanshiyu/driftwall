@@ -53,12 +53,20 @@ pub fn render(contract: &Contract) -> String {
         lines.extend(loose.iter().map(|(id, info)| node_line(id, info, "  ")));
     }
 
-    if !contract.edges.is_empty() {
+    if !contract.edges.is_empty() || !contract.boundary_edges.is_empty() {
         lines.push(String::new());
         for (edge, kind) in &contract.edges {
             let arrow = kind.arrow();
             lines.push(format!("  {} {arrow} {}", edge.from, edge.to));
         }
+        // why: sorted by ends, not by line, so equal contracts render byte-identically.
+        let mut boundary_edges: Vec<_> = contract.boundary_edges.iter().collect();
+        boundary_edges.sort_by_key(|declared| declared.ends());
+        lines.extend(
+            boundary_edges
+                .iter()
+                .map(|declared| format!("  {}", declared.text())),
+        );
     }
 
     let exports: Vec<String> = contract

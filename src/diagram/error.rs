@@ -2,7 +2,7 @@
 
 use thiserror::Error;
 
-use crate::model::{ModelError, NodeId};
+use crate::model::{Endpoint, ModelError, NodeId};
 
 /// A contract file used syntax outside the supported subset, or contradicted itself.
 ///
@@ -52,8 +52,8 @@ pub enum DiagramError {
         /// The reserved word used as an id.
         word: String,
     },
-    /// An edge names a node that no statement declares.
-    #[error("line {line}: edge endpoint `{id}` is not a declared node")]
+    /// An edge names a node or boundary that no statement declares.
+    #[error("line {line}: edge endpoint `{id}` is not a declared node or boundary")]
     UndeclaredNode {
         /// Line of the edge.
         line: u32,
@@ -75,12 +75,22 @@ pub enum DiagramError {
     DuplicateEdge {
         /// Line of the second edge.
         line: u32,
-        /// Importing node.
-        from: NodeId,
-        /// Imported node.
-        to: NodeId,
+        /// Importing end.
+        from: Endpoint,
+        /// Imported end.
+        to: Endpoint,
         /// Line of the first edge.
         first_line: u32,
+    },
+    /// An edge has a boundary at one end that declares no node, so it would cover nothing.
+    #[error(
+        "line {line}: boundary `{id}` declares no node, so an edge to or from it covers nothing"
+    )]
+    EmptyBoundary {
+        /// Line of the edge.
+        line: u32,
+        /// The boundary.
+        id: String,
     },
     /// An edge starts and ends at the same node.
     #[error("line {line}: self edge on `{id}`")]
@@ -215,10 +225,10 @@ pub enum DiagramError {
     UpwardArrow {
         /// Line of the edge.
         line: u32,
-        /// Importing node.
-        from: NodeId,
-        /// Imported node.
-        to: NodeId,
+        /// Importing end.
+        from: Endpoint,
+        /// Imported end.
+        to: Endpoint,
         /// What puts it upward, such as "`shared` is below `engine`".
         relation: String,
         /// Line of the `%% order` directive.
@@ -286,6 +296,7 @@ impl DiagramError {
             | Self::UndeclaredNode { line, .. }
             | Self::DuplicateNode { line, .. }
             | Self::DuplicateEdge { line, .. }
+            | Self::EmptyBoundary { line, .. }
             | Self::SelfEdge { line, .. }
             | Self::DuplicateBoundary { line, .. }
             | Self::IdClash { line, .. }

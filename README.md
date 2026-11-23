@@ -172,6 +172,7 @@ syntax and behaviour are in [docs/DESIGN.md](docs/DESIGN.md).
 | --- | --- | --- |
 | `a --> b` | `a` may depend on `b`. An arrow with no import behind it is a warning. | [Contract format](docs/DESIGN.md#contract-format) |
 | `a -.-> b` | Planned dependency, allowed until built. | [Contract format](docs/DESIGN.md#contract-format) |
+| `features --> core` | An end may be a subgraph: every node in `features` may depend on every node in `core`. Works with every arrow here. | [Boundary edges](docs/DESIGN.md#boundary-edges) |
 | `a -->\|test\| b` | `a` may use `b` from test code only. | [Test edges](docs/DESIGN.md#test-edges) |
 | `a -->\|type\| b` | `a` may use `b`'s types, not its runtime code. | [Type edges](docs/DESIGN.md#type-edges) |
 | `%% map ui: src/ui/` | Map files to a component, with no extra files. (`.arch` tag files still work.) | [Contract map](docs/DESIGN.md#contract-map--map) |

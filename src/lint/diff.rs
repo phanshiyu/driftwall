@@ -1,9 +1,9 @@
 //! Compares two versions of the contract, for reviewers of a contract change.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::diagram;
-use crate::model::{Contract, ContractDiff, Edge, EdgeKind, NodeId};
+use crate::model::{Contract, ContractDiff, Edge, EdgeEnds, EdgeKind, NodeId};
 
 use super::LintError;
 
@@ -31,7 +31,32 @@ fn diff(old: &Contract, new: &Contract) -> ContractDiff {
             .map(|(edge, kind)| (edge.clone(), *kind))
             .collect()
     };
+    let kinds_of = |contract: &Contract| -> BTreeMap<EdgeEnds, EdgeKind> {
+        contract
+            .boundary_edges
+            .iter()
+            .map(|declared| (declared.ends(), declared.kind))
+            .collect()
+    };
+    let (old_ends, new_ends) = (kinds_of(old), kinds_of(new));
+    let ends_only_in = |from: &BTreeMap<EdgeEnds, EdgeKind>,
+                        other: &BTreeMap<EdgeEnds, EdgeKind>|
+     -> Vec<(EdgeEnds, EdgeKind)> {
+        from.iter()
+            .filter(|(ends, _)| !other.contains_key(*ends))
+            .map(|(ends, kind)| (ends.clone(), *kind))
+            .collect()
+    };
     ContractDiff {
+        added_boundary_edges: ends_only_in(&new_ends, &old_ends),
+        removed_boundary_edges: ends_only_in(&old_ends, &new_ends),
+        changed_boundary_edges: old_ends
+            .iter()
+            .filter_map(|(ends, old_kind)| {
+                let new_kind = new_ends.get(ends)?;
+                (old_kind != new_kind).then(|| (ends.clone(), *old_kind, *new_kind))
+            })
+            .collect(),
         added_nodes: new
             .nodes
             .keys()

@@ -21,7 +21,7 @@ mod witness {
     use driftwall::imports::ImportsError;
     use driftwall::init::InitError;
     use driftwall::lint::LintError;
-    use driftwall::model::{GlobError, Location, MapSite, ModelError, NodeId};
+    use driftwall::model::{Endpoint, GlobError, Location, MapSite, ModelError, NodeId};
     use driftwall::ownership::{ArchProblem, OwnershipError};
     use driftwall::report::ReportError;
 
@@ -74,6 +74,7 @@ mod witness {
         UndeclaredNode,
         DuplicateNode,
         DuplicateEdge,
+        EmptyBoundary,
         SelfEdge,
         DuplicateBoundary,
         IdClash,
@@ -223,12 +224,6 @@ mod witness {
                     id: id(),
                     first_line: 2,
                 },
-                Self::DuplicateEdge {
-                    line: 8,
-                    from: id(),
-                    to: id(),
-                    first_line: 2,
-                },
                 Self::SelfEdge { line: 9, id: id() },
                 Self::DuplicateBoundary {
                     line: 10,
@@ -268,8 +263,8 @@ mod witness {
                 },
                 Self::UpwardArrow {
                     line: 13,
-                    from: id(),
-                    to: id(),
+                    from: Endpoint::Node(id()),
+                    to: Endpoint::Node(id()),
                     relation: "x".to_owned(),
                     order_line: 2,
                 },
@@ -300,8 +295,25 @@ mod witness {
             ]
             .into_iter()
             .chain(package_errors())
+            .chain(edge_errors())
             .collect()
         }
+    }
+
+    /// The variants about edges between boundaries, apart so `build` stays short.
+    fn edge_errors() -> Vec<DiagramError> {
+        vec![
+            DiagramError::DuplicateEdge {
+                line: 8,
+                from: Endpoint::Node(id()),
+                to: Endpoint::Node(id()),
+                first_line: 2,
+            },
+            DiagramError::EmptyBoundary {
+                line: 8,
+                id: "x".to_owned(),
+            },
+        ]
     }
 
     /// The variants of the package directives, apart so `build` stays short.

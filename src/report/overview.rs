@@ -7,9 +7,9 @@ use std::path::PathBuf;
 use serde::Serialize;
 
 use crate::model::{
-    BlindRef, BlindSpots, BlindSummary, BlindTally, EdgeKind, EdgeSummary, ImportKind, Layer,
-    MAX_SITES, NodeBudget, NodeSummary, NodeView, Overview, PackageSummary, RulesSummary, Site,
-    SkipReason, Symbol,
+    BlindRef, BlindSpots, BlindSummary, BlindTally, BoundaryEdgeSummary, EdgeKind, EdgeSummary,
+    ImportKind, Layer, MAX_SITES, NodeBudget, NodeSummary, NodeView, Overview, PackageSummary,
+    RulesSummary, Site, SkipReason, Symbol,
 };
 
 use super::ReportError;
@@ -25,13 +25,7 @@ use super::json::SCHEMA_VERSION;
 /// to anything ends with ` blind: ...`. The text ends with the blind spots block.
 #[must_use]
 pub fn render_overview_text(overview: &Overview) -> String {
-    let count = |holds: fn(EdgeKind) -> bool| {
-        overview
-            .edges
-            .iter()
-            .filter(|edge| edge.kind.is_some_and(holds))
-            .count()
-    };
+    let count = |holds: fn(EdgeKind) -> bool| declared_count(overview, holds);
     let implemented = count(|kind| kind == EdgeKind::Implemented);
     let planned = count(EdgeKind::is_planned);
     let test = count(|kind| kind == EdgeKind::Test);
@@ -96,6 +90,7 @@ pub fn render_overview_text(overview: &Overview) -> String {
     for edge in &overview.edges {
         let _ = writeln!(out, "  {}", edge_line(edge));
     }
+    out.push_str(&boundary_edges_block(overview));
     if !overview.rules.is_empty() {
         out.push_str("rules:\n");
         for chain in &overview.rules.order {
@@ -117,6 +112,44 @@ pub fn render_overview_text(overview: &Overview) -> String {
         &overview.unmapped_items,
         &overview.skipped_references,
     ));
+    out
+}
+
+/// How many declared edges of the kinds `holds` accepts: the node edges, plus the boundary edges.
+/// A pair a boundary edge allows is not counted as an edge of its own, the boundary edge is.
+fn declared_count(overview: &Overview, holds: fn(EdgeKind) -> bool) -> usize {
+    let node_edges = overview
+        .edges
+        .iter()
+        .filter(|edge| edge.via.is_none() && edge.kind.is_some_and(holds))
+        .count();
+    let boundary_edges = overview
+        .boundary_edges
+        .iter()
+        .filter(|declared| holds(declared.kind))
+        .count();
+    node_edges + boundary_edges
+}
+
+/// The `boundary edges:` block, one line per boundary edge, or nothing when there is none.
+fn boundary_edges_block(overview: &Overview) -> String {
+    if overview.boundary_edges.is_empty() {
+        return String::new();
+    }
+    let mut out = "boundary edges:\n".to_owned();
+    for declared in &overview.boundary_edges {
+        // why: fmt::Write into a String is infallible, so the discarded Result carries no error.
+        let _ = writeln!(
+            out,
+            "  {} {} {} (line {}): {} of {} realised",
+            declared.from,
+            declared.kind.arrow(),
+            declared.to,
+            declared.line,
+            declared.realised,
+            plural(declared.covers, "pair"),
+        );
+    }
     out
 }
 
@@ -227,6 +260,8 @@ pub fn render_overview_json(overview: &Overview) -> Result<String, ReportError> 
         summary: Summary,
         nodes: &'a [NodeSummary],
         edges: &'a [EdgeSummary],
+        #[serde(skip_serializing_if = "<[_]>::is_empty")]
+        boundary_edges: &'a [BoundaryEdgeSummary],
         blind_spots: Blind<'a>,
         #[serde(skip_serializing_if = "RulesSummary::is_empty")]
         rules: &'a RulesSummary,
@@ -248,6 +283,7 @@ pub fn render_overview_json(overview: &Overview) -> Result<String, ReportError> 
         },
         nodes: &overview.nodes,
         edges: &overview.edges,
+        boundary_edges: &overview.boundary_edges,
         blind_spots: Blind {
             summary: &overview.blind_spots,
             unmapped: &overview.unmapped,
@@ -360,8 +396,11 @@ fn edge_line(edge: &EdgeSummary) -> String {
     } else {
         String::new()
     };
+    let via = edge.via.as_ref().map_or_else(String::new, |via| {
+        format!(" via {}, line {}", via.edge, via.line)
+    });
     format!(
-        "{} {} {} {}{candidate}{undeclared}{listed}",
+        "{} {} {} {}{candidate}{via}{undeclared}{listed}",
         edge.from,
         arrow(edge.kind),
         edge.to,
@@ -494,6 +533,7 @@ mod tests {
             symbols: BTreeSet::new(),
             module: false,
             type_candidate: false,
+            via: None,
         }
     }
 
@@ -504,6 +544,7 @@ mod tests {
             unmapped_items: BlindSpots::default(),
             skipped_references: BTreeMap::new(),
             rules: RulesSummary::default(),
+            boundary_edges: Vec::new(),
             nodes: vec![
                 node("cli", &["src"], 3),
                 node("lint", &["src/lint", "src/lint2"], 1),
@@ -623,6 +664,7 @@ blind spots: none
             unmapped_items: BlindSpots::default(),
             skipped_references: BTreeMap::new(),
             rules: RulesSummary::default(),
+            boundary_edges: Vec::new(),
             nodes: vec![],
             edges: vec![
                 using(
@@ -739,6 +781,7 @@ blind spots: none
             unmapped_items: BlindSpots::default(),
             skipped_references: BTreeMap::new(),
             rules: RulesSummary::default(),
+            boundary_edges: Vec::new(),
             nodes: vec![
                 exporting(node("a", &[], 0), &["Client", "fetch"]),
                 node("b", &[], 0),
