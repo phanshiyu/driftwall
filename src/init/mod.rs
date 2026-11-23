@@ -149,7 +149,8 @@ pub fn run(
         .cloned()
         .collect();
     let excluded: BTreeSet<PathBuf> = ownership.excluded.values().flatten().cloned().collect();
-    let imports = imports::collect_with_assets(root, &files, &assets, &excluded)?;
+    let imports =
+        imports::collect_with_assets(root, &files, &assets, &ownership.asset_unmapped, &excluded)?;
     let units = detect_units(root, &files);
     let existing = Existing::of(&ownership);
     let baseline = plan(

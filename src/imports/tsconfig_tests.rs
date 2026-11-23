@@ -49,6 +49,7 @@ fn imports(files: &BTreeMap<PathBuf, String>, importer: &str, source: &str) -> V
     let env = Environment {
         known: &known,
         assets: &BTreeSet::new(),
+        unowned: &BTreeSet::new(),
         crates: &crates,
         aliases: &aliases,
         packages: &BTreeMap::new(),

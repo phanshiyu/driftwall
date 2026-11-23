@@ -18,7 +18,7 @@
 //!
 //! `include_str!`, `include_bytes!` and `include!` with a string literal embed a file relative to the
 //! importing file: a known repository file is an [`Embedded`](Resolution::Embedded) resolution that
-//! uses no symbol, anything else is skipped as a non-source embed.
+//! uses no symbol, and so is an asset a tag covers; anything else is skipped as a non-source embed.
 //!
 //! Known limitations: `#[path = "..."]` module attributes, `extern crate` renames, names that
 //! only a glob import brings in (`use crate::*; gitlab::x()`), local names that come from an
@@ -72,10 +72,17 @@ pub fn resolve(
 }
 
 /// An `include_str!("..")`, `include_bytes!("..")` or `include!("..")` of `path`, relative to the
-/// directory of `importer`. A known repository file is embedded, anything else is skipped.
+/// directory of `importer`. A known repository file or an owned asset is embedded, anything else is
+/// skipped.
 fn embed(path: &str, importer: &Path, env: &Environment<'_>) -> Resolution {
     match join_normalised(importer.parent(), path) {
-        Some(target) if env.known.contains(&target) => Resolution::Embedded { target },
+        // why: an asset some node owns is a dependency on that node, as the same file is for a TypeScript import.
+        Some(target)
+            if env.known.contains(&target)
+                || (env.assets.contains(&target) && !env.unowned.contains(&target)) =>
+        {
+            Resolution::Embedded { target }
+        }
         _ => Resolution::Skipped(SkipReason::EmbedNonSource),
     }
 }

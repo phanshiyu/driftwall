@@ -29,6 +29,7 @@ fn used_at(source: &str, file: &str) -> Vec<Used> {
     let env = Environment {
         known: &known,
         assets: &BTreeSet::new(),
+        unowned: &BTreeSet::new(),
         crates: &crates,
         aliases: &BTreeMap::new(),
         packages: &BTreeMap::new(),

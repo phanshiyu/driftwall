@@ -351,6 +351,7 @@ fn rs_with(source: &str, file: &str, repo: &[&str]) -> FileImports {
     let env = Environment {
         known: &known,
         assets: &BTreeSet::new(),
+        unowned: &BTreeSet::new(),
         crates: &library,
         aliases: &aliases,
         packages: &BTreeMap::new(),

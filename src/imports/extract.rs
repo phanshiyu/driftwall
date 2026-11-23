@@ -49,6 +49,7 @@ pub fn extract(
         &Environment {
             known,
             assets: &BTreeSet::new(),
+            unowned: &BTreeSet::new(),
             crates: &crates,
             aliases: &aliases,
             packages: &BTreeMap::new(),

@@ -40,6 +40,7 @@ fn rs_in(
     let env = Environment {
         known: &known,
         assets: &BTreeSet::new(),
+        unowned: &BTreeSet::new(),
         crates: library,
         aliases: &BTreeMap::new(),
         packages: &BTreeMap::new(),

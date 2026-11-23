@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use super::fixtures::repo;
 use super::*;
 use crate::model::ImportKind::{Embed, Runtime};
 use crate::model::SkipReason::{DynamicSpecifier, EmbedNonSource, UndeclaredPackage};
@@ -48,6 +49,7 @@ fn run(
     let env = Environment {
         known: &known,
         assets: &BTreeSet::new(),
+        unowned: &BTreeSet::new(),
         crates: &crates,
         aliases: &aliases,
         packages,
@@ -201,6 +203,7 @@ fn an_aliased_specifier_is_never_skipped_even_when_nothing_backs_it() {
     let env = Environment {
         known: &known,
         assets: &BTreeSet::new(),
+        unowned: &BTreeSet::new(),
         crates: &crates,
         aliases: &aliases,
         packages: &packages,
@@ -427,6 +430,7 @@ fn rs_at(source: &str, file: &str) -> FileImports {
     let env = Environment {
         known: &known,
         assets: &BTreeSet::new(),
+        unowned: &BTreeSet::new(),
         crates: &crates,
         aliases: &aliases,
         packages: &packages,
@@ -563,4 +567,47 @@ fn other_macros_and_computed_embeds_are_not_embeds() {
     );
     assert_eq!(got.resolved, Vec::new());
     assert_eq!(got.skipped, Vec::new());
+}
+
+#[test]
+fn an_embed_of_an_asset_a_tag_covers_is_an_embed_and_an_unowned_one_stays_skipped() {
+    let files = [
+        (
+            "src/a.rs",
+            "const A: &str = include_str!(\"../static/ui.css\");\nconst B: &str = include_str!(\"../README.md\");\nconst C: &str = include_str!(\"../nope.css\");",
+        ),
+        ("static/ui.css", "a{}"),
+        ("README.md", "x"),
+    ];
+    let repo = repo(&files);
+    let known = repo.files();
+    let unowned = BTreeSet::from([PathBuf::from("README.md")]);
+    let got = collect_with_assets(
+        repo.root(),
+        &known,
+        &repo.assets(),
+        &unowned,
+        &BTreeSet::new(),
+    )
+    .expect("collect")
+    .remove(Path::new("src/a.rs"))
+    .expect("file");
+    assert_eq!(
+        got.resolved
+            .iter()
+            .map(|import| (
+                import.at.line,
+                import.target.display().to_string(),
+                import.kind
+            ))
+            .collect::<Vec<_>>(),
+        [(1, "static/ui.css".to_owned(), ImportKind::Embed)]
+    );
+    assert_eq!(
+        skips(&got),
+        [
+            (2, "../README.md", EmbedNonSource),
+            (3, "../nope.css", EmbedNonSource)
+        ]
+    );
 }

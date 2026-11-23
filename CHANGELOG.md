@@ -108,3 +108,6 @@
   and message (text capped at 20 with `+N more, see --format json`; JSON `blind_spots.skipped_references` is
   complete). A node that owns only assets or excluded files shows them (`app: src/app.css (0 source files,
   1 asset)`); `NodeSummary` JSON gains `assets`, `neighbors` gains an `assets:` line and JSON `asset_files`.
+- Rust `include_str!`, `include_bytes!` and `include!` of a non-source file that a tag covers (`static/ui.css`,
+  icons, fonts) are `embed` edges to its owner, as a TypeScript `?raw` import is; `embed-non-source` remains
+  for a missing file, a path that leaves the repository and a file no tag covers.

@@ -25,7 +25,14 @@ fn collect_with(files: &[(&str, &str)], excluded: &[&str]) -> BTreeMap<PathBuf, 
         sources.insert(PathBuf::from(path), language);
     }
     let excluded: BTreeSet<PathBuf> = excluded.iter().map(PathBuf::from).collect();
-    collect_with_assets(dir.path(), &sources, &BTreeSet::new(), &excluded).expect("collect")
+    collect_with_assets(
+        dir.path(),
+        &sources,
+        &BTreeSet::new(),
+        &BTreeSet::new(),
+        &excluded,
+    )
+    .expect("collect")
 }
 
 #[test]

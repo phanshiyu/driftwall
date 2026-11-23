@@ -67,6 +67,7 @@ fn a_binary_reaches_lint_through_the_library_name_read_from_cargo_toml() {
     let env = Environment {
         known: &known,
         assets: &BTreeSet::new(),
+        unowned: &BTreeSet::new(),
         crates: &crates,
         aliases: &BTreeMap::new(),
         packages: &BTreeMap::new(),

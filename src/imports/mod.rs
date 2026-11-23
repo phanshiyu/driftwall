@@ -164,6 +164,9 @@ pub struct Environment<'a> {
     /// Repository-relative paths of every asset: a walked file that is not source. Only
     /// TypeScript and JavaScript resolution reads it, so that an import of one resolves.
     pub assets: &'a BTreeSet<PathBuf>,
+    /// The assets no `.arch` tag covers, a subset of `assets`. Only Rust resolution reads it: an
+    /// embed of an asset records an edge only when something owns the asset.
+    pub unowned: &'a BTreeSet<PathBuf>,
     /// Library crate name, as imported, to the repository-relative directory holding its `lib.rs`.
     /// Only Rust resolution reads it.
     pub crates: &'a BTreeMap<String, PathBuf>,
@@ -292,14 +295,20 @@ pub fn collect(
     root: &Path,
     files: &BTreeMap<PathBuf, Language>,
 ) -> Result<BTreeMap<PathBuf, FileImports>, ImportsError> {
-    collect_with_assets(root, files, &BTreeSet::new(), &BTreeSet::new())
+    collect_with_assets(
+        root,
+        files,
+        &BTreeSet::new(),
+        &BTreeSet::new(),
+        &BTreeSet::new(),
+    )
 }
 
 /// Reads and extracts every file in `files`, relative to `root`.
 ///
 /// The key set of `files` is the set of known repository files used for resolution, and `assets`
 /// the set of repository files that are not source, which a TypeScript or JavaScript import can
-/// also resolve to. `excluded` is the set of source files the scan left out (vendored, minified,
+/// also resolve to, and a Rust embed too unless it is in `unowned`. `excluded` is the set of source files the scan left out (vendored, minified,
 /// generated): they are never read, but they are known files, so an import of one resolves to it
 /// exactly like an import of any source file. Library
 /// crates are discovered once from the `Cargo.toml` files next to the known `lib.rs` files, and
@@ -314,6 +323,7 @@ pub fn collect_with_assets(
     root: &Path,
     files: &BTreeMap<PathBuf, Language>,
     assets: &BTreeSet<PathBuf>,
+    unowned: &BTreeSet<PathBuf>,
     excluded: &BTreeSet<PathBuf>,
 ) -> Result<BTreeMap<PathBuf, FileImports>, ImportsError> {
     // why: an excluded file is not read, but it is a repository file an import can name.
@@ -331,6 +341,7 @@ pub fn collect_with_assets(
     let env = Environment {
         known: &known,
         assets,
+        unowned,
         crates: &crates,
         aliases: &aliases,
         packages: &packages,

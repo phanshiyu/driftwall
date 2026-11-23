@@ -161,7 +161,8 @@ pub fn observe(root: &Path, options: &LintOptions) -> Result<Observation, LintEr
         .cloned()
         .collect();
     let excluded: BTreeSet<PathBuf> = ownership.excluded.values().flatten().cloned().collect();
-    let imports = imports::collect_with_assets(root, &files, &assets, &excluded)?;
+    let imports =
+        imports::collect_with_assets(root, &files, &assets, &ownership.asset_unmapped, &excluded)?;
 
     let report = reconcile(&contract, &ownership, &imports, &options.contract);
     let observed = observed_edges(&contract, &ownership, &imports);

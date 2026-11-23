@@ -906,8 +906,14 @@ a plain string literal embeds a file. The path is relative to the directory of t
 the macro. When it is a known repository source file, the embed is a resolved import of kind
 `embed` that uses no symbol: an embed is not a use of named items, so it is never `private-symbol`,
 and surfaces do not restrict embeds. It still counts as a dependency on that file's node, like any
-import. When the target is not a known source file (`.html`, `.css`, `.png`, a missing file, a path
-that leaves the repository), it is a skipped reference with reason `embed-non-source`.
+import. The same holds for an asset a tag covers (`.html`, `.css`, `.png`, a font, see "Asset
+files"): the embed is a resolved import of kind `embed` and a dependency on the asset's owner, as a
+TypeScript `?raw` import is (and as a TypeScript import of the file is an `asset`). An asset's owner
+that the contract does not declare is an `undeclared-owner` skipped reference, as for a TypeScript
+import. Only a target that is neither a known source file nor an owned asset stays a skipped
+reference with reason `embed-non-source`: a missing file, a path that leaves the repository, and a
+repository file no `.arch` tag covers (`architecture.mmd` at a root with no tag), which therefore
+never creates an owner, an edge or an `undeclared-owner` record, in a fresh `init` or anywhere.
 
 ### Skipped references
 
@@ -918,7 +924,7 @@ a location, the specifier as written and a typed reason (kebab-case in serializa
 | --- | --- |
 | `undeclared-package` | TypeScript or JavaScript specifier that is not relative, matches no `tsconfig` or `jsconfig` `paths` alias, is not a workspace package, is not a Node builtin and is not a declared dependency; a Python absolute import that misses below a namespace directory, a top-level directory with no `__init__.py` (see "Python resolution") |
 | `dynamic-specifier` | a shell `source` or `.` whose path has no value, see "Shell resolution"; `import(expr)` or `require(expr)` whose argument is not a string literal or a template without substitutions; Python `importlib.import_module(..)` and `__import__(..)` whose first argument is not a plain string literal, or whose relative literal has no usable package, and a Python file loader whose path is not a literal naming a known file (see "Python resolution") |
-| `embed-non-source` | a Rust embed whose target is not a known source file |
+| `embed-non-source` | a Rust embed whose target is neither a known source file nor an asset a tag covers |
 | `unreachable-module` | a Python absolute import that no import root resolves, whose top-level name matches a first-party module or package elsewhere in the repository (see "Python resolution") |
 | `alias-target-missing` | a TypeScript or JavaScript specifier that a Vite `resolve.alias` entry matches whose target path has no file in the repository (see "Vite aliases") |
 | `undeclared-owner` | an import of an asset or an excluded file whose owner is not a declared node, recorded by `lint` rather than by import extraction (see "Asset files" and "Excluded files") |

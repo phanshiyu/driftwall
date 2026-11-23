@@ -59,10 +59,26 @@ impl Repo {
         self.dir.path()
     }
 
+    /// The source files and their languages.
+    pub fn files(&self) -> BTreeMap<PathBuf, Language> {
+        self.files.clone()
+    }
+
+    /// Every asset.
+    pub fn assets(&self) -> BTreeSet<PathBuf> {
+        self.assets.clone()
+    }
+
     /// The imports of every source file.
     pub fn collect(&self) -> BTreeMap<PathBuf, FileImports> {
-        collect_with_assets(self.dir.path(), &self.files, &self.assets, &BTreeSet::new())
-            .expect("collect succeeds")
+        collect_with_assets(
+            self.dir.path(),
+            &self.files,
+            &self.assets,
+            &BTreeSet::new(),
+            &BTreeSet::new(),
+        )
+        .expect("collect succeeds")
     }
 
     /// The imports of `file`.

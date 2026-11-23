@@ -112,6 +112,26 @@ fn an_edge_of_only_embeds_is_annotated_embed() {
 }
 
 #[test]
+fn a_rust_embed_of_an_asset_another_node_owns_is_an_embed_edge() {
+    let dir = repo(&[
+        ("architecture.mmd", TWO_NODES),
+        (
+            "Cargo.toml",
+            "[package]\nname = \"x\"\nversion = \"0.1.0\"\n",
+        ),
+        ("a/.arch", "node: a\n"),
+        (
+            "a/lib.rs",
+            "pub const CSS: &str = include_str!(\"../b/ui.css\");\n",
+        ),
+        ("b/.arch", "node: b\n"),
+        ("b/lib.rs", "pub fn b() {}\n"),
+        ("b/ui.css", "a{}\n"),
+    ]);
+    assert_eq!(edge_line(&dir), "  a --> b (1 import) (embed)");
+}
+
+#[test]
 fn an_edge_with_mixed_imports_shows_counts_per_property() {
     let dir = repo(&ab(&[
         (
