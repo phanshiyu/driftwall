@@ -72,7 +72,10 @@ fn an_edge_of_only_type_imports_is_annotated_type_only() {
         "a/main.ts",
         "import type { T } from '../b/lib';\nimport { type T as U } from '../b/lib';\n",
     )]));
-    assert_eq!(edge_line(&dir), "  a --> b (2 imports) (type-only) uses: T");
+    assert_eq!(
+        edge_line(&dir),
+        "  a --> b (2 imports) (type-only) could be -->|type| uses: T"
+    );
 }
 
 #[test]

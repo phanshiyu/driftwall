@@ -80,6 +80,7 @@ mod witness {
         NestedSubgraph,
         UnclosedSubgraph,
         StrayEnd,
+        RepeatedLabelWord,
         MalformedExports,
         DuplicateExports,
         UndeclaredExportsNode,
@@ -244,6 +245,10 @@ mod witness {
                     id: "x".to_owned(),
                 },
                 Self::StrayEnd { line: 13 },
+                Self::RepeatedLabelWord {
+                    line: 13,
+                    word: "type".to_owned(),
+                },
                 Self::MalformedExports {
                     line: 14,
                     reason: "x".to_owned(),

@@ -125,13 +125,43 @@ pub enum EdgeKind {
     Test,
     /// Dotted arrow labelled `test` (`-.->|test|`): test-only imports are allowed, none is needed.
     PlannedTest,
+    /// Solid arrow labelled `type` (`-->|type|`): only type-only imports are allowed, and one must
+    /// exist, otherwise it is stale.
+    Type,
+    /// Dotted arrow labelled `type` (`-.->|type|`): type-only imports are allowed, none is needed.
+    PlannedType,
+    /// Solid arrow labelled `type, test`: type-only and test-only imports are allowed, and one
+    /// must exist, otherwise it is stale.
+    TypeTest,
+    /// Dotted arrow labelled `type, test`: type-only and test-only imports are allowed, none is
+    /// needed.
+    PlannedTypeTest,
 }
 
 impl EdgeKind {
+    /// The kind with the given restrictions: `planned` for a dotted arrow, `type_label` and
+    /// `test_label` for the words of the label.
+    #[must_use]
+    pub const fn from_parts(planned: bool, type_label: bool, test_label: bool) -> Self {
+        match (planned, type_label, test_label) {
+            (false, false, false) => Self::Implemented,
+            (true, false, false) => Self::Planned,
+            (false, false, true) => Self::Test,
+            (true, false, true) => Self::PlannedTest,
+            (false, true, false) => Self::Type,
+            (true, true, false) => Self::PlannedType,
+            (false, true, true) => Self::TypeTest,
+            (true, true, true) => Self::PlannedTypeTest,
+        }
+    }
+
     /// Whether the edge is tolerated without code (dotted).
     #[must_use]
     pub const fn is_planned(self) -> bool {
-        matches!(self, Self::Planned | Self::PlannedTest)
+        matches!(
+            self,
+            Self::Planned | Self::PlannedTest | Self::PlannedType | Self::PlannedTypeTest
+        )
     }
 
     /// The arrow the contract writes the edge with, label included.
@@ -142,13 +172,56 @@ impl EdgeKind {
             Self::Planned => "-.->",
             Self::Test => "-->|test|",
             Self::PlannedTest => "-.->|test|",
+            Self::Type => "-->|type|",
+            Self::PlannedType => "-.->|type|",
+            Self::TypeTest => "-->|type, test|",
+            Self::PlannedTypeTest => "-.->|type, test|",
         }
     }
 
-    /// Whether the edge allows only test-only imports.
+    /// Whether the label has the word `test`: test-only imports are allowed.
     #[must_use]
     pub const fn is_test(self) -> bool {
-        matches!(self, Self::Test | Self::PlannedTest)
+        matches!(
+            self,
+            Self::Test | Self::PlannedTest | Self::TypeTest | Self::PlannedTypeTest
+        )
+    }
+
+    /// Whether the label has the word `type`: type-only imports are allowed.
+    #[must_use]
+    pub const fn is_type(self) -> bool {
+        matches!(
+            self,
+            Self::Type | Self::PlannedType | Self::TypeTest | Self::PlannedTypeTest
+        )
+    }
+
+    /// Whether the label restricts the allowed sites (`type` or `test`).
+    #[must_use]
+    pub const fn is_restricted(self) -> bool {
+        self.is_test() || self.is_type()
+    }
+
+    /// Whether an import site of `kind`, `test_only` or not, is allowed on the edge: any site on an
+    /// unlabelled edge, otherwise a type-only site on a `type` edge or a test-only site on a `test`
+    /// edge (either, on `type, test`).
+    #[must_use]
+    pub fn allows(self, kind: ImportKind, test_only: bool) -> bool {
+        !self.is_restricted()
+            || (self.is_type() && kind == ImportKind::TypeOnly)
+            || (self.is_test() && test_only)
+    }
+
+    /// What the allowed sites are called in a message: `test`, `type-only` or `type-only or test`.
+    #[must_use]
+    pub const fn allowed_sites(self) -> &'static str {
+        match (self.is_type(), self.is_test()) {
+            (true, true) => "type-only or test",
+            (true, false) => "type-only",
+            (false, true) => "test",
+            (false, false) => "any",
+        }
     }
 }
 
@@ -718,6 +791,10 @@ pub struct EdgeSummary {
     /// Whether some import behind the edge uses the target module itself rather than a named
     /// symbol (`use crate::gitlab;`, `from x import sub`, `import './x'`).
     pub module: bool,
+    /// Whether the edge is declared solid and unlabelled and every one of its sites, at least one,
+    /// is type-only: it could be declared `-->|type|`. Omitted from JSON when false.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub type_candidate: bool,
 }
 
 /// The whole architecture at a glance: every node and every declared or observed edge.
@@ -858,6 +935,46 @@ mod tests {
         ];
         for diff in cases {
             assert!(!diff.is_empty(), "{diff:?}");
+        }
+    }
+
+    #[test]
+    fn edge_kinds_allow_the_sites_their_label_names() {
+        let sites = [
+            (ImportKind::Runtime, false),
+            (ImportKind::TypeOnly, false),
+            (ImportKind::Runtime, true),
+            (ImportKind::TypeOnly, true),
+        ];
+        let allowed = |kind: EdgeKind| sites.map(|(import, test)| kind.allows(import, test));
+        assert_eq!(allowed(EdgeKind::Implemented), [true; 4]);
+        assert_eq!(allowed(EdgeKind::Planned), [true; 4]);
+        assert_eq!(allowed(EdgeKind::Test), [false, false, true, true]);
+        assert_eq!(allowed(EdgeKind::Type), [false, true, false, true]);
+        assert_eq!(allowed(EdgeKind::TypeTest), [false, true, true, true]);
+        assert_eq!(
+            allowed(EdgeKind::PlannedTypeTest),
+            [false, true, true, true]
+        );
+        assert!(!EdgeKind::Type.allows(ImportKind::Embed, false));
+        assert!(!EdgeKind::Type.allows(ImportKind::Asset, false));
+    }
+
+    #[test]
+    fn edge_kinds_round_trip_through_their_parts_and_name_their_arrow() {
+        for planned in [false, true] {
+            for (is_type, is_test, arrow) in [
+                (false, false, ""),
+                (true, false, "|type|"),
+                (false, true, "|test|"),
+                (true, true, "|type, test|"),
+            ] {
+                let kind = EdgeKind::from_parts(planned, is_type, is_test);
+                assert_eq!(kind.is_planned(), planned);
+                assert_eq!((kind.is_type(), kind.is_test()), (is_type, is_test));
+                let dash = if planned { "-.->" } else { "-->" };
+                assert_eq!(kind.arrow(), format!("{dash}{arrow}"));
+            }
         }
     }
 

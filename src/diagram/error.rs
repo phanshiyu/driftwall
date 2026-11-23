@@ -167,6 +167,14 @@ pub enum DiagramError {
         /// The undeclared node.
         id: NodeId,
     },
+    /// An edge label such as `type, type` names one of its words twice.
+    #[error("line {line}: the edge label names `{word}` twice")]
+    RepeatedLabelWord {
+        /// Line of the edge.
+        line: u32,
+        /// The repeated word.
+        word: String,
+    },
     /// A `%% map` line that is not `%% map <target>: <glob>, <glob>`.
     #[error("line {line}: malformed `%% map` line: {reason}")]
     MalformedMap {
@@ -220,6 +228,7 @@ impl DiagramError {
             | Self::UndeclaredExportsNode { line, .. }
             | Self::MalformedMap { line, .. }
             | Self::DuplicateMapGlob { line, .. }
+            | Self::RepeatedLabelWord { line, .. }
             | Self::UndeclaredMapNode { line, .. } => Some(*line),
         }
     }

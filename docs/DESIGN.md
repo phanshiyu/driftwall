@@ -25,6 +25,8 @@ flowchart LR
   cli -->|label| report
   %% Test-only edge: allows only test imports, see "Test edges":
   lint -->|test| model
+  %% Type edge: allows only type-only imports, see "Type edges":
+  cli -->|type| report
 ```
 
 - Node ids match `[A-Za-z][A-Za-z0-9_-]*`. Labels are display only.
@@ -36,10 +38,15 @@ flowchart LR
 - Edge endpoints must be declared nodes. Chained edges (`a --> b --> c`) and `&` fan-out are errors.
 - `-->` is `EdgeKind::Implemented`. `-.->` is `EdgeKind::Planned`. With the label `test`
   (`-->|test|`, `-.->|test|`) they are `EdgeKind::Test` and `EdgeKind::PlannedTest`, see "Test edges".
-- Any other label is display only and ignored, as before. The word `test` is matched after trimming
-  spaces and exactly (`Test` and `tests` are plain labels). The Mermaid form with the text inside the
+- With the label `type` (`-->|type|`, `-.->|type|`) they are `EdgeKind::Type` and
+  `EdgeKind::PlannedType`, see "Type edges". The label `type, test` (either order, spaces around the
+  comma optional) is both: `EdgeKind::TypeTest` and `EdgeKind::PlannedTypeTest`. Each word is matched
+  after trimming spaces and exactly, and a label is meaningful only when every comma-separated word
+  is `type` or `test`; a word twice (`type, type`) is a contract error, not a plain label.
+- Any other label is display only and ignored, as before (`Test`, `tests` and `type, helper` are
+  plain labels). The Mermaid form with the text inside the
   arrow (`a -- test --> b`) is not supported and stays a contract error like any syntax outside the
-  subset: there is one spelling of a label, so there is one spelling of a test edge.
+  subset: there is one spelling of a label, so there is one spelling of a test or type edge.
 - A pair of nodes has at most one edge, whatever the kinds: `a --> b` with `a -->|test| b` is
   the existing duplicate-edge error. A solid edge already allows test imports, so the test edge would
   be redundant, and a test edge beside a solid one would be contradictory; an error says it clearly
@@ -78,6 +85,49 @@ dotted test edge counts as planned). In JSON the edge `kind` is `implemented`, `
 `a -->|test| b (test)`, and a change between kinds is a change, like planned to implemented. An
 edge code uses on a pair with only a test edge keeps the declared kind in `brief`; each
 production site shows as one `undeclared-edge` finding in `lint`.
+
+### Type edges
+
+A type edge, `a -->|type| b` (planned: `a -.->|type| b`), allows the dependency of `a` on `b` through
+type-only import sites only: a node may use another's types and not its runtime code. It uses the
+`kind` of every import site (see "Import kind") and mirrors "Test edges", and the findings are the
+same ones with the same hints.
+
+- A site of kind `type-only` on the pair is allowed. That is what the import kind rules classify:
+  TypeScript and JavaScript `import type`, `export type ... from`, all-`type` specifier lists,
+  imports in declaration files, `import("x")` in a type position, JSDoc type imports, and Python
+  imports inside `if TYPE_CHECKING:` (or `if typing.TYPE_CHECKING:`), which the import kind rules
+  already classify as type-only. Rust and Swift have no type-only import, so a type edge between
+  nodes written in them is never realised: every site is a finding and the edge is stale. The same
+  holds for shell, embeds and assets: their sites are `runtime`, `embed` or `asset`, not `type-only`.
+- Any other site on a pair whose only edge is a type edge (kind `runtime`, `embed` or `asset`) is an
+  `undeclared-edge` error, one finding per site, with no new kind. The message says it plainly: "...
+  but architecture.mmd declares only a type edge a -->|type| b, which allows type-only imports
+  only".
+- A solid type edge with no type-only site is `stale-edge` (the message names the arrow
+  `-->|type|`): runtime sites do not realise it, so a type edge with runtime sites only is stale as
+  well as each site being an error. A dotted type edge is tolerated without sites; when a type-only
+  site realises it, it is `planned-realized` ("promote it to `-->|type|`").
+- `type` and `test` are independent restrictions on the site, and the label `type, test` allows the
+  union: a site is allowed when it is type-only or test-only. In practice, production code may
+  import the target's types, and test code may import anything from it. `-->|type|` alone does not
+  let tests import runtime code (`a.test.ts` importing `b` at runtime is an `undeclared-edge`), and
+  `-->|test|` alone does not let production import types. A site that is test-only and type-only is
+  allowed on all three labels. `type, test` is stale when no site is type-only or test-only, and a
+  `test-only-edge` warning never applies to it. The intersection ("type-only and test-only") is not
+  a label: it adds nothing a `test` edge does not allow in practice.
+- A solid edge realised only by type imports is not a warning: whether it should be `-->|type|` is a
+  design choice, so driftwall stays quiet (the warning would force every design). `brief` and
+  `neighbors` mark such an edge instead, see below. `--strict` is unaffected.
+
+`brief` and `neighbors` draw a type edge `a -->|type| b`, `a -.->|type| b` and `a -->|type, test| b`.
+The `brief` summary line counts `implemented`, `planned` and, only when there is one, `test` and
+`type` edges: a dotted type or test edge counts as planned, and a `type, test` edge as `type`. In
+JSON the edge `kind` is `type`, `planned-type`, `type-test` or `planned-type-test` besides the four
+existing names, and `diff` writes them the same way (`a -->|type| b (type)`). An edge declared
+`-->` (solid, unrestricted) whose every site is type-only, and which has at least one site, is marked
+`could be -->|type|` after its annotations in `brief` and `neighbors` text, and has
+`"type_candidate": true` in JSON (absent otherwise), so a designer can choose to tighten it.
 
 ## Ownership
 
@@ -1265,7 +1315,7 @@ module and no symbol and adds nothing to `uses:`.
 | `unknown-node` | error | `.arch` names a node the diagram does not declare |
 | `undeclared-edge` | error | code imports across nodes and the diagram has no such edge |
 | `stale-edge` | warning | solid edge with no import backing it |
-| `planned-realized` | warning | dotted edge now backed by code, promote it to solid (a dotted test edge to `-->|test|`) |
+| `planned-realized` | warning | dotted edge now backed by code, promote it to solid (a dotted test or type edge to `-->|test|` or `-->|type|`) |
 | `test-only-edge` | warning | solid edge whose every import site is test-only, declare it `-->|test|` |
 | `unresolved-import` | warning | relative import resolves to nothing, whatever its extension; Python absolute import into a first-party package that holds no such module; shell `source` of a path that finds no file |
 | `private-symbol` | error | an import uses a symbol outside the target node's declared surface |
@@ -1273,7 +1323,8 @@ module and no symbol and adds nothing to `uses:`.
 | `ignored-tag-files` | warning | the contract has `%% map` lines and `.arch` files exist, which are not read |
 
 A dotted edge permits the import. `--strict` turns every warning into a failure. A test edge permits
-only test-only imports (see "Test edges"): a production import on it is `undeclared-edge`.
+only test-only imports (see "Test edges"): a production import on it is `undeclared-edge`. A type edge
+permits only type-only imports (see "Type edges"): a runtime import on it is `undeclared-edge`.
 
 ## init
 
@@ -1766,7 +1817,8 @@ with `why:`. The golden rule is to leave an agent as little room to err as possi
     dogfood projects carry a hand-designed contract whose violations are their real debt.
 11. M11 component rules, each one `%%` line per node, checked from the AST like edges:
     - packages: which third-party packages a node may import (only `db` imports `sqlx`);
-    - type-only edges: a node may use another's types but not its runtime code;
+    - type-only edges: a node may use another's types but not its runtime code (done: `-->|type|`,
+      see "Type edges");
     - test-only edges: production code may not import test helpers (done: `-->|test|`, see
       "Test edges"; the check is per edge, not yet per helper);
     - layer order: a node may use only nodes in lower boundaries, so arrows need not be drawn;

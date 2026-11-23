@@ -3,6 +3,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::error::DiagramError;
+use super::label;
 use crate::model::{
     Contract, Edge, EdgeKind, MapGlob, MapRule, MapTarget, NodeId, NodeInfo, Prefix,
 };
@@ -11,7 +12,6 @@ const DIRECTIONS: [&str; 4] = ["LR", "RL", "TB", "BT"];
 const RESERVED: [&str; 3] = ["end", "flowchart", "subgraph"];
 const SOLID: &str = "-->";
 const DOTTED: &str = "-.->";
-const TEST_LABEL: &str = "test";
 
 /// Parses the contract subset of Mermaid `flowchart` into a [`Contract`].
 ///
@@ -152,28 +152,24 @@ impl Parser {
         if rest.is_empty() {
             return self.declare(raw_id, None, line);
         }
-        let (kind, after_arrow) = if let Some(after) = rest.strip_prefix(DOTTED) {
-            (EdgeKind::Planned, after)
+        let (planned, after_arrow) = if let Some(after) = rest.strip_prefix(DOTTED) {
+            (true, after)
         } else if let Some(after) = rest.strip_prefix(SOLID) {
-            (EdgeKind::Implemented, after)
+            (false, after)
         } else {
             return Err(unsupported(text, line));
         };
         let mut after_arrow = after_arrow.trim_start();
-        let mut kind = kind;
+        let mut words = (false, false);
         if let Some(labelled) = after_arrow.strip_prefix('|') {
             let (label, after_label) = labelled
                 .split_once('|')
                 .ok_or_else(|| unsupported(text, line))?;
-            // why: `test` is the one label with a meaning; any other label stays display only.
-            if label.trim() == TEST_LABEL {
-                kind = match kind {
-                    EdgeKind::Planned | EdgeKind::PlannedTest => EdgeKind::PlannedTest,
-                    EdgeKind::Implemented | EdgeKind::Test => EdgeKind::Test,
-                };
-            }
+            // why: `type` and `test` are the label words with a meaning; any other label stays display only.
+            words = label::restrictions(label, line)?;
             after_arrow = after_label.trim_start();
         }
+        let kind = EdgeKind::from_parts(planned, words.0, words.1);
         let (raw_to, tail) = split_ident(after_arrow);
         if raw_to.is_empty() || !tail.is_empty() {
             return Err(unsupported(text, line));
@@ -1170,6 +1166,39 @@ mod tests {
         assert_eq!(kind("-->|Test|"), [EdgeKind::Implemented]);
         assert_eq!(kind("-->|tests|"), [EdgeKind::Implemented]);
         assert_eq!(kind("-.->|uses|"), [EdgeKind::Planned]);
+    }
+
+    #[test]
+    fn the_type_label_and_the_type_test_label_make_restricted_edges() {
+        let kind = |arrow: &str| {
+            let contract = parse(&format!("flowchart LR\na\nb\na {arrow} b\n")).unwrap();
+            contract.edges.values().copied().collect::<Vec<_>>()
+        };
+        assert_eq!(kind("-->|type|"), [EdgeKind::Type]);
+        assert_eq!(kind("-.->|type|"), [EdgeKind::PlannedType]);
+        assert_eq!(kind("-->|type, test|"), [EdgeKind::TypeTest]);
+        assert_eq!(kind("-.->|test,type|"), [EdgeKind::PlannedTypeTest]);
+        assert_eq!(kind("-->|Type|"), [EdgeKind::Implemented]);
+        assert_eq!(kind("-->|type, helper|"), [EdgeKind::Implemented]);
+    }
+
+    #[test]
+    fn a_label_naming_a_word_twice_is_a_contract_error_at_its_line() {
+        let (err, _) = err_line("flowchart LR\na\nb\na -->|type, type| b\n");
+        assert!(
+            matches!(err, DiagramError::RepeatedLabelWord { line: 4, .. }),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn type_edges_survive_a_render_round_trip() {
+        let src = "flowchart LR\na\nb\nc\nd\na -->|type| b\nb -.->|type| c\nc -->|type, test| d\n";
+        let contract = parse(src).unwrap();
+        let rendered = crate::diagram::render(&contract);
+        assert!(rendered.contains("a -->|type| b"), "{rendered}");
+        assert!(rendered.contains("c -->|type, test| d"), "{rendered}");
+        assert_eq!(parse(&rendered).unwrap(), contract);
     }
 
     #[test]

@@ -24,26 +24,30 @@ use super::json::SCHEMA_VERSION;
 /// to anything ends with ` blind: ...`. The text ends with the blind spots block.
 #[must_use]
 pub fn render_overview_text(overview: &Overview) -> String {
-    let count = |kind| {
+    let count = |holds: fn(EdgeKind) -> bool| {
         overview
             .edges
             .iter()
-            .filter(|edge| edge.kind == Some(kind))
+            .filter(|edge| edge.kind.is_some_and(holds))
             .count()
     };
-    let implemented = count(EdgeKind::Implemented);
-    let planned = count(EdgeKind::Planned) + count(EdgeKind::PlannedTest);
-    let test = count(EdgeKind::Test);
-    // why: the test count is shown only when there is one, so contracts without test edges read as before.
-    let test_part = if test == 0 {
-        String::new()
-    } else {
-        format!(", {test} test")
-    };
+    let implemented = count(|kind| kind == EdgeKind::Implemented);
+    let planned = count(EdgeKind::is_planned);
+    let test = count(|kind| kind == EdgeKind::Test);
+    let typed = count(|kind| matches!(kind, EdgeKind::Type | EdgeKind::TypeTest));
+    // why: test and type counts show only when there is one, so contracts without them read as before.
+    let mut extra = String::new();
+    // why: fmt::Write into a String is infallible, so the discarded Results carry no error.
+    if test > 0 {
+        let _ = write!(extra, ", {test} test");
+    }
+    if typed > 0 {
+        let _ = write!(extra, ", {typed} type");
+    }
     let mut out = format!(
-        "driftwall: {} nodes, {} edges ({implemented} implemented, {planned} planned{test_part}), {} errors, {} warnings\n",
+        "driftwall: {} nodes, {} edges ({implemented} implemented, {planned} planned{extra}), {} errors, {} warnings\n",
         overview.nodes.len(),
-        implemented + planned + test,
+        implemented + planned + test + typed,
         overview.errors,
         overview.warnings,
     );
@@ -266,8 +270,13 @@ fn edge_line(edge: &EdgeSummary) -> String {
     } else {
         format!(" uses: {}", capped(names.into_iter()))
     };
+    let candidate = if edge.type_candidate {
+        format!(" could be {}", EdgeKind::Type.arrow())
+    } else {
+        String::new()
+    };
     format!(
-        "{} {} {} {}{undeclared}{listed}",
+        "{} {} {} {}{candidate}{undeclared}{listed}",
         edge.from,
         arrow(edge.kind),
         edge.to,
@@ -396,6 +405,7 @@ mod tests {
             sites: lines.iter().map(|&line| site("src/x.ts", line)).collect(),
             symbols: BTreeSet::new(),
             module: false,
+            type_candidate: false,
         }
     }
 
@@ -1056,5 +1066,35 @@ blind spots: none
             render_overview_json(&sample()).unwrap(),
             render_overview_json(&sample()).unwrap()
         );
+    }
+
+    #[test]
+    fn a_solid_edge_realised_only_by_type_imports_is_marked_and_a_type_edge_counted() {
+        let mut candidate = edge("a", "b", Some(EdgeKind::Implemented), &[1]);
+        candidate.type_candidate = true;
+        candidate.sites[0].kind = ImportKind::TypeOnly;
+        let typed = edge("a", "c", Some(EdgeKind::Type), &[2]);
+        let overview = Overview {
+            nodes: vec![
+                node("a", &["a"], 1),
+                node("b", &["b"], 1),
+                node("c", &["c"], 1),
+            ],
+            edges: vec![candidate, typed],
+            ..sample()
+        };
+        let text = render_overview_text(&overview);
+        assert!(
+            text.contains("2 edges (1 implemented, 0 planned, 1 type)"),
+            "{text}"
+        );
+        assert!(
+            text.contains("a --> b (1 import) (type-only) could be -->|type|"),
+            "{text}"
+        );
+        assert!(text.contains("a -->|type| c (1 import)"), "{text}");
+        let json = render_overview_json(&overview).unwrap();
+        assert!(json.contains("\"type_candidate\": true"), "{json}");
+        assert_eq!(json.matches("type_candidate").count(), 1, "{json}");
     }
 }

@@ -141,9 +141,7 @@ fn declared(edges: &[(Edge, EdgeKind)]) -> Vec<Declared<'_>> {
 fn edge_text(edge: &Edge, kind: EdgeKind) -> String {
     let suffix = match kind {
         EdgeKind::Implemented => String::new(),
-        EdgeKind::Planned | EdgeKind::Test | EdgeKind::PlannedTest => {
-            format!(" ({})", edge_kind_str(kind))
-        }
+        _ => format!(" ({})", edge_kind_str(kind)),
     };
     format!("{} {} {}{suffix}", edge.from, arrow(Some(kind)), edge.to)
 }

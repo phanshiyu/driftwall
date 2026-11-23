@@ -5,6 +5,15 @@
 - Release: the npm package is published through npm trusted publishing (an OIDC id-token from
   `.github/workflows/publish-npm.yml`), so no `NPM_TOKEN` secret is needed. `tests/release.rs` pins
   it, and the hand fix for dist 0.34's `uses: $/` path in the generated `release.yml`.
+- Type edges: `a -->|type| b` (and the planned `a -.->|type| b`) allow the dependency from
+  type-only import sites (TypeScript `import type`, type-position `import()`, JSDoc types, Python
+  `if TYPE_CHECKING:`) and nothing else. A runtime import on a pair with only a type edge is an
+  `undeclared-edge` error that says only type-only imports are allowed; a type edge no type-only
+  import realises is `stale-edge`; a dotted one a type-only import realises is `planned-realized`.
+  The label `type, test` allows type-only or test-only sites. Rust, Swift and shell have no
+  type-only imports. There is no warning for a solid edge realised only by type imports: `brief` and
+  `neighbors` mark it `could be -->|type|` (JSON `type_candidate`). `brief`, `neighbors` and `diff`
+  show the kinds (`type`, `planned-type`, `type-test`, `planned-type-test` in JSON).
 - Contract map specificity: a glob that matches files by pattern now beats the subtree glob of
   its directory (`ui/src/components/*.test.tsx` over `ui/src/components/`, `src/*.ts` over `src/`),
   then a longer literal prefix wins (`src/a*.ts` over `src/*.ts`), then a longer literal suffix

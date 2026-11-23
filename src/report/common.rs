@@ -49,6 +49,10 @@ pub(super) const fn edge_kind_str(kind: EdgeKind) -> &'static str {
         EdgeKind::Planned => "planned",
         EdgeKind::Test => "test",
         EdgeKind::PlannedTest => "planned-test",
+        EdgeKind::Type => "type",
+        EdgeKind::PlannedType => "planned-type",
+        EdgeKind::TypeTest => "type-test",
+        EdgeKind::PlannedTypeTest => "planned-type-test",
     }
 }
 

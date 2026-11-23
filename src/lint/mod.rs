@@ -23,6 +23,8 @@ mod resolution_tests;
 mod test_edge_tests;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod type_edge_tests;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;

@@ -4,8 +4,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use crate::model::{
-    BlindSpots, Contract, DirTag, Edge, EdgeSummary, LintReport, MapTarget, NodeId, NodeSummary,
-    NodeView, Overview, Ownership, Scope, Site, Symbol, Tag,
+    BlindSpots, Contract, DirTag, Edge, EdgeKind, EdgeSummary, ImportKind, LintReport, MapTarget,
+    NodeId, NodeSummary, NodeView, Overview, Ownership, Scope, Site, Symbol, Tag,
 };
 
 /// Combines the contract, ownership, observed edges, the symbols they use and the lint report
@@ -100,6 +100,9 @@ pub fn overview(
                 sites: sites.to_vec(),
                 symbols: symbols.get(edge).cloned().unwrap_or_default(),
                 module: sites.iter().any(|site| site.module),
+                type_candidate: contract.edges.get(edge) == Some(&EdgeKind::Implemented)
+                    && !sites.is_empty()
+                    && sites.iter().all(|site| site.kind == ImportKind::TypeOnly),
             }
         })
         .collect();

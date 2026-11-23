@@ -4,6 +4,7 @@
 //! outside it is a hard [`DiagramError`] carrying a line number.
 
 mod error;
+mod label;
 mod parse;
 mod render;
 
