@@ -5,8 +5,11 @@
 //! in Rust. Blocks that are not modules (function bodies, `impl` blocks) are not scopes here:
 //! a `use` inside a function binds its name for the whole enclosing module. A name bound to two
 //! different paths in one module is ambiguous and is not followed.
+//!
+//! The one inheritance is `use super::*;` in an inline module: the module then sees the names its
+//! parent module block binds, see "Rust resolution" in `docs/DESIGN.md`.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use tree_sitter::Node;
 
@@ -19,6 +22,8 @@ pub struct Bindings<'s> {
     /// Inline module names, outermost first (empty for the file's own module), to each bound name
     /// and the path it stands for. `None` marks a name bound to more than one path.
     by_module: BTreeMap<Vec<&'s str>, BTreeMap<&'s str, Option<WrittenPath<'s>>>>,
+    /// The inline module chains that hold a `use super::*;`.
+    inherits: BTreeSet<Vec<&'s str>>,
 }
 
 impl<'s> Bindings<'s> {
@@ -48,12 +53,31 @@ impl<'s> Bindings<'s> {
         bindings
     }
 
-    /// The path `name` stands for in the module block `inline`, if exactly one path was bound.
-    pub fn get<'b>(&'b self, inline: &[&'s str], name: &str) -> Option<&'b WrittenPath<'s>> {
-        self.by_module
-            .get(inline)
-            .and_then(|names| names.get(name))
-            .and_then(Option::as_ref)
+    /// The path `name` stands for in the module block `inline`, if exactly one path was bound,
+    /// written as it reads inside `inline`. A name the module does not bind is looked up in its
+    /// parent when the module has a `use super::*;`, and `use super::name;` stands for whatever
+    /// the parent binds `name` to.
+    #[must_use]
+    pub fn get(&self, inline: &[&'s str], name: &str) -> Option<WrittenPath<'s>> {
+        let parent = inline.split_last().map(|(_, parent)| parent);
+        let inherited = |name: &str| {
+            parent
+                .and_then(|parent| self.get(parent, name))
+                .map(|path| path.seen_from_child())
+        };
+        match self.by_module.get(inline).and_then(|names| names.get(name)) {
+            Some(bound) => {
+                let path = bound.as_ref()?;
+                // why: `use super::depgraph;` re-imports the parent's binding, which a plain path cannot name.
+                Some(
+                    path.super_item()
+                        .and_then(inherited)
+                        .unwrap_or_else(|| path.clone()),
+                )
+            }
+            None if self.inherits.contains(inline) => inherited(name),
+            None => None,
+        }
     }
 
     fn add_use(&mut self, node: Node<'_>, source: &'s str) {
@@ -62,7 +86,9 @@ impl<'s> Bindings<'s> {
         };
         let inline = enclosing_modules(node, source);
         for leaf in use_leaves(argument, source) {
-            if let Some(name) = leaf.binding {
+            if leaf.path.is_super_glob() && !inline.is_empty() {
+                self.inherits.insert(inline.clone());
+            } else if let Some(name) = leaf.binding {
                 self.bind(&inline, name, leaf.path);
             }
         }

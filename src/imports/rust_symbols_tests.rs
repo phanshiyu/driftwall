@@ -402,10 +402,65 @@ fn a_module_name_in_a_macro_argument_resolves_through_its_binding() {
 }
 
 #[test]
-fn an_inline_test_module_with_a_super_glob_still_makes_no_edge() {
+fn an_inline_module_with_a_super_glob_inherits_the_parent_bindings() {
     assert_eq!(
         used_at(
             "use crate::gitlab;\nmod tests { use super::*; fn t() { gitlab::fetch(); } }",
+            "src/lint/mod.rs"
+        ),
+        [entry(1, GITLAB, &[]), entry(2, GITLAB, &["fetch"])]
+    );
+}
+
+#[test]
+fn a_super_glob_sees_self_aliases_renames_and_mod_declarations() {
+    let source = "use crate::gitlab::{self as gl};\nuse crate::model as m;\nmod tests {\n    use super::*;\n    fn t() { gl::fetch(); m::A; }\n}";
+    assert_eq!(
+        used_at(source, "src/lint/mod.rs"),
+        [
+            entry(1, GITLAB, &[]),
+            entry(2, "src/model/mod.rs", &[]),
+            entry(5, GITLAB, &["fetch"]),
+            entry(5, "src/model/mod.rs", &["A"]),
+        ]
+    );
+    assert_eq!(
+        used_at(
+            "mod rules;\nmod tests { use super::*; fn t() { rules::f(); } }",
+            "src/lint/mod.rs"
+        ),
+        [entry(2, "src/lint/rules.rs", &["f"])]
+    );
+}
+
+#[test]
+fn use_super_name_re_imports_the_parent_binding() {
+    let source = "use crate::gitlab;\nmod tests {\n    use super::gitlab;\n    fn t() { gitlab::fetch(); }\n}";
+    assert_eq!(
+        used_at(source, "src/lint/mod.rs"),
+        [entry(1, GITLAB, &[]), entry(4, GITLAB, &["fetch"])]
+    );
+}
+
+#[test]
+fn a_super_glob_chains_and_its_own_binding_wins() {
+    let chained = "use crate::gitlab;\nmod a { use super::*; mod b { use super::*; fn t() { gitlab::f(); } } }";
+    assert_eq!(
+        used_at(chained, "src/lint/mod.rs"),
+        [entry(1, GITLAB, &[]), entry(2, GITLAB, &["f"])]
+    );
+    let own = "use crate::gitlab;\nmod a { use super::*; use crate::model as gitlab; fn t() { gitlab::A; } }";
+    assert_eq!(
+        used_at(own, "src/lint/mod.rs"),
+        [entry(1, GITLAB, &[]), entry(2, "src/model/mod.rs", &["A"])]
+    );
+}
+
+#[test]
+fn a_module_without_a_super_glob_inherits_nothing() {
+    assert_eq!(
+        used_at(
+            "use crate::gitlab;\nmod tests { fn t() { gitlab::fetch(); } }",
             "src/lint/mod.rs"
         ),
         [entry(1, GITLAB, &[])]

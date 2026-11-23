@@ -19,9 +19,10 @@
 //! list of import roots: the importer's own directory when it is not a package, the roots a project
 //! configures (see `python_config`), the repository root and `src/`; see `python`. `.pyi` stubs are
 //! not supported. For Rust, see
-//! `rust`'s limitations: `#[path]` modules, `extern crate` renames and names that only a glob
-//! import brings in are not followed. A path that starts with a module name the same file brought
-//! into scope with `use` or `mod name;` is followed.
+//! `rust`'s limitations, listed in "Rust resolution" in `docs/DESIGN.md`: `#[path]` modules,
+//! `extern crate` renames and names that only a glob import brings in are not followed. A path that
+//! starts with a module name the same file brought into scope with `use` or `mod name;` is
+//! followed, also in an inline module through `use super::*;`.
 //!
 //! Every resolved import also records the symbols it uses from its target, from syntax only (see
 //! `ResolvedImport::symbols`). Imports of one file on one line collapse by target and union their

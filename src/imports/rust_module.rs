@@ -86,6 +86,42 @@ impl<'s> WrittenPath<'s> {
         self.names_module && !self.glob
     }
 
+    /// Whether the path is exactly `use super::*`: the glob of the parent module.
+    #[must_use]
+    pub fn is_super_glob(&self) -> bool {
+        self.glob && self.segments == [Segment::Super]
+    }
+
+    /// The name `n` when the path is exactly `super::n` and not a glob.
+    #[must_use]
+    pub const fn super_item(&self) -> Option<&'s str> {
+        match (self.segments.as_slice(), self.glob) {
+            ([Segment::Super, Segment::Name(name)], false) => Some(name),
+            _ => None,
+        }
+    }
+
+    /// This path, written relative to a module, as it reads from an inline module directly
+    /// inside it: `self::a` becomes `super::a`, `super::a` becomes `super::super::a`, and a path
+    /// that starts with `crate` or a name is unchanged.
+    #[must_use]
+    pub fn seen_from_child(&self) -> Self {
+        let mut segments = self.segments.clone();
+        // why: `self::a` read from the child is `super::a`, and `super::a` is one level further up.
+        match segments.first() {
+            Some(Segment::SelfModule) => {
+                segments.remove(0);
+                segments.insert(0, Segment::Super);
+            }
+            Some(Segment::Super) => segments.insert(0, Segment::Super),
+            _ => {}
+        }
+        Self {
+            segments,
+            ..self.clone()
+        }
+    }
+
     /// The name the path ends in, or `None` when it ends in `crate`, `self` or `super` or is empty.
     pub fn last_name(&self) -> Option<&'s str> {
         match self.segments.last()? {

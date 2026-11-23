@@ -20,9 +20,13 @@
 //! importing file: a known repository file is an [`Embedded`](Resolution::Embedded) resolution that
 //! uses no symbol, and so is an asset a tag covers; anything else is skipped as a non-source embed.
 //!
-//! Known limitations: `#[path = "..."]` module attributes, `extern crate` renames, names that
-//! only a glob import brings in (`use crate::*; gitlab::x()`), local names that come from an
-//! inline `mod name { }`, and macro-generated paths are not followed.
+//! An inline module with `use super::*;` also sees the names its parent module block binds.
+//!
+//! Known limitations, listed in "Rust resolution" in `docs/DESIGN.md`: `#[path = "..."]` module
+//! attributes, `extern crate` renames, names that only a glob import brings in
+//! (`use crate::*; gitlab::x()`), the `use` items a separate-file child inherits through
+//! `use super::*;`, local names that come from an inline `mod name { }`, and macro-generated paths
+//! are not followed.
 
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -106,7 +110,7 @@ fn through_bindings<'s>(
                 .target(site, env)
                 .is_some_and(|(_, used)| used == Symbol::All) =>
         {
-            path.with_first_replaced(prefix)
+            path.with_first_replaced(&prefix)
         }
         _ => path.clone(),
     }

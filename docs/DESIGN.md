@@ -277,7 +277,7 @@ declare at the `node: *` line of its `.arch` file.
   resolution" below, Svelte and HTML under "Svelte and HTML" (their scripts resolve exactly like
   TypeScript and JavaScript). Python handles relative imports, `__init__.py`, and absolute imports against
   an ordered list of import roots, see "Python resolution" below. Rust handles `use crate::`, `use super::`, and `mod` declarations are
-  containment, not edges.
+  containment, not edges; see "Rust resolution" below.
   Swift imports resolve through the targets of `Package.swift` (see "Swift resolution") and shell
   `source` commands through literal and script-relative paths (see "Shell resolution").
 - Extraction is tree-sitter based and driven by a per-language table (extensions, grammar, query),
@@ -606,6 +606,33 @@ path (a name, a call such as `os.path.join(..)`, a glob or format string, an abs
 that is not known) is skipped as `dynamic-specifier`, with the source text of the argument as
 specifier; a literal that finds no file is not `unresolved-import`, because the file may be made at
 run time or live outside the repository.
+
+### Rust resolution
+
+A Rust path is a dependency when it starts with `crate`, `self`, `super` or the name of a library
+crate in the repository, and the file that holds the item it names is another repository file. The
+file is the longest prefix of the path that names a module file; `mod foo;` is containment and is
+not an edge. A path that finds no module file falls back to the crate root file.
+
+- **Names in scope.** A path may start with a name the same file brought into scope with `use`
+  (`use crate::gitlab;`, `use crate::gitlab as gl;`, `self` in a group) or `mod name;`. It resolves
+  through that binding only when the binding stands for a repository module file. A name bound
+  twice to different paths in one module is ambiguous and is not followed, and a binding is never
+  followed through another binding. A `use` inside a function binds for the whole enclosing module.
+- **Scope is per module block.** A binding is visible in the module block that declares it and in
+  no other: an inline `mod tests { }` does not inherit the names of the file around it.
+- **Glob from the parent.** An inline `mod` that contains `use super::*;` sees every name its
+  parent module block binds, including names the parent got by a glob of its own, `self` module
+  aliases and renamed (`as`) items. `use super::name;` and `use super::{a, b}` bind `name` to
+  what the parent binds. A name the child binds itself wins over the glob. A call site reached
+  this way is recorded like any other, so a call in `#[cfg(test)] mod tests` is `test_only`.
+  Limits: only a glob of exactly one `super` is followed (`use super::super::*;` is not), and a
+  module in a separate file (`mod tests;` with `use super::*;` in `tests.rs`) does not inherit the
+  `use` declarations of the parent file, since a file is read on its own.
+- **`#[path = ".."]`** is not followed.
+- **Not followed:** `extern crate` renames, names that only a glob of a non-module brings in
+  (`use crate::*; gitlab::x()`), local names from an inline `mod name { }`, and macro-generated
+  paths.
 
 ### Swift resolution
 

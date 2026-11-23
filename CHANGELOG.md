@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Rust: an inline module that has `use super::*;` (typically `#[cfg(test)] mod tests`) sees the
+  names its parent binds, so `depgraph::build(..)` after `use crate::depgraph;` is recorded there
+  (test-only inside `cfg(test)`). `use super::name;` re-imports the parent's binding.
 - Initial proof of concept: contract parser, ownership tags, TypeScript, JavaScript, Python and
   Rust import extraction, `lint`, `init` and `where`.
 - `brief`, `neighbors` and `diff`: a deterministic map of the architecture for agents, and a
