@@ -37,9 +37,10 @@ pub struct Layer {
 /// What the contract's rule directives say, as the overview presents them.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct RulesSummary {
-    /// The boundaries of `%% order`, top first. Empty, and omitted from JSON, without one.
+    /// The chains of the `%% order` lines in file order, each with its boundaries top first.
+    /// Empty, and omitted from JSON, without one.
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub order: Vec<String>,
+    pub order: Vec<Vec<String>>,
     /// Whether the contract has `%% no-cycles`. Omitted from JSON when false.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub no_cycles: bool,
@@ -69,24 +70,26 @@ impl Rules {
         RulesSummary {
             order: self
                 .order
-                .as_ref()
+                .iter()
                 .map(|order| order.boundaries.clone())
-                .unwrap_or_default(),
+                .collect(),
             no_cycles: self.no_cycles.is_some(),
             no_cycles_boundaries: self.no_cycles_boundaries.is_some(),
             tests_isolated: self.tests_isolated.is_some(),
         }
     }
 
-    /// Where a node declared in `boundary` sits in the layer order, if it is listed.
+    /// Where a node declared in `boundary` sits in the layer order: its place in the first chain
+    /// that lists the boundary, if any does.
     #[must_use]
     pub fn layer(&self, boundary: Option<&str>) -> Option<Layer> {
-        let order = self.order.as_ref()?;
         let boundary = boundary?;
-        Some(Layer {
-            boundary: boundary.to_owned(),
-            rank: order.rank(boundary)?,
-            of: order.boundaries.len(),
+        self.order.iter().find_map(|order| {
+            Some(Layer {
+                boundary: boundary.to_owned(),
+                rank: order.rank(boundary)?,
+                of: order.boundaries.len(),
+            })
         })
     }
 }
@@ -157,8 +160,8 @@ impl NodeBudget {
 /// The rule directives of a contract. Every field is absent when the contract has no such line.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct Rules {
-    /// `%% order: ...`, see "Layer order".
-    pub order: Option<LayerOrder>,
+    /// The `%% order: ...` lines in file order, each an independent chain, see "Layer order".
+    pub order: Vec<LayerOrder>,
     /// The line of `%% no-cycles`, see "No cycles".
     pub no_cycles: Option<u32>,
     /// The line of `%% no-cycles: boundaries`, see "No cycles".
@@ -173,7 +176,7 @@ impl Rules {
     /// Whether the contract has no rule directive at all.
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.order.is_none()
+        self.order.is_empty()
             && self.no_cycles.is_none()
             && self.no_cycles_boundaries.is_none()
             && self.budgets.is_empty()

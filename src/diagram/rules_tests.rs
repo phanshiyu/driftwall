@@ -27,7 +27,7 @@ fn error(src: &str) -> DiagramError {
 #[test]
 fn an_order_line_lists_boundaries_top_first() {
     let contract = parse(&with("  %% order: entry > engine > shared\n")).unwrap();
-    let order = contract.rules.order.unwrap();
+    let order = contract.rules.order[0].clone();
     assert_eq!(order.boundaries, ["entry", "engine", "shared"]);
     assert_eq!(order.line, 12);
     assert_eq!(order.rank("engine"), Some(1));
@@ -75,21 +75,70 @@ fn an_order_that_names_a_node_says_it_is_not_a_boundary() {
 }
 
 #[test]
-fn a_second_order_line_is_a_contract_error_naming_the_first() {
+fn several_order_lines_are_independent_chains() {
+    let contract = parse(&with(
+        "  %% order: entry > engine\n  %% order: engine > shared\n  %% order: entry > shared\n",
+    ))
+    .unwrap();
+    let lines: Vec<u32> = contract.rules.order.iter().map(|o| o.line).collect();
+    assert_eq!(lines, [12, 13, 14]);
+    let rendered = render(&contract);
+    assert_eq!(rendered.matches("  %% order: ").count(), 3, "{rendered}");
+    let again: Vec<Vec<String>> = parse(&rendered)
+        .unwrap()
+        .rules
+        .order
+        .into_iter()
+        .map(|o| o.boundaries)
+        .collect();
+    let first: Vec<Vec<String>> = contract
+        .rules
+        .order
+        .into_iter()
+        .map(|o| o.boundaries)
+        .collect();
+    assert_eq!(again, first);
+}
+
+#[test]
+fn disjoint_chains_and_a_single_shared_boundary_agree() {
+    let src = "flowchart LR
+  subgraph a[\"A\"]
+    n1
+  end
+  subgraph b[\"B\"]
+    n2
+  end
+  subgraph c[\"C\"]
+    n3
+  end
+  subgraph d[\"D\"]
+    n4
+  end
+  %% order: a > b
+  %% order: c > d
+  %% order: b > c
+";
+    assert_eq!(parse(src).unwrap().rules.order.len(), 3);
+}
+
+#[test]
+fn chains_that_contradict_are_a_contract_error_naming_both_lines() {
     let err = error(&with(
-        "%% order: entry > shared\n%% order: shared > entry\n",
+        "%% order: entry > engine > shared\n%% order: shared > entry\n",
     ));
-    assert!(
-        matches!(
-            &err,
-            DiagramError::DuplicateRule {
-                line: 13,
-                first_line: 12,
-                ..
-            }
-        ),
-        "{err:?}"
-    );
+    assert_eq!(err.line(), Some(13), "{err}");
+    let text = err.to_string();
+    assert!(text.contains("line 12"), "{text}");
+    assert!(text.contains("`shared` is below `entry` there"), "{text}");
+}
+
+#[test]
+fn an_upward_arrow_is_checked_against_every_chain() {
+    let err = error(&with(
+        "%% order: entry > engine\n%% order: engine > shared\n  model --> lint\n",
+    ));
+    assert!(matches!(err, DiagramError::UpwardArrow { .. }), "{err}");
 }
 
 #[test]
@@ -158,7 +207,7 @@ fn the_order_survives_a_render_round_trip() {
     );
     let again = parse(&rendered).unwrap();
     assert_eq!(
-        again.rules.order.unwrap().boundaries,
+        again.rules.order[0].boundaries,
         ["entry", "engine", "shared"]
     );
     assert_eq!(again.nodes.len(), 4);

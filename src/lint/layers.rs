@@ -12,24 +12,26 @@ pub(super) fn upward_findings(
     contract: &Contract,
     crossings: &[(Edge, &ResolvedImport)],
 ) -> Vec<Violation> {
-    let Some(order) = &contract.rules.order else {
-        return Vec::new();
-    };
-    let layer = |node| {
-        let boundary = contract.nodes.get(node)?.boundary.as_deref()?;
-        Some((boundary, order.rank(boundary)?))
-    };
+    // why: agreeing chains say the same of a pair, so the first upward chain speaks for all.
     crossings
         .iter()
         .filter_map(|(edge, import)| {
-            let (from_boundary, from_rank) = layer(&edge.from)?;
-            let (to_boundary, to_rank) = layer(&edge.to)?;
+            let (order, from_boundary, to_boundary) =
+                contract.rules.order.iter().find_map(|order| {
+                    let layer = |node| {
+                        let boundary = contract.nodes.get(node)?.boundary.as_deref()?;
+                        Some((boundary, order.rank(boundary)?))
+                    };
+                    let (from_boundary, from_rank) = layer(&edge.from)?;
+                    let (to_boundary, to_rank) = layer(&edge.to)?;
+                    (from_rank > to_rank).then_some((order, from_boundary, to_boundary))
+                })?;
             let exempt = import.test_only
                 && matches!(
                     contract.edges.get(edge),
                     Some(EdgeKind::Test | EdgeKind::PlannedTest)
                 );
-            (from_rank > to_rank && !exempt).then(|| {
+            (!exempt).then(|| {
                 violation(
                     ViolationKind::UpwardEdge,
                     Some(import.at.clone()),
@@ -67,16 +69,18 @@ mod tests {
             ("low", Some("down")),
             ("side", Some("down")),
             ("free", None),
+            ("east", Some("e")),
+            ("west", Some("w")),
         ] {
             contract.nodes.insert(node(id), boundary(boundary_of));
         }
         for &(from, to, kind) in edges {
             contract.edges.insert(edge(from, to), kind);
         }
-        contract.rules.order = Some(LayerOrder {
+        contract.rules.order = vec![LayerOrder {
             line: 9,
             boundaries: vec!["up".to_owned(), "down".to_owned()],
-        });
+        }];
         contract
     }
 
@@ -87,6 +91,8 @@ mod tests {
                 ("low/a.ts", "low"),
                 ("side/a.ts", "side"),
                 ("free/a.ts", "free"),
+                ("east/a.ts", "east"),
+                ("west/a.ts", "west"),
             ]
             .into_iter()
             .map(|(file, owner)| (PathBuf::from(file), node(owner)))
@@ -163,9 +169,40 @@ mod tests {
     }
 
     #[test]
+    fn each_chain_constrains_only_the_boundaries_it_lists() {
+        let mut contract = layered(&[]);
+        contract.rules.order.push(LayerOrder {
+            line: 10,
+            boundaries: vec!["e".to_owned(), "w".to_owned()],
+        });
+        let upward = found(&contract, "west", "east", false);
+        assert_eq!(upward.len(), 1);
+        assert!(
+            upward[0].message.contains("line 10"),
+            "{}",
+            upward[0].message
+        );
+        assert_eq!(found(&contract, "east", "west", false), Vec::new());
+        // why: no chain lists `down` and `e` together.
+        assert_eq!(found(&contract, "low", "east", false), Vec::new());
+        assert_eq!(found(&contract, "east", "low", false), Vec::new());
+        assert_eq!(found(&contract, "low", "top", false).len(), 1);
+    }
+
+    #[test]
+    fn a_site_upward_in_two_agreeing_chains_is_one_finding() {
+        let mut contract = layered(&[]);
+        contract.rules.order.push(LayerOrder {
+            line: 10,
+            boundaries: vec!["up".to_owned(), "down".to_owned()],
+        });
+        assert_eq!(found(&contract, "low", "top", false).len(), 1);
+    }
+
+    #[test]
     fn no_order_means_no_findings() {
         let mut contract = layered(&[]);
-        contract.rules.order = None;
+        contract.rules.order.clear();
         assert_eq!(found(&contract, "low", "top", false), Vec::new());
     }
 }

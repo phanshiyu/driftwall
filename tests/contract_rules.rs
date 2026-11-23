@@ -135,10 +135,32 @@ fn brief_and_neighbors_show_the_layer_and_the_order() {
     let value = json(&driftwall(&dir, &["brief", "--format", "json"]));
     assert_eq!(
         value["rules"]["order"],
-        serde_json::json!(["entry", "core"])
+        serde_json::json!([["entry", "core"]])
     );
     assert_eq!(value["nodes"][1]["layer"]["boundary"], "core");
     assert_eq!(value["nodes"][1]["layer"]["rank"], 1);
+}
+
+#[test]
+fn several_chains_are_checked_separately_and_all_shown() {
+    let dir = layered("  %% order: entry > core\n  %% order: core > entry\n", true);
+    assert_eq!(code(&driftwall(&dir, &["lint"])), 2);
+    let dir = layered(
+        "  %% order: entry > core\n  %% order: core > mid\n  subgraph mid[\"Mid\"]\n    m\n  end\n",
+        true,
+    );
+    let out = driftwall(&dir, &["lint", "--format", "json"]);
+    assert_eq!(kinds(&json(&out)), ["undeclared-edge", "upward-edge"]);
+    let text = stdout(&driftwall(&dir, &["brief"]));
+    assert!(
+        text.contains("rules:\n  order: entry > core\n  order: core > mid\n"),
+        "{text}"
+    );
+    let value = json(&driftwall(&dir, &["brief", "--format", "json"]));
+    assert_eq!(
+        value["rules"]["order"],
+        serde_json::json!([["entry", "core"], ["core", "mid"]])
+    );
 }
 
 #[test]

@@ -150,17 +150,28 @@ entry points, to the bottom, the foundations. A node may depend on nodes in its 
 a lower listed boundary, or in none: it may not depend on a node in a higher listed boundary, so a
 contract need not draw every arrow to forbid the wrong direction.
 
-- Every id must be a declared `subgraph` (a node id, an undeclared id, an id listed twice, and
-  fewer than two ids are contract errors). One `%% order` line per contract.
+- Every id must be a declared `subgraph` (a node id, an undeclared id, an id listed twice in one
+  line, and fewer than two ids are contract errors).
+- Several chains. A contract may have several `%% order` lines, each an independent chain: a repo
+  with a Node CLI stack and a Rust engine stack, or a Node program and a browser page, orders each
+  stack on its own line and says nothing about how the stacks relate. A boundary may be listed in
+  more than one chain only if the chains agree: for every two boundaries two chains both list, both
+  put the same one above. A chain that puts them the other way is a contract error at its line
+  naming the earlier line: `%% order` on line 14 contradicts the one on line 12: `b` is below `a`
+  there but above it here. Only boundaries two chains share are compared: chains are not merged, so
+  `a > b` and `b > c` say nothing about `a` and `c`.
 - Nodes in the same boundary, and nodes in no listed boundary (declared outside every `subgraph`,
-  or in an unlisted one) are unconstrained by this rule, in both directions.
+  or in an unlisted one) are unconstrained by this rule, in both directions. So are two nodes whose
+  boundaries no one chain lists together: the check applies per chain, and a pair is constrained
+  only by a chain that lists both of its boundaries.
 - Every import site that crosses from a node in a lower listed boundary to a node in a higher
-  one is an `upward-edge` error at the site, whatever the contract declares: an arrow does not
-  excuse it. One finding per site, like `undeclared-edge`, and an undeclared pair is both: the
+  one in some chain is an `upward-edge` error at the site, whatever the contract declares: an arrow
+  does not excuse it. One finding per site (when chains agree, every chain listing both boundaries
+  says the same, and the message names the first such chain's line), like `undeclared-edge`, and an undeclared pair is both: the
   missing edge and the wrong direction are two findings with two fixes. The message names the two
   nodes and boundaries.
-- A declared arrow that points upward (dotted ones too) is a contract error at its line, naming the
-  order line: the contract contradicts itself, so there is no lint to run. The exception is a
+- A declared arrow that points upward in some chain (dotted ones too) is a contract error at its
+  line, naming the order line: the contract contradicts itself, so there is no lint to run. The exception is a
   `-->|test|` or `-.->|test|` edge, see below. A type edge (`|type|`, `|type, test|`) is not an
   exception: a type-only import is a dependency, and the layer order forbids it too.
 - Test sites. A site that is test-only (see "Import kind") is exempt only when the pair has a test
@@ -2048,11 +2059,11 @@ needs a valid contract: with none, `where` answers as before and lists nothing.
   A `scope: here` group is a plain tag: its directory. The rule reads only the source files the
   node owns and the tags, so it is the same in `brief`, `neighbors` and JSON, and for every run.
 - A contract with rule directives (see "Contract rules") adds to `brief`: a `rules:` block after the
-  edges, one line per directive (`  order: entry > engine > shared`, `  no-cycles`,
+  edges, one line per directive (`  order: entry > engine > shared`, one line per `%% order` chain, `  no-cycles`,
   `  no-cycles: boundaries`, `  tests: isolated`), and for a node in a listed
-  boundary ` layer: engine (2 of 3)` and for a node with a budget ` budget: fan-out 3/5, files 21/20
+  boundary ` layer: engine (2 of 3)` (the place in the first chain that lists the boundary) and for a node with a budget ` budget: fan-out 3/5, files 21/20
   over` at the end of its line, before the blind spots. In JSON the
-  document has `rules` (`order`, the boundaries top first; `no_cycles` and `no_cycles_boundaries`,
+  document has `rules` (`order`, a list of chains, each the boundaries top first; `no_cycles` and `no_cycles_boundaries`,
   `true` when the line is there; `tests_isolated`) and the node has `layer` (`boundary`,
   `rank` from 0 at the top, `of`); both are absent when the contract has no such rule, so a contract
   without rule directives reads as before. `neighbors` prints the same `layer:` and `budget:` lines after `dirs:`.

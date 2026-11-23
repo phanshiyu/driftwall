@@ -98,8 +98,8 @@ pub fn render_overview_text(overview: &Overview) -> String {
     }
     if !overview.rules.is_empty() {
         out.push_str("rules:\n");
-        if !overview.rules.order.is_empty() {
-            let _ = writeln!(out, "  order: {}", overview.rules.order.join(" > "));
+        for chain in &overview.rules.order {
+            let _ = writeln!(out, "  order: {}", chain.join(" > "));
         }
         if overview.rules.no_cycles {
             out.push_str("  no-cycles\n");

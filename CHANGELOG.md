@@ -5,6 +5,10 @@
 - `brief` and `init`: summary lines count in the singular when there is one (`1 error`, `1 edge`, `1 .arch file`), as `lint` does.
 - README: rewritten in plain language (the idea, a worked example with real output, quick start, a contract cheat sheet linked to DESIGN.md). `tests/readme.rs` now fails when a README command or flag is not in the CLI, or a link or DESIGN.md anchor is missing.
 
+- Layer order: a contract may have several `%% order` lines, each an independent chain, for repos
+  with separate stacks. A boundary may be in several chains only if they agree on every pair they
+  share; a contradiction is a contract error naming both lines. Upward-edge checks apply per
+  chain, one finding per site. JSON `rules.order` is now a list of chains (it was one list).
 - Release: the npm package is published through npm trusted publishing (an OIDC id-token from
   `.github/workflows/publish-npm.yml`), so no `NPM_TOKEN` secret is needed. `tests/release.rs` pins
   it, and the hand fix for dist 0.34's `uses: $/` path in the generated `release.yml`.

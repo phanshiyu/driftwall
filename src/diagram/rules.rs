@@ -43,7 +43,7 @@ pub(super) fn directive(text: &str) -> Option<Directive<'_>> {
 /// The directive lines that write `rules` back, in the order of "Contract rules".
 pub(super) fn render(rules: &Rules) -> Vec<String> {
     let mut lines = Vec::new();
-    if let Some(order) = &rules.order {
+    for order in &rules.order {
         lines.push(format!("  %% order: {}", order.boundaries.join(" > ")));
     }
     if rules.no_cycles.is_some() {
@@ -72,7 +72,7 @@ pub(super) fn render(rules: &Rules) -> Vec<String> {
 /// What the parser has read of the rule directives, checked against the contract by [`finish`].
 #[derive(Default)]
 pub(super) struct RuleParser {
-    order: Option<LayerOrder>,
+    order: Vec<LayerOrder>,
     no_cycles: Option<u32>,
     no_cycles_boundaries: Option<u32>,
     budgets: BTreeMap<NodeId, Budget>,
@@ -191,13 +191,6 @@ impl RuleParser {
             rule: "order".to_owned(),
             reason: reason.to_owned(),
         };
-        if let Some(first) = &self.order {
-            return Err(DiagramError::DuplicateRule {
-                line,
-                rule: "order".to_owned(),
-                first_line: first.line,
-            });
-        }
         let mut boundaries: Vec<String> = Vec::new();
         for raw in rest.split('>') {
             let raw = raw.trim();
@@ -213,7 +206,15 @@ impl RuleParser {
         if boundaries.len() < 2 {
             return Err(malformed("a layer order lists at least two boundaries"));
         }
-        self.order = Some(LayerOrder { line, boundaries });
+        let chain = LayerOrder { line, boundaries };
+        if let Some(reason) = self
+            .order
+            .iter()
+            .find_map(|first| contradiction(first, &chain))
+        {
+            return Err(malformed(&reason));
+        }
+        self.order.push(chain);
         Ok(())
     }
 
@@ -227,7 +228,7 @@ impl RuleParser {
         edges: &BTreeMap<Edge, EdgeKind>,
         edge_lines: &BTreeMap<Edge, u32>,
     ) -> Result<Rules, DiagramError> {
-        if let Some(order) = &self.order {
+        for order in &self.order {
             check_order(order, nodes, boundaries, edges, edge_lines)?;
         }
         for (node, budget) in &self.budgets {
@@ -253,6 +254,26 @@ impl RuleParser {
             tests_isolated: self.tests_isolated,
         })
     }
+}
+
+/// Why `later` disagrees with `first`, or `None` when they agree: every two boundaries both list
+/// must be in the same relative order (see "Layer order").
+fn contradiction(first: &LayerOrder, later: &LayerOrder) -> Option<String> {
+    let shared: Vec<&String> = later
+        .boundaries
+        .iter()
+        .filter(|boundary| first.rank(boundary).is_some())
+        .collect();
+    shared.iter().enumerate().find_map(|(at, above)| {
+        shared.iter().skip(at + 1).find_map(|below| {
+            (first.rank(above) > first.rank(below)).then(|| {
+                format!(
+                    "contradicts the `%% order` on line {}: `{above}` is below `{below}` there but above it here",
+                    first.line
+                )
+            })
+        })
+    })
 }
 
 /// The boundaries of a layer order must be declared `subgraph`s, and no declared arrow may point
