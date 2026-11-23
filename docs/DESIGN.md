@@ -492,7 +492,8 @@ exactly `import.meta.url`. Its location is the line the `new` expression starts 
   symbol, so it is never `private-symbol`, and still a dependency on that file's node.
 - An existing non-source file is an `asset` import, as an import of it would be.
 - A target that is a directory, does not exist, or leaves the repository (a leading `/` included) is
-  skipped as `file-reference-missing`, with a message naming the repository path looked for. It is
+  skipped as `file-reference-missing`, with a message naming the repository path looked for (`.` for the
+  root) and saying `is a directory`, `has no file in the repository` or `leaves the repository`. It is
   not an `unresolved-import` and so never a finding: unlike an `import`, the file may be created at
   run time or by a build, and the skip keeps it visible in `brief`.
 

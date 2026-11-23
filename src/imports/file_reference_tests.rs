@@ -85,12 +85,19 @@ fn a_directory_missing_or_outside_target_is_skipped_not_unresolved() {
         lines,
         [1, 2, 3, 4].map(|l| (l, SkipReason::FileReferenceMissing))
     );
-    assert!(
-        got.skipped[0]
-            .message
-            .as_deref()
-            .unwrap()
-            .contains("src/dir")
+    let messages: Vec<_> = got
+        .skipped
+        .iter()
+        .map(|s| s.message.as_deref().unwrap())
+        .collect();
+    assert_eq!(
+        messages,
+        [
+            "`src/dir` is a directory",
+            "`src/gone.png` has no file in the repository",
+            "`../../x` leaves the repository",
+            "`/abs.png` leaves the repository",
+        ]
     );
 }
 

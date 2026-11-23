@@ -68,14 +68,26 @@ fn file_reference(written: &str, importer: &Path, env: &Environment<'_>) -> Reso
     match join_normalised(importer.parent(), path) {
         Some(target) if env.known.contains(&target) => Resolution::resolved(target),
         Some(target) if env.assets.contains(&target) => Resolution::Asset { target },
-        other => {
-            let looked =
-                other.map_or_else(|| written.to_owned(), |path| path.display().to_string());
+        Some(target) => {
+            let shown = if target.as_os_str().is_empty() {
+                ".".to_owned()
+            } else {
+                target.display().to_string()
+            };
+            let what = if has_file_at_or_below(&target, env) || target.as_os_str().is_empty() {
+                "is a directory"
+            } else {
+                "has no file in the repository"
+            };
             Resolution::SkippedWith {
                 reason: SkipReason::FileReferenceMissing,
-                message: format!("`{looked}` is a directory, missing or outside the repository"),
+                message: format!("`{shown}` {what}"),
             }
         }
+        None => Resolution::SkippedWith {
+            reason: SkipReason::FileReferenceMissing,
+            message: format!("`{written}` leaves the repository"),
+        },
     }
 }
 
