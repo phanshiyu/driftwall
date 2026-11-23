@@ -58,7 +58,7 @@ flowchart LR
   shorthand for the node edges between its members, see "Boundary edges".
 - A comment whose first word is `exports` is the surface directive (see "Symbols and public
   surfaces"), and one whose first word is `map` is the mapping directive (see "Contract map").
-  The comments whose first word is `order:` (see "Layer order"), `no-cycles` or `no-cycles:` (see
+  The comments whose first word is `order:` or `order open:` (see "Layer order"), `no-cycles` or `no-cycles:` (see
   "No cycles"), `budget` (see "Budgets") `tests:` (see "Test isolation") or `facade` (see "Re-exports") are the rule directives
   of "Contract rules". The colon must follow the word directly, so a comment such as `%% tests -->
   ...` stays plain. The comments whose first word is `packages` or `forbid-packages` are package rules (see
@@ -282,6 +282,68 @@ contract need not draw every arrow to forbid the wrong direction.
   drives it from the entry point must say so with a test edge). The exemption is for sites the
   edge allows: a production site on the same pair is not allowed by the edge, so it is `undeclared-edge`
   as well as `upward-edge`.
+
+##### Open order
+
+`%% order open: app > features > shared > core > domain` is a chain in open mode. It lists boundaries
+exactly like `%% order:` and is its own directive: the word `open` sits before the colon, so a plain
+`%% order:` keeps its meaning byte for byte and cannot be confused with a boundary list (`open`
+after the colon would be read as a boundary id, and a boundary may be named `open`). Several chains,
+the agreement check and the upward rules above apply to open chains as to plain ones, and open and
+plain lines may be mixed in one contract. The reason for the mode: with seven layers that may each
+use any layer below, a plain chain still needs every allowed downward dependency drawn, up to 21
+layer-to-layer arrows. In an open chain they are implicit and arrows only narrow.
+
+- Implicit allowance. A dependency from a node in boundary `U` to a node in a lower boundary `L` of
+  the same open chain, with no arrow of any kind between them, is allowed as if a solid unlabelled
+  edge covered the pair. It allows production, test, runtime and type-only sites alike. Upward stays
+  forbidden: `upward-edge`, as in every chain. Two nodes of one boundary are not affected: they still
+  need node edges or a boundary self-edge (`features --> features`), because the allowance is
+  between layers.
+- Narrowing. If the contract declares any edge from inside `U` to inside `L`, then `U`'s access to
+  `L` is limited to the declared edges and the allowance no longer applies to that pair of layers.
+  "Any edge" is any node edge between a node of `U` and a node of `L`, and any boundary edge one of
+  whose covered pairs goes from a node of `U` to a node of `L` (`U --> L`, `a --> L`, `U --> b`),
+  whatever its arrow. Membership is read with the member lookup of boundary edges. Only the pair of
+  layers `(U, L)` is narrowed: `U` to another lower layer `M` has its own allowance, and a layer
+  that declares no edge towards a lower layer keeps the whole allowance towards it.
+  Example, chain `app > features > shared > core`. With no arrow at all, `features` may use `shared`
+  and `core`. After `a1 --> c1`, with `a1` in `features` and `c1` in `core`: `a1` importing `c1` is
+  allowed (the edge), a `features` node importing another `core` node `c2` is `undeclared-edge`, and
+  every `features` import of a `shared` node is still allowed, since no edge runs from `features` to
+  `shared`. `app` is unaffected.
+- Kinds. A `-->|type|`, `-->|test|`, `-.->` or `-->|type, test|` edge narrows like a solid one,
+  because any declared arrow narrows: a designer who wrote down how `features` reaches `core` has
+  stated the whole list. So `a1 -->|test| c1` makes a production import `a1` to `c1` an
+  `undeclared-edge` with the restricted-edge message of "Test edges", and `a1` importing `c2` is
+  `undeclared-edge` too. The allowance itself is solid and unrestricted: while it applies it allows
+  any site, test or production, runtime or type-only.
+- Plain and open chains. A boundary listed in an open and in a plain chain gets the allowance from
+  the open chains only: a plain chain neither grants nor removes it and constrains only upward
+  imports, as ever. The allowance applies to a pair when some open chain lists both boundaries with
+  the importer above. When two open chains qualify, the first in file order is the one `brief` names.
+- Undeclared-edge message. A pair no allowance covers is `undeclared-edge` as before. When an open
+  chain lists the two boundaries and narrowing has switched its allowance off, the message says so:
+  "`a1` imports `c2` (...) but architecture.mmd declares no edge a1 --> c2; the `%% order open` on
+  line 5 limits `features` to the edges it declares towards `core` (1 declared) and this pair is not
+  among them".
+- No cycles. Implicit allowances are not declared edges and are ignored: `%% no-cycles` judges
+  declared edges only, and an allowance only points down, so it cannot close a cycle.
+- Stale and redundant. The allowance is not a declared edge, so it is never stale, and a site it
+  allows realises no declared edge. A declared arrow that the allowance would also cover is not
+  `redundant-edge`: it narrows, which the implicit allowance does not do. `stale-edge` and the other
+  edge findings apply to declared narrowing arrows as to any edge.
+- `brief` and `neighbors`. A realised pair allowed only by an open chain is a solid edge in the
+  output with `via order open: app > features > shared > core > domain, line 7` (the chain as
+  written, then its line), and in JSON `via` is `{"edge": "order open: app > ...", "line": 7}` and
+  `kind` is `implemented`. It is not counted among the declared edges of the summary line, as a pair
+  covered by a boundary edge is not. A pair nothing allows stays `UNDECLARED`. The `rules:` block
+  writes an open chain as `order open: ...`, and JSON `rules` adds `open_order`, the open chains as
+  boundary lists (`order` keeps every chain, open or plain, in file order).
+- `diff` does not report rule directives today, so a chain changing between plain and open is not
+  reported either. That is a known limit: loosening a contract this way is a review event, and
+  reporting directives in `diff` is a separate change for all of them.
+- `render` writes `%% order open: ...` back.
 
 #### No cycles
 
@@ -1786,7 +1848,7 @@ module and no symbol and adds nothing to `uses:`.
 | --- | --- | --- |
 | `unmapped-file` | error | source file has no inherited `.arch` tag (no matching `%% map` glob, with a map) |
 | `unknown-node` | error | `.arch` names a node the diagram does not declare |
-| `undeclared-edge` | error | code imports across nodes and the diagram has no such edge |
+| `undeclared-edge` | error | code imports across nodes and the diagram has no such edge (an `%% order open` chain allows the downward ones it has not narrowed, see "Open order") |
 | `stale-edge` | warning | solid edge with no import backing it |
 | `planned-realized` | warning | dotted edge now backed by production code, promote it to solid (a dotted test or type edge to `-->|test|` or `-->|type|`) |
 | `redundant-edge` | warning | node edge that a boundary edge already covers with a kind at least as wide, see "Boundary edges" |
