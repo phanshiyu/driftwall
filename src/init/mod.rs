@@ -32,7 +32,7 @@ use thiserror::Error;
 
 use crate::diagram::DiagramError;
 use crate::imports::{self, ImportsError};
-use crate::model::{BlindSpots, BlindSummary, DEFAULT_CONTRACT, Language};
+use crate::model::{BlindSpots, BlindSummary, DEFAULT_CONTRACT, Language, SkipReason};
 use crate::ownership::{self, OwnershipError};
 
 pub use existing::Existing;
@@ -151,7 +151,7 @@ pub fn run(
     let excluded: BTreeSet<PathBuf> = ownership.excluded.values().flatten().cloned().collect();
     // why: a folded entry file is not source to plan, but an import can still name it.
     let known_unread: BTreeSet<PathBuf> = excluded.union(&ownership.folded).cloned().collect();
-    let imports = imports::collect_with_assets(
+    let mut imports = imports::collect_with_assets(
         root,
         &files,
         &assets,
@@ -161,9 +161,27 @@ pub fn run(
     let units = detect_units(root, &files);
     let trivial = ownership::trivial_files(root, files.keys().map(PathBuf::as_path));
     let existing = Existing::of(&ownership).with_trivial(trivial);
-    let baseline = plan(
+    let mut baseline = plan(
         &files, &assets, &excluded, &imports, options, &units, &existing,
     );
+    // why: an embed of an asset records an edge only when a tag covers it, and the tags are known only now, so the imports are read again with the assets the planned tags leave unowned.
+    let mut all_tags = existing.tags.clone();
+    all_tags.extend(baseline.tags.clone());
+    let unowned: BTreeSet<PathBuf> = assets
+        .iter()
+        .filter(|asset| ownership::owner_in(&all_tags, asset).is_none())
+        .cloned()
+        .collect();
+    let embeds_skipped = imports
+        .values()
+        .flat_map(|found| &found.skipped)
+        .any(|skip| skip.reason == SkipReason::EmbedNonSource);
+    if embeds_skipped && unowned != ownership.asset_unmapped {
+        imports = imports::collect_with_assets(root, &files, &assets, &unowned, &known_unread)?;
+        baseline = plan(
+            &files, &assets, &excluded, &imports, options, &units, &existing,
+        );
+    }
     let mut summary = write::apply(root, &baseline, write)?;
     // why: init has no owners or line counts to give, and the note shows neither.
     summary.blind_spots = BlindSpots::build(

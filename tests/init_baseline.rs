@@ -102,3 +102,30 @@ fn an_excluded_file_nothing_imports_declares_no_node() {
     let contract = std::fs::read_to_string(dir.path().join("architecture.mmd")).unwrap();
     assert!(!contract.contains("gen"), "{contract}");
 }
+
+#[test]
+fn a_rust_embed_of_an_asset_is_counted_the_same_by_init_and_lint() {
+    let dir = support::repo(&[
+        (
+            "Cargo.toml",
+            "[package]\nname = \"x\"\nversion = \"0.1.0\"\n",
+        ),
+        ("src/lib.rs", "pub mod a;\npub mod b;\n"),
+        (
+            "src/a.rs",
+            "pub const CSS: &str = include_str!(\"ui.css\");\n",
+        ),
+        ("src/b.rs", "pub fn b() {}\n"),
+        ("src/ui.css", "a {}\n"),
+    ]);
+    let init = support::run("init", dir.path(), &[]);
+    assert!(init.status.success(), "{init:?}");
+    let note = String::from_utf8_lossy(&init.stdout);
+    assert!(!note.contains("skipped"), "{note}");
+    let lint = support::run("lint", dir.path(), &["--format", "json"]);
+    let json: serde_json::Value = serde_json::from_slice(&lint.stdout).unwrap();
+    assert_eq!(
+        json.pointer("/blind_spots/skipped").unwrap(),
+        &serde_json::json!({})
+    );
+}

@@ -115,3 +115,5 @@
   comments, attributes and `mod` declarations, make no node of their own under `node: *` unless a module has
   their name (`src-mybot-mybot`, a trivial `lib` node). They are known files, in no owner map; `where` says
   `folded, no node`, and `init` tagless of this repository reproduces exactly the nodes of its contract.
+- `init` reads the imports again when a Rust embed of an asset was skipped before the tags were known, so its
+  note counts the same skipped references as `lint` on the baseline it writes.
