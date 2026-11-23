@@ -136,11 +136,43 @@ pub fn plan(
     all_tags.extend(tags.clone());
     for asset in assets {
         if let Some(owner) = owner_in(&all_tags, asset) {
+            // why: an owner no source file names must still be declared, or `lint` records the import as `undeclared-owner`.
+            contract
+                .nodes
+                .entry(owner.clone())
+                .or_insert_with(|| NodeInfo {
+                    label: Some(asset_label(&all_tags, asset)),
+                    boundary: None,
+                });
             owners.insert(asset.clone(), owner);
         }
     }
     add_edges(&mut contract, imports, &owners);
     InitPlan { contract, tags }
+}
+
+/// The label of a node that only an asset names: the directory of the tag that owns `asset`, or
+/// that directory with the asset's name when a `node: *` tag derived the node from it.
+fn asset_label(tags: &BTreeMap<PathBuf, DirTag>, asset: &Path) -> String {
+    let tagged = asset
+        .parent()
+        .into_iter()
+        .flat_map(Path::ancestors)
+        .find(|dir| tags.contains_key(*dir))
+        .map(Path::to_path_buf)
+        .unwrap_or_default();
+    let below = asset.strip_prefix(&tagged).unwrap_or(asset);
+    let first = below
+        .components()
+        .next()
+        .map(std::path::Component::as_os_str);
+    match (tags.get(&tagged).map(|found| &found.tag), first) {
+        (Some(Tag::Modules(_)), Some(first)) if below.components().count() > 1 => {
+            label_of(&tagged.join(first))
+        }
+        (Some(Tag::Modules(_)), _) => label_of(&tagged.join(asset.file_stem().unwrap_or_default())),
+        _ => label_of(&tagged),
+    }
 }
 
 /// The scope of the directory node at `dir`: only a group (the repository root, or the files

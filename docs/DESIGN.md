@@ -1091,8 +1091,12 @@ same prefix, see "Ids".
   dotted, so a fresh baseline has no stale or planned-realized findings. Imports are resolved with
   the walked non-source files (assets) known, as `lint` does: an asset (a `.json`, a `.css`) has the
   owner the tags give it, the existing ones and the ones `init` writes, and an import of an asset
-  owned by another declared node is an edge. An asset no tag covers, or one whose derived name is
-  no declared node, adds no edge, exactly as in `lint`. Every node that a directory tag `init`
+  owned by another declared node is an edge. An asset no tag covers adds no edge, exactly as in
+  `lint`. **Fresh-baseline invariant:** an asset whose owner a tag gives it is owned by a declared
+  node: when the owner is a name only an asset derives under a `node: *` tag (`app.css` beside
+  `App.svelte`, `index.css`, a directory of fonts), `init` declares it as a node of its own, labelled
+  with the directory or path it comes from, so `lint` right after `init` records no
+  `undeclared-owner` skipped reference caused by `init`'s own choices. Every node that a directory tag `init`
   writes names is declared, so an asset in a directory of a unit (`ui/src/index.css`, imported by
   `ui/src/main.tsx`) is owned by a node the contract declares (`ui-src`): `where` and `lint` never
   name a node `init` left out.

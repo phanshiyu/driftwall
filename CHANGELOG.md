@@ -68,3 +68,6 @@
 - `init` layer split: a node of 35 or more source files with at least one child directory holding 8 or
   more of them (and at most 4 such children) is cut one level further: one node per large child
   directory (`components-settings`, `components-ui`), the rest stays in the parent node.
+- `init` fresh-baseline invariant: an asset owned by a name that only an asset derives (`app.css`
+  beside `App.svelte`, `src/index.css`, a directory of fonts) is declared as a node, so `lint` right
+  after `init` has no `undeclared-owner` skipped reference.
