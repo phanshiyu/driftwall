@@ -14,10 +14,19 @@ ALWAYS_BLOCKED_BASH = [
     (r"\b(pkill|killall)\b", "pkill/killall kill other agents' processes; kill a recorded PID instead"),
     (r"--no-verify|-n\b.*\bgit commit|git commit\b.*\s-n\b", "hooks are mandatory; --no-verify is not allowed"),
     (r"core\.hooksPath", "do not change core.hooksPath"),
+    (r"core\.bare", "do not change core.bare; it turns the main checkout into a bare repository"),
 ]
 AGENT_BLOCKED_BASH = [
     (r"\bgit\s+push\b", "agents do not push; report your branch and the owner merges it"),
     (r"\brm\b[^|;&]*[*?]", "rm with a glob is not allowed; delete exact paths you created"),
+    (
+        r"\bgit\b[^|;&]*\bconfig\b(?![^|;&]*(--get|--list|-l\b|--show-origin|--show-scope))",
+        "git config is shared by every worktree; read it with --get/--list, report a needed change",
+    ),
+    (
+        r"\bgate\.sh\b[^;&]*\|",
+        "run scripts/gate.sh unpiped so its exit status is the result; read the full output",
+    ),
 ]
 PROTECTED = [
     "architecture.mmd", "clippy.toml", "rustfmt.toml", "rust-toolchain.toml", "deny.toml",
