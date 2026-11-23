@@ -567,7 +567,8 @@ declare at the `node: *` line of its `.arch` file.
 - An import is an edge only when it resolves to a repository file owned by a different node. The
   file is a source file, an excluded file (see "Excluded files") or, for TypeScript and JavaScript,
   an asset (see "Asset files").
-- Imports inside one node are ignored. Third party and standard library imports are ignored.
+- Imports inside one node are ignored. Third party and standard library imports are not edges: they
+  are recorded as package uses, see "Package uses".
 - A relative import that resolves to nothing is an `unresolved-import` warning, never silently
   dropped, whatever extension the specifier has (`./missing.json` included). So is a Python absolute
   import into a first-party package that holds no such module, see "Python resolution".
@@ -600,8 +601,9 @@ A specifier is resolved in this order, the first step that applies deciding.
    config that governs the file (see "Vite aliases") are tried.
 4. **Workspace packages**, see below.
 5. **Package `imports`**, for a specifier that starts with `#`, see below.
-6. **Package check.** A Node builtin or a declared dependency is ignored, anything else is skipped as
-   `undeclared-package`.
+6. **Package check.** A Node builtin or a declared dependency is not a repository import: it is a
+   package use (see "Package uses"). Anything else is skipped as `undeclared-package`, and is a
+   package use too.
 
 The first of steps 3 to 5 that finds a file wins. A `paths` pattern that matches the specifier and
 finds no file is an alias: it ends the resolution silently unless a Vite alias, a workspace package
@@ -912,7 +914,8 @@ An absolute module that no root resolves is decided by its first segment, the to
    a directory that holds Python directly (`from c.g.m import X` matches `a/c/g/m.py`). The first
    such path in path order is named, with the matched dotted prefix, and the message names only
    Python paths;
-3. else it is a third party or standard library module and is ignored.
+3. else it is a third party or standard library module: not an import, but a package use (see
+   "Package uses").
 
 #### Dynamic imports
 
@@ -976,6 +979,8 @@ not an edge. A path that finds no module file falls back to the crate root file.
   the module path their file location suggests. A `#[path]` that names no known repository file
   is not followed, so a path through it falls back to the crate root file. A `#[path]` inside
   `#[cfg_attr(..)]` and a `#[path]` written in a file that a `#[path]` itself placed are not read.
+- **Crates outside the repository.** A path that starts with `std`, `core`, `alloc` or a dependency
+  of the nearest `Cargo.toml` is a package use, not an edge, see "Package uses".
 - **Not followed:** `extern crate` renames, names that only a glob of a non-module brings in
   (`use crate::*; gitlab::x()`), local names from an inline `mod name { }`, and macro-generated
   paths.
@@ -1011,8 +1016,8 @@ A manifest that cannot be read declares no targets, like an unreadable `Cargo.to
 **Imports.** `import X`, `@testable import X`, `@_exported import X`, `import X.Y` and
 `import struct X.Y` are read from the `import` declarations of the grammar, so an import inside a
 comment or a string is not one, and an import inside `#if` is. The module is `X`, the first dotted
-segment. When `X` is the module name of no target, the import is ignored: Foundation, SwiftUI and
-every other package are not repository files. Otherwise the target is chosen, then its entry file:
+segment. When `X` is the module name of no target, the import is not a repository import: Foundation, SwiftUI
+and every other package are not repository files. It is a package use (see "Package uses"). Otherwise the target is chosen, then its entry file:
 
 1. Among the targets with that module name, the nearest to the importer. A package that contains
    the importer (its `Package.swift` directory is an ancestor of the importing file) beats one that
@@ -1312,6 +1317,95 @@ reference with reason `embed-non-source`: a missing file, a path that leaves the
 repository file no `.arch` tag covers (`architecture.mmd` at a root with no tag), which therefore
 never creates an owner, an edge or an `undeclared-owner` record, in a fresh `init` or anywhere.
 
+### Package uses
+
+An import of code outside the repository is a package use. It is never an edge, and it is what the
+package rules of the contract check (see "Package rules"). Each file records its package uses next
+to its resolved imports: `FileImports::packages`, sorted and free of duplicates.
+
+A package use has
+
+- `name`: the package, as the language writes it (below);
+- `kind`: `third-party` (code the repository depends on but does not contain) or `stdlib` (what
+  the language or platform ships);
+- `at`: the file and the line the statement starts on, like any import (see "Import location");
+- `test_only`: whether the statement is written in test code (see "Import kind").
+
+Uses of one package on one line merge, so `use serde::{A, B};` is one use. The same package on two
+lines is two uses: the count of a package is its number of uses. In JSON a use is flat: `file`,
+`line`, `name`, `kind`, `test_only`.
+
+**TypeScript, JavaScript, Svelte and HTML** (every specifier that reaches the package check, step 6
+of "TypeScript and JavaScript resolution"). A Node builtin is `stdlib` and is named
+`node:<module>` whether it is written `fs`, `node:fs` or `fs/promises`: the first segment after an
+optional `node:`, so the subpath is dropped (`node:fs`, `node:child_process`). Any other package is
+`third-party`, named as `package_name` names it: `lit`, `@lit/reactive-element`; `three/examples/jsm/x`
+is `three`. This holds whether `package.json` declares the dependency or not: an undeclared one is
+the skipped reference `undeclared-package` and also a package use, because both are true (the skip
+says a dependency is missing, the use says what the import is). Not packages, so no use: relative
+specifiers, specifiers a `paths` pattern matches, Vite aliases, workspace packages, package
+`imports` keys (`#x`), virtual modules, remote URLs and any specifier that is not a name (a URL
+scheme, a leading `/`). `import type` and a JSDoc `import('x')` are uses like any other: the kind of
+the import is not part of a package use.
+
+**Python.** An absolute module that no import root resolves and whose top-level name matches no
+first-party module or package (the final miss of "Misses"). The name is the top-level module:
+`import yaml.constructor` is `yaml`, `import os.path` is `os`. That is the import name, not the
+distribution name (`PIL`, not `Pillow`). The kind is `stdlib` when the name is in the embedded
+`sys.stdlib_module_names` of **Python 3.13** (290 names, private modules such as `_thread`
+included), else `third-party`. A module removed before 3.13 (`distutils`, `imp`, `asyncore`) is
+therefore `third-party`; the list is pinned so that output never depends on the interpreter that
+happens to run driftwall. A namespace-directory miss (step 1a of "Misses") is a `third-party` use
+as well as its skipped reference. `from __future__ import x` is a compiler directive, read by no
+query, so no use. An `unresolved-import` (a first-party miss) and an
+`unreachable-module` are not packages: the top-level name is first-party.
+
+**Rust.** The first segment of a path, in a `use`, an expression, a type or a macro argument, that
+names a crate the nearest `Cargo.toml` above the file lists in `[dependencies]`,
+`[dev-dependencies]`, `[build-dependencies]` or a `[target.*]` table of those (the key, so a renamed
+dependency is its rename, with `-` written `_` as code imports it), and that is not a library crate
+of the repository, which resolves to a file. `std`, `core` and `alloc` are `stdlib`; every crate a
+manifest lists is `third-party`. A name no manifest lists (a local variable, a type, an
+`extern crate` rename) is no use: a rename misses a use rather than inventing one. The name is the
+crate as imported, with underscores: `serde_json`.
+
+**Swift.** `import X`, where `X` is the first segment and is the module of no target a
+`Package.swift` declares. `X` is `stdlib` when it is on this closed list of Apple system frameworks
+the Swift runtime, the test modules and the manifest modules (`PackageDescription`),
+`third-party` otherwise:
+
+```
+  AVFAudio AVFoundation AVKit Accelerate Accessibility ActivityKit AppIntents AppKit
+  ApplicationServices AudioToolbox AudioUnit AuthenticationServices BackgroundTasks CFNetwork
+  CallKit Carbon Charts Cocoa Combine CompilerPluginSupport Contacts CoreAudio CoreAudioKit
+  CoreBluetooth CoreData CoreFoundation CoreGraphics CoreHaptics CoreImage CoreLocation CoreMIDI
+  CoreML CoreMedia CoreMotion CoreServices CoreSpotlight CoreText CoreTransferable CoreVideo
+  CryptoKit Darwin DeviceCheck Dispatch Distributed EventKit ExternalAccessory Foundation
+  FoundationEssentials FoundationNetworking FoundationXML GLKit GameController GameKit GameplayKit
+  Glibc GroupActivities HealthKit IOKit IOSurface ImageIO Intents LinkPresentation
+  LocalAuthentication MapKit MediaPlayer MessageUI Messages Metal MetalKit MetalPerformanceShaders
+  ModelIO MultipeerConnectivity NaturalLanguage Network NetworkExtension NotificationCenter OSLog
+  ObjectiveC Observation OpenGL PDFKit PackageDescription PassKit PencilKit Photos PhotosUI
+  PushKit QuartzCore QuickLook RealityKit RegexBuilder ReplayKit SafariServices SceneKit
+  ScreenCaptureKit Security ServiceManagement Speech SpriteKit StoreKit Swift SwiftData SwiftUI
+  SystemConfiguration Testing TipKit Translation UIKit UniformTypeIdentifiers UserNotifications
+  VideoToolbox Vision WebKit WidgetKit XCTest _Concurrency _StringProcessing os simd
+```
+
+A module a target declares is a repository module and never a package, even when its entry file is
+missing.
+
+**Shell.** None: `source` reads repository files only.
+
+**Skipped references stay as they are.** A skipped reference means driftwall could not follow a
+reference; a package use means it knows what the reference is. No reason changed meaning, and
+nothing that is a package use is reported under a reason that says otherwise.
+`undeclared-package` is both: every such reference is also a `third-party` use, which is what the
+reason has always said. Every other reason (`dynamic-specifier`, `unreachable-module`,
+`alias-target-missing`, ...) is a reference whose target is unknown or first-party, so it is no
+package use. A declared third party package or a builtin, which `skipped` never listed, is a package
+use and still not skipped.
+
 ### Skipped references
 
 A reference driftwall cannot follow is never silently dropped. `FileImports.skipped` lists each as
@@ -1342,8 +1436,8 @@ declared dependency is a name listed in `dependencies`, `devDependencies`, `peer
 `optionalDependencies` of any `package.json` at or above the file (see "Packages"); `@a/b/sub` is the
 package `@a/b` and `pkg/sub` is `pkg`. A file with no readable `package.json` above it declares nothing.
 A malformed `package.json` is skipped silently, as a malformed `tsconfig` is, and the others still
-count. Declared third party packages stay silently
-ignored: they are not repository imports and nothing is wrong. `skipped` is not a lint finding.
+count. Declared third party packages are never
+skipped: they are not repository imports and nothing is wrong (they are package uses). `skipped` is not a lint finding.
 For a skipped Python call the specifier is the text of its first argument.
 
 A skipped reference may carry a `message`, a sentence of explanation. `unreachable-module` has one:

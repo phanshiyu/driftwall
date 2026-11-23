@@ -41,6 +41,7 @@ fn used_at(source: &str, file: &str) -> Vec<Used> {
         vite_aliases: &BTreeMap::new(),
         test_files: &BTreeSet::new(),
         rust_paths: &PathModules::default(),
+        rust_dependencies: &BTreeMap::new(),
     };
     let got = extract_in(source, Language::Rust, Path::new(file), &env).expect("extract succeeds");
     got.resolved

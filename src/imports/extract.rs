@@ -14,7 +14,8 @@ use super::{
     Workspaces, spec,
 };
 use crate::model::{
-    ImportKind, Language, Location, ResolvedImport, SkipReason, Skipped, Symbol, UnresolvedImport,
+    ImportKind, Language, Location, PackageKind, PackageUse, ResolvedImport, SkipReason, Skipped,
+    Symbol, UnresolvedImport,
 };
 
 /// What duplicate imports must agree on to merge: location, target, kind and whether it is test code.
@@ -62,6 +63,7 @@ pub fn extract(
             vite_aliases: &BTreeMap::new(),
             test_files: &BTreeSet::new(),
             rust_paths: &PathModules::default(),
+            rust_dependencies: &BTreeMap::new(),
         },
     )
 }
@@ -99,6 +101,7 @@ pub fn extract_in(
         resolved,
         unresolved,
         skipped,
+        packages,
     } = found;
     let mut resolved: Vec<ResolvedImport> = resolved
         .into_iter()
@@ -118,6 +121,7 @@ pub fn extract_in(
         unresolved: unresolved.into_iter().collect(),
         skipped: skipped.into_iter().collect(),
         test_file: statement::test_file(language, file) || env.test_files.contains(file),
+        packages: packages.into_iter().collect(),
     })
 }
 
@@ -211,6 +215,7 @@ struct Found {
     resolved: BTreeMap<Merge, BTreeSet<Symbol>>,
     unresolved: BTreeSet<UnresolvedImport>,
     skipped: BTreeSet<Skipped>,
+    packages: BTreeSet<PackageUse>,
 }
 
 impl Found {
@@ -253,8 +258,29 @@ impl Found {
                     flags,
                 );
             }
+            Resolution::Package { name, kind } => self.package(at, name, kind, flags),
+            Resolution::UndeclaredPackage { name, message } => {
+                self.skip(
+                    at,
+                    specifier,
+                    SkipReason::UndeclaredPackage,
+                    message,
+                    None,
+                    flags,
+                );
+                self.package(at, name, PackageKind::ThirdParty, flags);
+            }
             Resolution::Ignored => {}
         }
+    }
+
+    fn package(&mut self, at: &Location, name: String, kind: PackageKind, flags: Flags) {
+        self.packages.insert(PackageUse {
+            at: at.clone(),
+            name,
+            kind,
+            test_only: flags.test_only,
+        });
     }
 
     fn skip(

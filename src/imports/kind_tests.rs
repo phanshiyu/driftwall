@@ -363,6 +363,7 @@ fn rs_with(source: &str, file: &str, repo: &[&str]) -> FileImports {
         vite_aliases: &BTreeMap::new(),
         test_files: &BTreeSet::new(),
         rust_paths: &PathModules::default(),
+        rust_dependencies: &BTreeMap::new(),
     };
     extract_in(source, Language::Rust, Path::new(file), &env).expect("extract succeeds")
 }

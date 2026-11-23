@@ -9,7 +9,7 @@ use super::package::{is_builtin, package_name};
 use super::{
     AliasConfig, Candidate, Environment, Project, Reference, Resolution, ecmascript_symbols,
 };
-use crate::model::SkipReason;
+use crate::model::{PackageKind, SkipReason};
 
 /// Extensions tried, in order, for extension probing and directory index files. Declaration files
 /// come after the TypeScript files of their kind. `svelte` is last so that no specifier that
@@ -202,9 +202,9 @@ fn locate(base: &Path, directory_only: bool, env: &Environment<'_>) -> Option<Fo
 /// index files. The first that names a known file wins. Then a workspace package of that name, or
 /// for a `#` specifier the `imports` of the nearest `package.json`, gets its turn: it resolves, or
 /// ignores the specifier when it finds no file. A specifier that a `paths` pattern matches is an
-/// alias and is ignored when no file backs it. Anything else is a package: ignored when it is a
-/// Node builtin, a virtual module or declared by a `package.json` at or above the importer, skipped
-/// otherwise.
+/// alias and is ignored when no file backs it. A virtual module is ignored. Anything else is a package
+/// use: stdlib for a Node builtin, third party otherwise, which is also skipped as undeclared when no
+/// `package.json` at or above the importer declares it.
 fn resolve_bare(specifier: &str, importer: &Path, env: &Environment<'_>) -> Resolution {
     let config = governing(env, importer);
     if let Some(found) = config.and_then(|config| first_found(&config.candidates(specifier), env)) {
@@ -231,11 +231,39 @@ fn resolve_bare(specifier: &str, importer: &Path, env: &Environment<'_>) -> Reso
                 .is_some_and(|names| names.contains(package_name(specifier)))
         })
     });
-    if is_builtin(specifier) || declared || is_virtual(specifier) {
-        Resolution::Ignored
-    } else {
-        Resolution::Skipped(SkipReason::UndeclaredPackage)
+    if is_virtual(specifier) {
+        return Resolution::Ignored;
     }
+    if is_builtin(specifier) {
+        let module = specifier.strip_prefix("node:").unwrap_or(specifier);
+        let module = module.split('/').next().unwrap_or(module);
+        return Resolution::Package {
+            name: format!("node:{module}"),
+            kind: PackageKind::Stdlib,
+        };
+    }
+    let name = package_name(specifier);
+    match (is_package_name(name), declared) {
+        (true, true) => Resolution::Package {
+            name: name.to_owned(),
+            kind: PackageKind::ThirdParty,
+        },
+        (true, false) => Resolution::UndeclaredPackage {
+            name: name.to_owned(),
+            message: None,
+        },
+        // why: a URL, an absolute path or a `#` key names no package, but it is still not followable.
+        (false, _) => Resolution::Skipped(SkipReason::UndeclaredPackage),
+    }
+}
+
+/// Whether `name`, the package part of a bare specifier, can be an npm package name: it starts with
+/// a letter, a digit, `@`, `_` or `$` and holds no `:`.
+fn is_package_name(name: &str) -> bool {
+    name.chars()
+        .next()
+        .is_some_and(|first| first.is_alphanumeric() || matches!(first, '@' | '_' | '$'))
+        && !name.contains(':')
 }
 
 /// Whether `specifier` names a Vite virtual module, one a build plugin generates: `virtual:` and

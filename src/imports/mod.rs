@@ -30,6 +30,7 @@
 //! `statement`, and sits at the line its statement starts on.
 
 mod alias;
+mod cargo;
 mod ecmascript_symbols;
 mod error;
 mod extract;
@@ -43,6 +44,7 @@ mod python;
 mod python_call;
 mod python_config;
 mod python_layout;
+mod python_stdlib;
 mod queries;
 mod resolve;
 mod rust;
@@ -57,6 +59,7 @@ mod statement;
 mod subpath;
 mod swift;
 mod swift_package;
+mod swift_system;
 mod tsconfig;
 mod vite;
 mod vite_alias;
@@ -84,6 +87,8 @@ mod jsdoc_tests;
 mod kind_tests;
 #[cfg(test)]
 mod markup_tests;
+#[cfg(test)]
+mod package_tests;
 #[cfg(test)]
 mod probe_tests;
 #[cfg(test)]
@@ -131,9 +136,13 @@ use std::path::{Path, PathBuf};
 
 use rayon::prelude::*;
 
-use crate::model::{Language, ResolvedImport, SkipReason, Skipped, Symbol, UnresolvedImport};
+use crate::model::{
+    Language, PackageKind, PackageUse, ResolvedImport, SkipReason, Skipped, Symbol,
+    UnresolvedImport,
+};
 
 pub use alias::{AliasConfig, Candidate, Pattern, TargetTemplate, nearest};
+pub use cargo::cargo_dependencies;
 pub use error::ImportsError;
 pub use extract::{extract, extract_in};
 pub use manifest::library_crates;
@@ -164,6 +173,19 @@ pub struct FileImports {
     /// Whether the file is test code by its name, its place, or a `#[cfg(test)] mod` declaration
     /// that pulls it in (see "Import kind" in `docs/DESIGN.md`).
     pub test_file: bool,
+    /// Imports of code outside the repository, see "Package uses" in `docs/DESIGN.md`.
+    pub packages: Vec<PackageUse>,
+}
+
+#[cfg(test)]
+impl FileImports {
+    /// These imports without their package uses, for tests of what is an import or a skip.
+    pub(crate) fn without_packages(self) -> Self {
+        Self {
+            packages: Vec::new(),
+            ..self
+        }
+    }
 }
 
 /// What a resolver may consult besides the importing file: every known repository file and the
@@ -214,6 +236,10 @@ pub struct Environment<'a> {
     /// The Rust modules a `#[path = ".."]` attribute placed at a file of its own choosing, see
     /// the module `rust_paths`.
     pub rust_paths: &'a PathModules,
+    /// Repository-relative directory holding a readable `Cargo.toml` to the crate names it lists
+    /// as dependencies, as code imports them (`-` written `_`). A file is governed by the nearest
+    /// directory at or above it. Only Rust resolution reads it.
+    pub rust_dependencies: &'a BTreeMap<PathBuf, BTreeSet<String>>,
 }
 
 /// One query match handed to a language resolver: the module reference as written and, for
@@ -256,8 +282,25 @@ pub enum Resolution {
         /// The repository-relative file.
         target: PathBuf,
     },
-    /// Not a repository import: a declared third party package or a builtin.
+    /// Not a repository import: an alias with no file behind it, a virtual module, a repository
+    /// package. Not a package use either.
     Ignored,
+    /// An import of code outside the repository: a declared third party package, a builtin, the
+    /// standard library.
+    Package {
+        /// The package, see [`PackageUse::name`].
+        name: String,
+        /// Third party or standard library.
+        kind: PackageKind,
+    },
+    /// An import of a third party package nothing declares, so a package use and also the skipped
+    /// reference [`SkipReason::UndeclaredPackage`].
+    UndeclaredPackage {
+        /// The package, see [`PackageUse::name`].
+        name: String,
+        /// The explanation of the skipped reference, when it has one.
+        message: Option<String>,
+    },
     /// A reference that could not be followed, and is reported as such.
     Skipped(SkipReason),
     /// A specifier that a Vite `resolve.alias` entry matches whose target has no file in the
@@ -352,6 +395,7 @@ pub fn collect_with_assets(
     let vite = vite_roots(root, files);
     let aliases_of_vite = vite_aliases(root, files);
     let rust_paths = rust_paths::path_modules(root, files, &known);
+    let rust_dependencies = cargo_dependencies(root, files);
     let test_files = rust_test_modules::test_files(root, files, &known, &rust_paths);
     let env = Environment {
         known: &known,
@@ -368,6 +412,7 @@ pub fn collect_with_assets(
         vite_aliases: &aliases_of_vite,
         test_files: &test_files,
         rust_paths: &rust_paths,
+        rust_dependencies: &rust_dependencies,
     };
     let entries: Vec<(&PathBuf, &Language)> = files.iter().collect();
     // why: collected into an indexed Vec so the reported error never depends on thread scheduling.

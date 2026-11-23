@@ -135,7 +135,7 @@ fn modules_that_no_target_declares_are_ignored() {
         ),
     ]);
     let got = r.imports("Sources/DeskApp/App.swift");
-    assert_eq!(got, FileImports::default());
+    assert_eq!(got.without_packages(), FileImports::default());
 }
 
 #[test]
@@ -310,5 +310,8 @@ fn the_manifest_itself_is_a_swift_file_that_imports_nothing_local() {
         ("Package.swift", MANIFEST),
         ("Sources/AppCore/AppCore.swift", ""),
     ]);
-    assert_eq!(r.imports("Package.swift"), FileImports::default());
+    assert_eq!(
+        r.imports("Package.swift").without_packages(),
+        FileImports::default()
+    );
 }

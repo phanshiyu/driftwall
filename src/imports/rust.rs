@@ -36,7 +36,10 @@ use super::resolve::join_normalised;
 use super::rust_module::{Site, WrittenPath};
 use super::rust_syntax;
 use super::{Environment, Reference, Resolution};
-use crate::model::{SkipReason, Symbol};
+use crate::model::{PackageKind, SkipReason, Symbol};
+
+/// The crates the Rust toolchain ships, which no manifest lists.
+const STDLIB_CRATES: [&str; 3] = ["std", "core", "alloc"];
 
 /// The table entry. `reference.node` is a `use` argument, a scoped path, or a token inside a macro
 /// argument list; each is expanded into the repository files it points at. A reference that
@@ -60,6 +63,7 @@ pub fn resolve(
     for path in &paths {
         let path = through_bindings(path, reference, &inline, site.as_ref(), env);
         let Some((target, symbol)) = path.target(site.as_ref(), env) else {
+            resolutions.extend(package(&path, importer, env));
             continue;
         };
         if target == importer {
@@ -74,6 +78,28 @@ pub fn resolve(
         resolutions.push(Resolution::resolved(target).using(used));
     }
     resolutions
+}
+
+/// The package use of `path`, when it starts with `std`, `core`, `alloc` or a crate the nearest
+/// `Cargo.toml` above `importer` lists. A path that starts with `crate`, `self` or `super` has no
+/// first name, and a library crate of the repository never gets here: it resolves to a file.
+fn package(path: &WrittenPath<'_>, importer: &Path, env: &Environment<'_>) -> Option<Resolution> {
+    let name = path.first_name()?;
+    let kind = if STDLIB_CRATES.contains(&name) {
+        PackageKind::Stdlib
+    } else if importer.parent().is_some_and(|dir| {
+        dir.ancestors()
+            .find_map(|ancestor| env.rust_dependencies.get(ancestor))
+            .is_some_and(|names| names.contains(name))
+    }) {
+        PackageKind::ThirdParty
+    } else {
+        return None;
+    };
+    Some(Resolution::Package {
+        name: name.to_owned(),
+        kind,
+    })
 }
 
 /// An `include_str!("..")`, `include_bytes!("..")` or `include!("..")` of `path`, relative to the

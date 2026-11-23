@@ -196,7 +196,10 @@ fn a_root_that_leaves_the_repository_is_dropped() {
         ("app/__init__.py", ""),
         ("app/main.py", "import os\n"),
     ]);
-    assert_eq!(repo.imports("app/main.py"), FileImports::default());
+    assert_eq!(
+        repo.imports("app/main.py").without_packages(),
+        FileImports::default()
+    );
 }
 
 #[test]
@@ -482,7 +485,10 @@ fn third_party_and_standard_library_stay_ignored() {
             "import os\nimport numpy.linalg\nfrom collections import OrderedDict\nimport importlib\nimportlib.import_module('yaml.nodes')\n",
         ),
     ]);
-    assert_eq!(repo.imports("main.py"), FileImports::default());
+    assert_eq!(
+        repo.imports("main.py").without_packages(),
+        FileImports::default()
+    );
 }
 
 #[test]

@@ -79,6 +79,7 @@ fn a_binary_reaches_lint_through_the_library_name_read_from_cargo_toml() {
         vite_aliases: &BTreeMap::new(),
         test_files: &BTreeSet::new(),
         rust_paths: &PathModules::default(),
+        rust_dependencies: &BTreeMap::new(),
     };
     // why: src/cli/main.rs is a stub today, so the source it will have is supplied here.
     let source = "use driftwall::lint;\nfn main() { driftwall::lint::run(); }\n";

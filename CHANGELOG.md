@@ -33,6 +33,18 @@
   type-only imports. There is no warning for a solid edge realised only by type imports: `brief` and
   `neighbors` mark it `could be -->|type|` (JSON `type_candidate`). `brief`, `neighbors` and `diff`
   show the kinds (`type`, `planned-type`, `type-test`, `planned-type-test` in JSON).
+- Package uses: every import of code outside the repository is recorded per file as a package use
+  (`FileImports::packages`: name, kind `third-party` or `stdlib`, location, `test_only`), the data
+  the coming package rules read. TypeScript, JavaScript, Svelte and HTML: a Node builtin is stdlib
+  named `node:<module>` (`fs/promises` is `node:fs`), any other bare specifier is third-party named
+  by its package (`@scope/pkg`, `pkg`); workspace packages, aliases and virtual modules are no
+  package. Python: a module no import root resolves and no first-party name matches, stdlib by an
+  embedded `sys.stdlib_module_names` of Python 3.13. Rust: `std`, `core`, `alloc` and the crates the
+  nearest `Cargo.toml` lists. Swift: an `import` of a module no `Package.swift` target declares,
+  stdlib when it is an Apple system framework on a documented list. Skipped references are unchanged:
+  `undeclared-package` (TypeScript, JavaScript, Python namespace directories) is also a third-party
+  use, and no other reason is a package.
+
 - Contract map specificity: a glob that matches files by pattern now beats the subtree glob of
   its directory (`ui/src/components/*.test.tsx` over `ui/src/components/`, `src/*.ts` over `src/`),
   then a longer literal prefix wins (`src/a*.ts` over `src/*.ts`), then a longer literal suffix

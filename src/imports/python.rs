@@ -5,8 +5,9 @@ use std::path::{Component, Path, PathBuf};
 
 use super::extract::literal_text;
 use super::python_call::module_of;
+use super::python_stdlib::is_stdlib;
 use super::{Environment, Reference, Resolution};
-use crate::model::{SkipReason, Symbol};
+use crate::model::{PackageKind, SkipReason, Symbol};
 
 /// Callees whose second argument is the path of a Python file to load.
 const FILE_LOADERS: [&str; 2] = ["SourceFileLoader", "spec_from_file_location"];
@@ -25,7 +26,7 @@ const FILE_LOADERS: [&str; 2] = ["SourceFileLoader", "spec_from_file_location"];
 /// An absolute module is looked up under the import roots of the importer. One that no root
 /// resolves is unresolved when its top-level name is a first-party module or regular package under a root,
 /// unreachable when the name matches a repository path no root reaches, and otherwise a third
-/// party or standard library module, which is ignored. A name that is only a directory without
+/// party or standard library module, which is a package use. A name that is only a directory without
 /// `__init__.py` is a namespace portion an installed package beats: skipped as undeclared. A relative module that matches nothing is
 /// unresolved.
 ///
@@ -200,13 +201,13 @@ fn miss(module: &[&str], roots: &[PathBuf], importer: &Path, env: &Environment<'
         .iter()
         .find(|root| env.python.is_directory(&join(root, &[first])))
     {
-        return Resolution::SkippedWith {
-            reason: SkipReason::UndeclaredPackage,
-            message: format!(
+        return Resolution::UndeclaredPackage {
+            name: (*first).to_owned(),
+            message: Some(format!(
                 "`{first}` is the namespace directory `{}` (no `__init__.py`) and holds no `{}`; treated as an installed package",
                 join(root, &[first]).display(),
                 module.join(".")
-            ),
+            )),
         };
     }
     // why: a module nested below directories that hold no Python (`a/c/g/m.py` for `c.g.m`) has no top-level name match.
@@ -214,16 +215,24 @@ fn miss(module: &[&str], roots: &[PathBuf], importer: &Path, env: &Environment<'
         || env.python.matching_module(module),
         |path| Some(((*first).to_owned(), path)),
     );
-    found.map_or(Resolution::Ignored, |(name, path)| {
-        Resolution::SkippedWith {
+    found.map_or_else(
+        || Resolution::Package {
+            name: (*first).to_owned(),
+            kind: if is_stdlib(first) {
+                PackageKind::Stdlib
+            } else {
+                PackageKind::ThirdParty
+            },
+        },
+        |(name, path)| Resolution::SkippedWith {
             reason: SkipReason::UnreachableModule,
             message: format!(
                 "`{name}` matches `{}`, which no import root of `{}` reaches",
                 path.display(),
                 importer.display()
             ),
-        }
-    })
+        },
+    )
 }
 
 /// The resolution of a hit: the target with the symbol it uses, or ignored when it is the importer

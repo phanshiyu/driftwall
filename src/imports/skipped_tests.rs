@@ -61,6 +61,7 @@ fn run(
         vite_aliases: &BTreeMap::new(),
         test_files: &BTreeSet::new(),
         rust_paths: &PathModules::default(),
+        rust_dependencies: &BTreeMap::new(),
     };
     extract_in(source, language, Path::new(file), &env).expect("extract succeeds")
 }
@@ -80,7 +81,7 @@ fn a_declared_package_is_silently_ignored() {
         "import a from 'react';\nimport b from 'lodash';",
         &[("", &["react", "lodash"])],
     );
-    assert_eq!(got, FileImports::default());
+    assert_eq!(got.without_packages(), FileImports::default());
 }
 
 #[test]
@@ -105,7 +106,7 @@ fn scoped_and_subpath_specifiers_match_their_package() {
         "import a from '@a/b';\nimport b from '@a/b/sub/deep';\nimport c from 'pkg/sub';\nimport d from 'pkg';",
         &packages,
     );
-    assert_eq!(got, FileImports::default());
+    assert_eq!(got.without_packages(), FileImports::default());
     let got = ts(
         "import a from '@a/c';\nimport b from '@a/c/sub';\nimport c from 'pkg2/sub';\nimport d from '@a';",
         &packages,
@@ -133,7 +134,7 @@ fn node_builtins_are_never_skipped() {
         "import a from 'fs';\nimport b from 'node:path';\nimport c from 'fs/promises';\nimport d from 'node:test';\nimport e from 'node:fs/promises';\nimport f from 'child_process';",
         &[],
     );
-    assert_eq!(got, FileImports::default());
+    assert_eq!(got.without_packages(), FileImports::default());
 }
 
 #[test]
@@ -216,6 +217,7 @@ fn an_aliased_specifier_is_never_skipped_even_when_nothing_backs_it() {
         vite_aliases: &BTreeMap::new(),
         test_files: &BTreeSet::new(),
         rust_paths: &PathModules::default(),
+        rust_dependencies: &BTreeMap::new(),
     };
     let got = extract_in(
         "import a from '@/foo';\nimport b from '@/missing';\nimport c from 'other';",
@@ -444,6 +446,7 @@ fn rs_at(source: &str, file: &str) -> FileImports {
         vite_aliases: &BTreeMap::new(),
         test_files: &BTreeSet::new(),
         rust_paths: &PathModules::default(),
+        rust_dependencies: &BTreeMap::new(),
     };
     extract_in(source, Language::Rust, Path::new(file), &env).expect("extract succeeds")
 }

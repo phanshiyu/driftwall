@@ -163,14 +163,14 @@ fn comments_are_ignored() {
         "# import a\n# from a import b\nx = 1  # import a\n",
         &["a.py"],
     );
-    assert_eq!(got, FileImports::default());
+    assert_eq!(got.without_packages(), FileImports::default());
 }
 
 #[test]
 fn string_contents_are_ignored() {
     let source = "s = 'import a'\nd = \"\"\"\nimport a\nfrom a import b\n\"\"\"\n";
     let got = py(source, &["a.py", "a/b.py"]);
-    assert_eq!(got, FileImports::default());
+    assert_eq!(got.without_packages(), FileImports::default());
 }
 
 #[test]
@@ -258,7 +258,7 @@ fn third_party_and_stdlib_are_ignored() {
     let source = "import os\nimport numpy.linalg\nfrom collections import OrderedDict\n\
                   from __future__ import annotations\nfrom a.b import c\n";
     let got = py(source, &["x.py"]);
-    assert_eq!(got, FileImports::default());
+    assert_eq!(got.without_packages(), FileImports::default());
 }
 
 #[test]
@@ -267,13 +267,13 @@ fn stub_files_are_not_resolved_to() {
         "import a\nfrom b import c",
         &["a.pyi", "b/c.pyi", "b/__init__.pyi"],
     );
-    assert_eq!(got, FileImports::default());
+    assert_eq!(got.without_packages(), FileImports::default());
 }
 
 #[test]
 fn non_python_files_are_not_resolved_to() {
     let got = py("import a", &["a.ts", "a.js"]);
-    assert_eq!(got, FileImports::default());
+    assert_eq!(got.without_packages(), FileImports::default());
 }
 
 #[test]
@@ -512,5 +512,6 @@ fn collect_reads_python_and_typescript_together() {
     let app = first.get(Path::new("web/app.ts")).expect("app.ts");
     assert_eq!(targets(app), ["web/other.ts"]);
     let b = first.get(Path::new("pkg/b.py")).expect("b.py");
-    assert_eq!(*b, FileImports::default());
+    assert_eq!(b.clone().without_packages(), FileImports::default());
+    assert_eq!(b.packages.len(), 1);
 }

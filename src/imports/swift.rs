@@ -7,8 +7,9 @@ use std::ops::Bound;
 use std::path::{Path, PathBuf};
 
 use super::swift_package::SwiftTarget;
+use super::swift_system::is_system;
 use super::{Environment, Reference, Resolution};
-use crate::model::Symbol;
+use crate::model::{PackageKind, Symbol};
 
 /// The extension of Swift source files.
 const SOURCE_EXTENSION: &str = "swift";
@@ -74,7 +75,7 @@ fn shared_components(a: &Path, b: &Path) -> usize {
 
 /// The table entry. `reference.specifier` is the module path as written (`X`, `X.Y`).
 ///
-/// The first segment names the module. A module that no target declares is ignored. Otherwise the
+/// The first segment names the module. A module that no target declares is a package use. Otherwise the
 /// import resolves to the entry file of the nearest target (see [`SwiftModules::nearest`]), and
 /// uses the last segment when the import is qualified with a declaration keyword
 /// (`import struct X.Y`).
@@ -92,11 +93,19 @@ pub fn resolve(
     let Some(module) = segments.next() else {
         return vec![Resolution::Ignored];
     };
-    let Some(entry) = env
-        .swift
-        .nearest(module, importer)
-        .and_then(|target| entry_file(target, env.known))
-    else {
+    let Some(target) = env.swift.nearest(module, importer) else {
+        // why: a module no target declares is code outside the repository.
+        let kind = if is_system(module) {
+            PackageKind::Stdlib
+        } else {
+            PackageKind::ThirdParty
+        };
+        return vec![Resolution::Package {
+            name: module.to_owned(),
+            kind,
+        }];
+    };
+    let Some(entry) = entry_file(target, env.known) else {
         return vec![Resolution::Ignored];
     };
     let mut symbols = BTreeSet::new();
