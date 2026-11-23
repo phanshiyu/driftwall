@@ -108,10 +108,39 @@ fn export_star_records_all() {
 #[test]
 fn require_and_dynamic_import_record_all() {
     assert_eq!(js("const a = require('./a');"), ["*"]);
-    assert_eq!(js("const { x } = require('./a');"), ["*"]);
     assert_eq!(ts("const m = await import('./a');"), ["*"]);
     assert_eq!(js("import('./a').then(f);"), ["*"]);
     assert_eq!(ts("import a = require('./a');"), ["*"]);
+}
+
+#[test]
+fn a_destructured_require_records_the_exported_names() {
+    assert_eq!(js("const { a, b: c } = require('./a');"), ["a", "b"]);
+    assert_eq!(js("const { x } = require('./a');"), ["x"]);
+    assert_eq!(js("const { 'x-y': z } = require('./a');"), ["x-y"]);
+    assert_eq!(js("const { x = 1 } = require('./a');"), ["x"]);
+    assert_eq!(js("var { y } = require('./a');"), ["y"]);
+}
+
+#[test]
+fn a_destructured_dynamic_import_records_the_exported_names() {
+    assert_eq!(ts("const { a } = await import('./a');"), ["a"]);
+    assert_eq!(ts("const { a, b: c } = (await import('./a'));"), ["a", "b"]);
+    assert_eq!(js("const { a } = await import('./a');"), ["a"]);
+}
+
+#[test]
+fn a_rest_element_or_a_computed_key_in_the_pattern_adds_all() {
+    assert_eq!(js("const { a, ...rest } = require('./a');"), ["a", "*"]);
+    assert_eq!(js("const { [k]: v } = require('./a');"), ["*"]);
+}
+
+#[test]
+fn a_require_that_is_not_destructured_stays_all() {
+    assert_eq!(js("const m = require('./a');"), ["*"]);
+    assert_eq!(js("const { x } = require('./a').y;"), ["*"]);
+    assert_eq!(js("const [x] = require('./a');"), ["*"]);
+    assert_eq!(js("f({ x } = require('./a'));"), ["*"]);
 }
 
 #[test]

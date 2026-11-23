@@ -850,7 +850,12 @@ Every resolved import records the symbols it uses, exactly as written in the cod
   `use crate::gitlab::{self, Client}`) uses no symbol on its own line: it is a dependency on the module file,
   and the items reached through its name are recorded at their own sites.
 - TypeScript and JavaScript: named imports and re-exports by their exported name, `default` for a
-  default import, `*` for namespace imports, `require`, dynamic `import()` and `export *`.
+  default import, `*` for namespace imports, `require`, dynamic `import()` and `export *`. A
+  `require(..)` or `import(..)` (awaited or not) that is the whole value of a declarator whose name
+  is an object pattern uses the exported names the pattern lists: `const { a, b: c } = require('x')`
+  uses `a` and `b`, and `const { a } = await import('x')` uses `a`. A rest element or a computed key
+  in the pattern adds `*`, since the names it takes are not written. Any other `require(..)` or
+  `import(..)` (`const m = require('x')`, `require('x').y`, an array pattern) uses `*`.
 - Python: `from a import b, c` uses `b`, `c` when they resolve to names inside `a`. `from a import *`
   uses `*`. A module binding (`import a.b`, `import a.b as c`, `from a import submodule`, a literal
   `importlib.import_module("a.b")`) uses no symbol, as in Rust: it is a dependency on the module file.
