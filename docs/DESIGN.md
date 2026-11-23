@@ -1691,3 +1691,13 @@ with `why:`. The golden rule is to leave an agent as little room to err as possi
 7. M7 imports (Rust), then driftwall lints itself in CI and the dotted edges turn solid.
 8. M8 agent integration: Claude Code skill and hook, `neighbors`, `diff`.
 9. M9 release: cargo-dist builds, npm package, GitHub release.
+10. M10 designed contracts: `%% map` lines keep the code-to-node mapping in the contract, `init`
+    drafts read as a design (boundaries, labels from the code, layer order, cycles), and the
+    dogfood projects carry a hand-designed contract whose violations are their real debt.
+11. M11 component rules, each one `%%` line per node, checked from the AST like edges:
+    - packages: which third-party packages a node may import (only `db` imports `sqlx`);
+    - type-only edges: a node may use another's types but not its runtime code;
+    - test-only edges: production code may not import test helpers;
+    - layer order: a node may use only nodes in lower boundaries, so arrows need not be drawn;
+    - no cycles between named nodes or boundaries;
+    - budgets: maximum fan-out or size per node.
