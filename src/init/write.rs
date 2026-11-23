@@ -1,5 +1,6 @@
 //! The IO half of `init`: conflict checks, then writes in a fixed order.
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -8,6 +9,7 @@ use crate::model::{DirTag, SCOPE_HERE, Scope};
 
 use crate::model::BlindSummary;
 
+use super::maps::rules_of;
 use super::{InitError, InitPlan, InitSummary, WriteOptions, present};
 
 /// Name of the file that tags a directory with a node.
@@ -17,14 +19,20 @@ const ARCH_FILE: &str = ".arch";
 pub fn apply(
     root: &Path,
     baseline: &InitPlan,
+    every: &BTreeMap<PathBuf, DirTag>,
     write: &WriteOptions,
 ) -> Result<InitSummary, InitError> {
-    let rendered = present::render(&baseline.contract, &baseline.test_only);
-    if diagram::parse(&rendered)? != baseline.contract {
+    // why: with `--map` every tag, new or existing, moves into the contract: `.arch` files stop being read.
+    let mut contract = baseline.contract.clone();
+    if write.write_map {
+        contract.maps = rules_of(every)?;
+    }
+    let rendered = present::render(&contract, &baseline.test_only);
+    if diagram::parse(&rendered)? != contract {
         return Err(InitError::RoundTrip);
     }
 
-    let tag_paths: Vec<(PathBuf, String)> = if write.write_tags {
+    let tag_paths: Vec<(PathBuf, String)> = if write.write_tags && !write.write_map {
         baseline
             .tags
             .iter()
@@ -54,6 +62,7 @@ pub fn apply(
         nodes: baseline.contract.nodes.len(),
         edges: baseline.contract.edges.len(),
         tag_files: tag_paths.len(),
+        map_lines: contract.maps.len(),
         contract: write.contract.clone(),
         blind_spots: BlindSummary::default(),
     })

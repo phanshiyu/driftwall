@@ -8,6 +8,13 @@
   foundations, with a `%% cycles: a <-> b` comment per dependency cycle (tests-only cycles named
   apart) and a summary comment. Presentation only: the nodes, tags and edges are unchanged and
   `lint` stays clean on a fresh baseline.
+- Contract map: a `%% map <node>: <glob>, <glob>` line in the contract maps files to nodes, so a
+  hand-designed diagram (even `docs/architecture.mmd`) needs no `.arch` files. The most specific
+  glob wins and an equal tie is a contract error, `%% map <prefix>*: <dir>/` is the module form,
+  a glob that matches nothing is the warning `stale-map`, and `.arch` files are not read once the
+  contract has map lines (the warning `ignored-tag-files` lists them). `where` names the contract
+  line and glob, `brief` and `neighbors` show the globs, and `init --map` writes the mapping as
+  map lines instead of `.arch` files.
 - Rust: `#[path = "b/impl.rs"] mod a;` places module `a` at that file (relative to the declaring
   file, with the inline-module and non-mod-rs rules), so `crate::a::..` resolves to it instead of
   producing a false edge to the crate root file. A `#[cfg(test)] #[path = ..] mod` makes its file

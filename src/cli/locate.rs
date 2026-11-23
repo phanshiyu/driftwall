@@ -20,21 +20,34 @@ use crate::outcome::Outcome;
 /// invalid, a path outside the root or that does not exist, or an unreadable or invalid `.arch`.
 pub fn run(args: &WhereArgs) -> Result<Run> {
     require_directory(&args.root)?;
-    if let Some(contract) = &args.contract {
-        lint::read_contract(&args.root, contract)?;
-    }
-    let file = inside_root(&args.root, &args.file);
-    let mut located = ownership::locate(&args.root, &file)?;
     let contract = args
         .contract
         .as_deref()
         .unwrap_or_else(|| Path::new(DEFAULT_CONTRACT));
+    // why: a given contract must be valid; the default one only matters when it holds `%% map` lines.
+    let parsed = if args.contract.is_some() {
+        Some(lint::read_contract(&args.root, contract)?)
+    } else {
+        lint::read_contract(&args.root, contract).ok()
+    };
+    let rules = parsed.map(|parsed| parsed.maps).unwrap_or_default();
+    let file = inside_root(&args.root, &args.file);
+    let mut located = if rules.is_empty() {
+        ownership::locate(&args.root, &file)?
+    } else {
+        let context = ownership::MapContext {
+            contract,
+            rules: &rules,
+        };
+        ownership::locate_mapped(&args.root, &file, context)?
+    };
     // why: only the command knows the contract path, so it names the file; the contract is no asset.
     if located.kind != FileKind::Directory && slash_path(&file) == slash_path(contract) {
         located = Located {
             kind: FileKind::Contract,
             node: None,
             arch_file: None,
+            map: None,
         };
     }
     let shown = slash_path(&args.file);
@@ -80,7 +93,7 @@ fn resolve(file: &Path) -> Option<PathBuf> {
 /// `<file>: <answer>`, see "CLI surface" in `docs/DESIGN.md` for the answers.
 fn render_text(file: &str, located: &Located) -> String {
     let owner = match (&located.node, &located.arch_file) {
-        (Some(node), Some(arch_file)) => Some(format!("{node} (via {})", slash_path(arch_file))),
+        (Some(node), Some(_)) => Some(format!("{node} (via {})", via(located))),
         _ => None,
     };
     let answer = match (&located.kind, owner) {
@@ -102,10 +115,23 @@ fn render_text(file: &str, located: &Located) -> String {
         (FileKind::Contract, _) => "contract".to_owned(),
         (FileKind::Folded, _) => located.arch_file.as_deref().map_or_else(
             || "folded, no node".to_owned(),
-            |arch_file| format!("folded, no node (via {})", slash_path(arch_file)),
+            |_| format!("folded, no node (via {})", via(located)),
         ),
     };
     format!("{file}: {answer}\n")
+}
+
+/// The file that decided the owner, with the line and glob when a `%% map` did.
+fn via(located: &Located) -> String {
+    let file = located
+        .arch_file
+        .as_deref()
+        .map(slash_path)
+        .unwrap_or_default();
+    match &located.map {
+        Some(site) => format!("{file}:{} (map {})", site.line, site.glob),
+        None => file,
+    }
 }
 
 /// The JSON document of `where --format json`.
@@ -117,6 +143,15 @@ struct Answer<'a> {
     kind: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
     detail: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    map: Option<MapAnswer<'a>>,
+}
+
+/// The `%% map` line and glob that decided the owner.
+#[derive(Debug, Serialize)]
+struct MapAnswer<'a> {
+    line: u32,
+    glob: &'a str,
 }
 
 fn render_json(file: &str, located: &Located) -> Result<String> {
@@ -137,6 +172,10 @@ fn render_json(file: &str, located: &Located) -> Result<String> {
         arch_file: located.arch_file.as_deref().map(slash_path),
         kind,
         detail,
+        map: located.map.as_ref().map(|site| MapAnswer {
+            line: site.line,
+            glob: &site.glob,
+        }),
     };
     let mut out = serde_json::to_string_pretty(&answer)?;
     out.push('\n');
@@ -162,6 +201,7 @@ mod tests {
             kind,
             node: owned.then(|| NodeId::new("lint").unwrap()),
             arch_file: owned.then(|| PathBuf::from("src/lint/.arch")),
+            map: None,
         }
     }
 
@@ -222,6 +262,7 @@ mod tests {
             kind: FileKind::Folded,
             node: None,
             arch_file: Some(PathBuf::from("src/.arch")),
+            map: None,
         };
         assert_eq!(
             render_text("src/lib.rs", &folded),

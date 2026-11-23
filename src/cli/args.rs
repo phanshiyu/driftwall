@@ -180,6 +180,9 @@ pub struct InitArgs {
     /// Write the contract only, without `.arch` files.
     #[arg(long)]
     pub no_tags: bool,
+    /// Write the mapping as `%% map` lines in the contract instead of `.arch` files.
+    #[arg(long, conflicts_with = "no_tags")]
+    pub map: bool,
     /// Overwrite an existing contract or `.arch` file.
     #[arg(long)]
     pub force: bool,

@@ -10,6 +10,7 @@ mod describe;
 mod existing;
 mod ids;
 mod layout;
+mod maps;
 mod plan;
 mod present;
 mod split;
@@ -49,6 +50,9 @@ pub struct WriteOptions {
     pub contract: PathBuf,
     /// Whether to write the `.arch` tags. Without them every file is unmapped.
     pub write_tags: bool,
+    /// Write the mapping as `%% map` lines in the contract instead of `.arch` files. Wins over
+    /// `write_tags`.
+    pub write_map: bool,
     /// Overwrite an existing contract or `.arch` file instead of refusing.
     pub force: bool,
 }
@@ -58,6 +62,7 @@ impl Default for WriteOptions {
         Self {
             contract: PathBuf::from(DEFAULT_CONTRACT),
             write_tags: true,
+            write_map: false,
             force: false,
         }
     }
@@ -72,6 +77,8 @@ pub struct InitSummary {
     pub edges: usize,
     /// `.arch` files written (zero without tags).
     pub tag_files: usize,
+    /// `%% map` lines written (zero without `--map`).
+    pub map_lines: usize,
     /// The contract path, as given in the options.
     pub contract: PathBuf,
     /// What the scan could not see, as counts: the same census `lint` reports.
@@ -104,6 +111,12 @@ pub enum InitError {
     /// The repository has no supported source files, so there is nothing to baseline.
     #[error("no supported source files found")]
     NoSources,
+    /// A tag has no `%% map` form.
+    #[error("the tag in {}/.arch has no `%% map` form: `node: *` with `scope: here`", dir.display())]
+    MapUnsupported {
+        /// The directory of the tag.
+        dir: PathBuf,
+    },
     /// The rendered contract does not parse.
     #[error("generated contract is invalid")]
     Diagram(#[from] DiagramError),
@@ -203,7 +216,7 @@ pub fn run(
         &all_tags,
         &every_unit,
     );
-    let mut summary = write::apply(root, &baseline, write)?;
+    let mut summary = write::apply(root, &baseline, &all_tags, write)?;
     // why: init has no owners or line counts to give, and the note shows neither.
     summary.blind_spots = BlindSpots::build(
         &ownership,

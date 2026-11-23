@@ -14,6 +14,8 @@ pub(super) const fn kind_str(kind: ViolationKind) -> &'static str {
         ViolationKind::PlannedRealized => "planned-realized",
         ViolationKind::UnresolvedImport => "unresolved-import",
         ViolationKind::PrivateSymbol => "private-symbol",
+        ViolationKind::StaleMap => "stale-map",
+        ViolationKind::IgnoredTagFiles => "ignored-tag-files",
     }
 }
 

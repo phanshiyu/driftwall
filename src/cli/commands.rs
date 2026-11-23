@@ -70,6 +70,7 @@ fn run_init(args: &InitArgs) -> Result<Run> {
     let options = InitOptions { depth: args.depth };
     let mut write = WriteOptions {
         write_tags: !args.no_tags,
+        write_map: args.map,
         force: args.force,
         ..WriteOptions::default()
     };
@@ -94,9 +95,10 @@ fn with_note(mut text: String, blind: &BlindSummary) -> String {
 
 /// `driftwall: wrote <contract> (<n> nodes, <m> edges) and <k> .arch files`.
 fn render_init_summary(summary: &InitSummary) -> String {
-    let tags = match summary.tag_files {
-        0 => "no .arch files".to_owned(),
-        count => format!("{count} .arch files"),
+    let tags = match (summary.map_lines, summary.tag_files) {
+        (0, 0) => "no .arch files".to_owned(),
+        (0, count) => format!("{count} .arch files"),
+        (lines, _) => format!("{lines} `%% map` lines"),
     };
     format!(
         "driftwall: wrote {} ({} nodes, {} edges) and {tags}\n",
@@ -128,6 +130,7 @@ mod tests {
             nodes,
             edges,
             tag_files,
+            map_lines: 0,
             contract: "architecture.mmd".into(),
             blind_spots: BlindSummary::default(),
         }

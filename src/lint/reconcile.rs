@@ -39,16 +39,23 @@ pub fn reconcile(
 
     for (at, name) in &ownership.tags {
         if !declared(contract, name) {
+            let source = if at.file == contract_file {
+                "`%% map` derives"
+            } else {
+                "`.arch` tags"
+            };
             violations.push(violation(
                 ViolationKind::UnknownNode,
                 Some(at.clone()),
                 format!(
-                    "`.arch` tags `{name}` but {} declares no such node",
+                    "{source} `{name}` but {} declares no such node",
                     contract_file.display()
                 ),
             ));
         }
     }
+
+    violations.extend(map_findings(ownership, contract_file));
 
     for file in &ownership.unmapped {
         violations.push(violation(
@@ -153,6 +160,46 @@ fn private_symbols(
             )
         })
         .collect()
+}
+
+/// The findings about `%% map` lines: globs that match nothing, and `.arch` files nobody reads.
+fn map_findings(ownership: &Ownership, contract_file: &Path) -> Vec<Violation> {
+    let mut violations = Vec::new();
+    for site in &ownership.stale_maps {
+        violations.push(violation(
+            ViolationKind::StaleMap,
+            Some(Location {
+                file: contract_file.to_path_buf(),
+                line: site.line,
+            }),
+            format!("map glob `{}` matches no file", site.glob),
+        ));
+    }
+    if !ownership.ignored_tags.is_empty() {
+        let shown: Vec<String> = ownership
+            .ignored_tags
+            .iter()
+            .take(3)
+            .map(|path| path.display().to_string())
+            .collect();
+        let more = ownership.ignored_tags.len().saturating_sub(shown.len());
+        let rest = if more == 0 {
+            String::new()
+        } else {
+            format!(" and {more} more")
+        };
+        violations.push(violation(
+            ViolationKind::IgnoredTagFiles,
+            None,
+            format!(
+                "{} has `%% map` lines, so {} `.arch` files are not read: {}{rest}",
+                contract_file.display(),
+                ownership.ignored_tags.len(),
+                shown.join(", ")
+            ),
+        ));
+    }
+    violations
 }
 
 /// True when `name` is a node declared in the contract.

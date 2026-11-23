@@ -112,6 +112,7 @@ mod tests {
             kind,
             node: owned.then(|| NodeId::new("lint").unwrap()),
             arch_file: owned.then(|| "src/lint/.arch".into()),
+            map: None,
         };
         assert_eq!(
             Outcome::of_where(&located(FileKind::Source, true)),
@@ -129,6 +130,7 @@ mod tests {
             kind,
             node: None,
             arch_file: None,
+            map: None,
         };
         for kind in [
             FileKind::Asset,

@@ -8,6 +8,7 @@ mod folded;
 mod language;
 mod locate;
 mod lookup;
+mod mapping;
 mod module;
 
 #[cfg(test)]
@@ -29,12 +30,13 @@ pub use error::{ArchProblem, OwnershipError};
 pub use exclude::{HEADER_LINES, announces_generated, exclusion_of};
 pub use folded::{declares_nothing, is_entry_file, trivial_files};
 pub use language::{language_in, language_of};
-pub use locate::{FileKind, Located, locate};
+pub use locate::{FileKind, Located, locate, locate_mapped};
 pub use lookup::owner_in;
+pub use mapping::{MapContext, Mapper, scan_mapped};
 pub use module::{folds, is_test_file, module_name, peers_in};
 
 pub use crate::model::{DirTag, Scope, Tag};
-use crate::model::{Exclusion, Location, NodeId, Ownership};
+use crate::model::{Exclusion, Location, MapSite, ModelError, NodeId, Ownership};
 
 /// Name of the file that tags a directory with a node.
 const ARCH_FILE: &str = ".arch";
@@ -70,21 +72,34 @@ impl Decision {
         self.scope == Scope::Subtree || file.parent() == Some(dir)
     }
 
-    /// The node `file` gets from this decision, where `dir` is the directory of the `.arch` file.
-    fn node_for(&self, dir: &Path, file: &Path) -> Result<NodeId, OwnershipError> {
-        match &self.tag {
+    /// What this decision, made in the directory `dir` of the `.arch` file, says about `file`.
+    /// `trivial` is whether `file` is an entry file that declares nothing.
+    fn verdict(&self, dir: &Path, file: &Path, trivial: bool) -> Verdict {
+        let derived = matches!(self.tag, Tag::Modules(_));
+        let node = match &self.tag {
             Tag::Node(id) => Ok(id.clone()),
             Tag::Modules(prefix) => {
-                let name = module_name(dir, file, &self.peers).unwrap_or_default();
-                prefix
-                    .derive(&name)
-                    .map_err(|source| OwnershipError::InvalidModule {
-                        at: self.location(),
-                        file: file.to_path_buf(),
-                        source,
-                    })
+                prefix.derive(&module_name(dir, file, &self.peers).unwrap_or_default())
             }
+        };
+        Verdict {
+            node,
+            at: self.location(),
+            folded: trivial && derived && folds(dir, file, &self.peers),
+            derived,
+            site: None,
         }
+    }
+
+    /// The node `file` gets from this decision, where `dir` is the directory of the `.arch` file.
+    fn node_for(&self, dir: &Path, file: &Path) -> Result<NodeId, OwnershipError> {
+        self.verdict(dir, file, false)
+            .node
+            .map_err(|source| OwnershipError::InvalidModule {
+                at: self.location(),
+                file: file.to_path_buf(),
+                source,
+            })
     }
 
     fn location(&self) -> Location {
@@ -169,49 +184,10 @@ pub fn scan(root: &Path) -> Result<Ownership, OwnershipError> {
         ignored,
         ..Ownership::default()
     };
-    let mut derived: BTreeSet<(Location, String)> = BTreeSet::new();
-    for source in sources {
-        match nearest_decision(&decisions, &source) {
-            Some((dir, decision))
-                if trivial.contains(&source)
-                    && matches!(decision.tag, Tag::Modules(_))
-                    && folds(dir, &source, &decision.peers) =>
-            {
-                ownership.folded.insert(source);
-            }
-            Some((dir, decision)) => {
-                let node = decision.node_for(dir, &source)?;
-                if matches!(decision.tag, Tag::Modules(_)) {
-                    derived.insert((decision.location(), node.to_string()));
-                }
-                ownership.owners.insert(source, node);
-            }
-            None => {
-                ownership.unmapped.insert(source);
-            }
-        }
-    }
-    for asset in assets {
-        // why: an asset must never fail the scan, so a name that is no node id leaves it unmapped.
-        let owner = nearest_decision(&decisions, &asset)
-            .and_then(|(dir, decision)| decision.node_for(dir, &asset).ok());
-        match owner {
-            Some(node) => {
-                ownership.asset_owners.insert(asset, node);
-            }
-            None => {
-                ownership.asset_unmapped.insert(asset);
-            }
-        }
-    }
-    // why: like an asset, an excluded file must never fail the scan, so a bad derived name is no owner.
-    for file in ownership.excluded.values().flatten() {
-        let owner = nearest_decision(&decisions, file)
-            .and_then(|(dir, decision)| decision.node_for(dir, file).ok());
-        if let Some(node) = owner {
-            ownership.excluded_owners.insert(file.clone(), node);
-        }
-    }
+    let derived = classify(&mut ownership, sources, assets, |source| {
+        nearest_decision(&decisions, source)
+            .map(|(dir, decision)| decision.verdict(dir, source, trivial.contains(source)))
+    })?;
     tags.extend(derived);
     tags.sort();
     ownership.tags = tags;
@@ -227,6 +203,85 @@ pub fn scan(root: &Path) -> Result<Ownership, OwnershipError> {
         })
         .collect();
     Ok(ownership)
+}
+
+/// What a tag rule decides about one file.
+struct Verdict {
+    /// The node, or why a `node: *` name is not one.
+    node: Result<NodeId, ModelError>,
+    /// Where the rule is written, for an error and for the derived tags.
+    at: Location,
+    /// Whether the file is a folded entry file.
+    folded: bool,
+    /// Whether the node is derived from a module name (the tag is `node: *`, or a module `%% map`).
+    derived: bool,
+    /// With `%% map` lines: the glob that decided.
+    site: Option<MapSite>,
+}
+
+/// Sorts every walked file of the scan into `ownership`: owned, unmapped or folded sources, and
+/// the owners of assets and excluded files, by the verdicts of `decide`. Returns the derived tags
+/// as (rule location, node name).
+fn classify(
+    ownership: &mut Ownership,
+    sources: Vec<PathBuf>,
+    assets: Vec<PathBuf>,
+    decide: impl Fn(&Path) -> Option<Verdict>,
+) -> Result<BTreeSet<(Location, String)>, OwnershipError> {
+    let mut derived: BTreeSet<(Location, String)> = BTreeSet::new();
+    for source in sources {
+        match decide(&source) {
+            Some(verdict) if verdict.folded => {
+                ownership.folded.insert(source);
+            }
+            Some(verdict) => {
+                let node = verdict
+                    .node
+                    .map_err(|error| OwnershipError::InvalidModule {
+                        at: verdict.at.clone(),
+                        file: source.clone(),
+                        source: error,
+                    })?;
+                if verdict.derived {
+                    derived.insert((verdict.at, node.to_string()));
+                }
+                if let Some(site) = verdict.site {
+                    ownership.map_sites.insert(source.clone(), site);
+                }
+                ownership.owners.insert(source, node);
+            }
+            None => {
+                ownership.unmapped.insert(source);
+            }
+        }
+    }
+    for asset in assets {
+        // why: an asset must never fail the scan, so a name that is no node id leaves it unmapped.
+        match decide(&asset).and_then(|verdict| Some((verdict.node.ok()?, verdict.site))) {
+            Some((node, site)) => {
+                if let Some(site) = site {
+                    ownership.map_sites.insert(asset.clone(), site);
+                }
+                ownership.asset_owners.insert(asset, node);
+            }
+            None => {
+                ownership.asset_unmapped.insert(asset);
+            }
+        }
+    }
+    // why: like an asset, an excluded file must never fail the scan, so a bad derived name is no owner.
+    let excluded: Vec<PathBuf> = ownership.excluded.values().flatten().cloned().collect();
+    for file in excluded {
+        if let Some((node, site)) =
+            decide(&file).and_then(|verdict| Some((verdict.node.ok()?, verdict.site)))
+        {
+            if let Some(site) = site {
+                ownership.map_sites.insert(file.clone(), site);
+            }
+            ownership.excluded_owners.insert(file, node);
+        }
+    }
+    Ok(derived)
 }
 
 /// The peers of `dir` among `sources`, leaving out the entry files that declare nothing.

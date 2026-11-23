@@ -117,10 +117,13 @@ fn model_depends_on_no_other_node() {
             );
         }
     }
-    // why: model/mod.rs declares and re-exports its one submodule, blind.rs, and nothing else.
+    // why: model/mod.rs declares and re-exports its submodules, blind.rs and map.rs, and nothing else.
     assert_eq!(
         dependencies(&all, "src/model/mod.rs"),
-        BTreeSet::from(["src/model/blind.rs".to_owned()])
+        BTreeSet::from([
+            "src/model/blind.rs".to_owned(),
+            "src/model/map.rs".to_owned()
+        ])
     );
 }
 

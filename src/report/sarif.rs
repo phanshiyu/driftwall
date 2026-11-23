@@ -174,16 +174,18 @@ mod tests {
         assert_eq!(
             ids,
             [
+                "ignored-tag-files",
                 "planned-realized",
                 "private-symbol",
                 "stale-edge",
+                "stale-map",
                 "undeclared-edge",
                 "unknown-node",
                 "unmapped-file",
                 "unresolved-import",
             ]
         );
-        assert_eq!(value["runs"][0]["results"].as_array().unwrap().len(), 7);
+        assert_eq!(value["runs"][0]["results"].as_array().unwrap().len(), 9);
     }
 
     #[test]

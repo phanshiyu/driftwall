@@ -152,6 +152,32 @@ pub enum DiagramError {
         /// The undeclared node.
         id: NodeId,
     },
+    /// A `%% map` line that is not `%% map <target>: <glob>, <glob>`.
+    #[error("line {line}: malformed `%% map` line: {reason}")]
+    MalformedMap {
+        /// Line of the directive.
+        line: u32,
+        /// What is wrong with it.
+        reason: String,
+    },
+    /// The same glob appears on two `%% map` lines, or twice on one.
+    #[error("line {line}: map glob `{glob}` is already mapped on line {first_line}")]
+    DuplicateMapGlob {
+        /// Line of the second occurrence.
+        line: u32,
+        /// The glob as written there.
+        glob: String,
+        /// Line of the first occurrence.
+        first_line: u32,
+    },
+    /// A `%% map` line names a node that no statement declares.
+    #[error("line {line}: `%% map` names `{id}`, which is not a declared node")]
+    UndeclaredMapNode {
+        /// Line of the directive.
+        line: u32,
+        /// The undeclared node.
+        id: NodeId,
+    },
 }
 
 impl DiagramError {
@@ -175,7 +201,10 @@ impl DiagramError {
             | Self::StrayEnd { line }
             | Self::MalformedExports { line, .. }
             | Self::DuplicateExports { line, .. }
-            | Self::UndeclaredExportsNode { line, .. } => Some(*line),
+            | Self::UndeclaredExportsNode { line, .. }
+            | Self::MalformedMap { line, .. }
+            | Self::DuplicateMapGlob { line, .. }
+            | Self::UndeclaredMapNode { line, .. } => Some(*line),
         }
     }
 }

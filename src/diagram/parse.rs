@@ -3,7 +3,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::error::DiagramError;
-use crate::model::{Contract, Edge, EdgeKind, NodeId, NodeInfo};
+use crate::model::{
+    Contract, Edge, EdgeKind, MapGlob, MapRule, MapTarget, NodeId, NodeInfo, Prefix,
+};
 
 const DIRECTIONS: [&str; 4] = ["LR", "RL", "TB", "BT"];
 const RESERVED: [&str; 3] = ["end", "flowchart", "subgraph"];
@@ -17,7 +19,8 @@ const DOTTED: &str = "-.->";
 /// endpoints, which are checked once the whole file has been read.
 ///
 /// A comment line `%% exports <node>: <Name>, <Name>` declares the public surface of a node and is
-/// stored in [`Contract::surfaces`]. Every other `%%` line is a plain comment. The node of an
+/// stored in [`Contract::surfaces`], and `%% map <node>: <glob>, <glob>` maps files to a node and
+/// is stored in [`Contract::maps`]. Every other `%%` line is a plain comment. The node of an
 /// exports line is checked like an edge endpoint, once the whole file has been read.
 ///
 /// # Errors
@@ -32,8 +35,12 @@ pub fn parse(src: &str) -> Result<Contract, DiagramError> {
     for raw in src.lines() {
         line = line.saturating_add(1);
         let text = raw.trim();
-        if let Some(directive) = exports_directive(text) {
+        if let Some(directive) = directive(text, "exports") {
             parser.exports(directive, line)?;
+            continue;
+        }
+        if let Some(directive) = directive(text, "map") {
+            parser.map(directive, line)?;
             continue;
         }
         if text.is_empty() || text.starts_with("%%") {
@@ -67,6 +74,8 @@ struct Parser {
     edges: Vec<PendingEdge>,
     exports: Vec<PendingExports>,
     exports_lines: BTreeMap<NodeId, u32>,
+    maps: Vec<MapRule>,
+    map_globs: BTreeMap<String, u32>,
 }
 
 impl Parser {
@@ -202,6 +211,54 @@ impl Parser {
         Ok(())
     }
 
+    /// Records the `%% map` directive whose text after the keyword is `rest`.
+    fn map(&mut self, rest: &str, line: u32) -> Result<(), DiagramError> {
+        let malformed = |reason: String| DiagramError::MalformedMap { line, reason };
+        let (raw_target, list) = rest
+            .split_once(':')
+            .ok_or_else(|| malformed("expected `<node>: <glob>, <glob>`".to_owned()))?;
+        let raw_target = raw_target.trim();
+        let target = match raw_target.strip_suffix('*') {
+            Some("") => MapTarget::Modules(Prefix::default()),
+            Some(prefix) => {
+                MapTarget::Modules(Prefix::new(prefix).map_err(|e| malformed(e.to_string()))?)
+            }
+            None if raw_target.is_empty() => {
+                return Err(malformed("no node before the `:`".to_owned()));
+            }
+            None => MapTarget::Node(valid_id(raw_target, line)?),
+        };
+        let mut globs = Vec::new();
+        for raw in list.split(',') {
+            let glob =
+                MapGlob::parse(raw).map_err(|e| malformed(format!("`{}`: {e}", raw.trim())))?;
+            let key = glob.normalized();
+            if let Some(first_line) = self.map_globs.get(&key) {
+                return Err(DiagramError::DuplicateMapGlob {
+                    line,
+                    glob: glob.to_string(),
+                    first_line: *first_line,
+                });
+            }
+            self.map_globs.insert(key, line);
+            globs.push(glob);
+        }
+        if matches!(target, MapTarget::Modules(_)) {
+            let single = globs.len() == 1 && globs.iter().all(|g| g.directory().is_some());
+            if !single {
+                return Err(malformed(
+                    "a module target takes exactly one directory glob such as `src/ui/`".to_owned(),
+                ));
+            }
+        }
+        self.maps.push(MapRule {
+            line,
+            target,
+            globs,
+        });
+        Ok(())
+    }
+
     fn declare(
         &mut self,
         raw_id: &str,
@@ -282,21 +339,32 @@ impl Parser {
             }
             surfaces.insert(pending.node, pending.names);
         }
+        for rule in &self.maps {
+            if let MapTarget::Node(id) = &rule.target
+                && !self.nodes.contains_key(id)
+            {
+                return Err(DiagramError::UndeclaredMapNode {
+                    line: rule.line,
+                    id: id.clone(),
+                });
+            }
+        }
         Ok(Contract {
             nodes: self.nodes,
             edges,
             surfaces,
+            maps: self.maps,
         })
     }
 }
 
-/// The text after the keyword when `text` is a `%% exports` directive: a comment whose first word
-/// is `exports`. Any other comment, and anything that is not a comment, is `None`.
-fn exports_directive(text: &str) -> Option<&str> {
+/// The text after the keyword when `text` is a `%% <keyword>` directive: a comment whose first word
+/// is `keyword`. Any other comment, and anything that is not a comment, is `None`.
+fn directive<'a>(text: &'a str, keyword: &str) -> Option<&'a str> {
     let rest = text
         .strip_prefix("%%")?
         .trim_start()
-        .strip_prefix("exports")?;
+        .strip_prefix(keyword)?;
     (rest.is_empty() || rest.starts_with(char::is_whitespace)).then(|| rest.trim())
 }
 
@@ -920,5 +988,134 @@ mod tests {
     fn first_error_in_file_order_wins_for_syntax() {
         let (_, line) = err_line("flowchart LR\na\nstyle a\nb --> c\n");
         assert_eq!(line, Some(3));
+    }
+
+    fn rule_text(contract: &Contract) -> Vec<String> {
+        contract
+            .maps
+            .iter()
+            .map(|rule| {
+                let globs: Vec<&str> = rule.globs.iter().map(MapGlob::as_str).collect();
+                format!("{}@{}: {}", rule.target, rule.line, globs.join("|"))
+            })
+            .collect()
+    }
+
+    #[test]
+    fn map_lines_declare_rules_with_their_lines() {
+        let src = "flowchart LR\na\nb\n%% map a: src/a/, lib/*.ts\n  %%map   b :  ./x.ts\n%% map a: more/\n";
+        let contract = parse(src).unwrap();
+        assert_eq!(
+            rule_text(&contract),
+            ["a@4: src/a/|lib/*.ts", "b@5: ./x.ts", "a@6: more/"]
+        );
+    }
+
+    #[test]
+    fn module_form_takes_one_plain_directory() {
+        let contract = parse("flowchart LR\na-x\n%% map a-*: src/\n%% map *: ./\n").unwrap();
+        assert_eq!(rule_text(&contract), ["a-*@3: src/", "*@4: ./"]);
+        for bad in [
+            "%% map a-*: src/, lib/",
+            "%% map a-*: src/*.ts",
+            "%% map a-*: src/x",
+            "%% map a*: src/",
+        ] {
+            let (err, line) = err_line(&format!("flowchart LR\na\n{bad}\n"));
+            assert!(
+                matches!(err, DiagramError::MalformedMap { .. }),
+                "{bad}: {err:?}"
+            );
+            assert_eq!(line, Some(3), "{bad}");
+        }
+    }
+
+    #[test]
+    fn a_map_naming_an_undeclared_node_is_reported_on_its_line_after_the_whole_file() {
+        let (err, line) = err_line("flowchart LR\na\n%% map ghost: x/\nb\n");
+        assert_eq!(
+            err,
+            DiagramError::UndeclaredMapNode {
+                line: 3,
+                id: id("ghost")
+            }
+        );
+        assert_eq!(line, Some(3));
+    }
+
+    #[test]
+    fn malformed_map_lines_are_errors_on_their_line() {
+        for bad in [
+            "%% map",
+            "%% map a",
+            "%% map a:",
+            "%% map : x/",
+            "%% map a: x/,",
+            "%% map a: !x/",
+            "%% map a: ../x/",
+            "%% map a: x/[ab]",
+            "%% map a: a**b/",
+            "%% map of the system",
+        ] {
+            let (err, line) = err_line(&format!("flowchart LR\na\n{bad}\n"));
+            assert!(
+                matches!(err, DiagramError::MalformedMap { line: 3, .. }),
+                "{bad}: {err:?}"
+            );
+            assert_eq!(line, Some(3), "{bad}");
+        }
+        let (err, _) = err_line("flowchart LR\na\n%% map 1a: x/\n");
+        assert!(
+            matches!(err, DiagramError::InvalidId { line: 3, .. }),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn a_repeated_glob_is_rejected_with_both_lines_whatever_its_spelling() {
+        let (err, _) = err_line("flowchart LR\na\nb\n%% map a: src/x/\n%% map b: /src/x/\n");
+        assert_eq!(
+            err,
+            DiagramError::DuplicateMapGlob {
+                line: 5,
+                glob: "/src/x/".to_owned(),
+                first_line: 4
+            }
+        );
+        let (err, _) = err_line("flowchart LR\na\n%% map a: s/, s/\n");
+        assert!(matches!(
+            err,
+            DiagramError::DuplicateMapGlob {
+                line: 3,
+                first_line: 3,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn only_a_comment_whose_first_word_is_map_is_a_directive() {
+        let ok =
+            parse("flowchart LR\na\n%% mapped a: x/\n%% see map a: x/\n%% Map a: x/\n").unwrap();
+        assert_eq!(ok.maps, Vec::new());
+        let (err, _) = err_line("flowchart LR\na\n%% mapped a: x/\n%%map\n");
+        assert!(
+            matches!(err, DiagramError::MalformedMap { line: 4, .. }),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn map_rules_survive_a_render_round_trip_without_their_line_numbers() {
+        let src = "flowchart LR\na\nb\n\n\n%% map b: z/\n%% map a: src/, lib/*.ts\n";
+        let contract = parse(src).unwrap();
+        let rendered = crate::diagram::render(&contract);
+        let again = parse(&rendered).unwrap();
+        assert_eq!(again, contract);
+        assert_eq!(again.maps.len(), 2);
+        assert!(
+            rendered.ends_with("  %% map b: z/\n  %% map a: src/, lib/*.ts\n"),
+            "{rendered}"
+        );
     }
 }

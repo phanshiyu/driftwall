@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::model::{Contract, EdgeKind, NodeId, NodeInfo};
+use crate::model::{Contract, EdgeKind, MapGlob, NodeId, NodeInfo};
 
 const PREAMBLE: [&str; 4] = [
     "%% driftwall architecture contract.",
@@ -15,7 +15,7 @@ const PREAMBLE: [&str; 4] = [
 ///
 /// Output is byte-identical for equal contracts: boundaries in id order with their nodes, then
 /// unboundaried nodes, then edges sorted by `(from, to)`, then one `%% exports` line per node with
-/// a surface, sorted by node with its names sorted. A node with an empty surface has no line, since
+/// a surface, sorted by node with its names sorted, then the `%% map` lines in contract order. A node with an empty surface has no line, since
 /// the format cannot say it.
 ///
 /// `parse(&render(&c)) == Ok(c)` holds for every contract whose ids are valid, whose labels
@@ -76,6 +76,14 @@ pub fn render(contract: &Contract) -> String {
     if !exports.is_empty() {
         lines.push(String::new());
         lines.extend(exports);
+    }
+
+    if !contract.maps.is_empty() {
+        lines.push(String::new());
+        for rule in &contract.maps {
+            let globs: Vec<&str> = rule.globs.iter().map(MapGlob::as_str).collect();
+            lines.push(format!("  %% map {}: {}", rule.target, globs.join(", ")));
+        }
     }
 
     let mut out = lines.join("\n");

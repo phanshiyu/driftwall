@@ -145,6 +145,8 @@ mod tests {
                 "planned-realized",
                 "unresolved-import",
                 "private-symbol",
+                "stale-map",
+                "ignored-tag-files",
             ]
         );
     }

@@ -14,7 +14,9 @@ pub(super) const fn severity(kind: ViolationKind) -> Severity {
         | ViolationKind::PrivateSymbol => Severity::Error,
         ViolationKind::StaleEdge
         | ViolationKind::PlannedRealized
-        | ViolationKind::UnresolvedImport => Severity::Warning,
+        | ViolationKind::UnresolvedImport
+        | ViolationKind::StaleMap
+        | ViolationKind::IgnoredTagFiles => Severity::Warning,
     }
 }
 
@@ -35,6 +37,12 @@ pub(super) const fn hint(kind: ViolationKind) -> &'static str {
         }
         ViolationKind::PlannedRealized => "change `-.->` to `-->` in the contract",
         ViolationKind::UnresolvedImport => "fix the import path or add the missing file",
+        ViolationKind::StaleMap => {
+            "fix the glob, or remove the `%% map` entry if the code it described is gone"
+        }
+        ViolationKind::IgnoredTagFiles => {
+            "delete the `.arch` files: the contract's `%% map` lines decide ownership"
+        }
         ViolationKind::PrivateSymbol => {
             "import a name the node exports, or ask the user to approve extending its `%% exports` line in the contract"
         }

@@ -5,11 +5,12 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
+use super::mapping::explain_mapped;
 use super::{
-    ARCH_FILE, Discovered, Explanation, OwnershipError, discover, explain, language_of,
+    ARCH_FILE, Discovered, Explanation, MapContext, OwnershipError, discover, explain, language_of,
     relative_to_root,
 };
-use crate::model::{Exclusion, NodeId};
+use crate::model::{Exclusion, MapSite, NodeId};
 
 /// What a walked path is to driftwall.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -43,8 +44,11 @@ pub struct Located {
     /// The owning node, by the tag rules of source files, also for an excluded or ignored file.
     /// `None` when no tag covers the file, and for a tag file, a contract and a folded entry file.
     pub node: Option<NodeId>,
-    /// The `.arch` file that decided it, relative to the root.
+    /// The `.arch` file that decided it, relative to the root, or the contract when a `%% map`
+    /// glob did.
     pub arch_file: Option<PathBuf>,
+    /// The `%% map` line and glob that decided it, in map mode.
+    pub map: Option<MapSite>,
 }
 
 /// Says what `file` is (see [`FileKind`]) and who owns it, like [`explain`] for the owner.
@@ -58,6 +62,27 @@ pub struct Located {
 /// Fails with [`OwnershipError::NoSuchFile`] when nothing exists at `file`, and as [`explain`] does
 /// otherwise, plus when the tree cannot be walked.
 pub fn locate(root: &Path, file: &Path) -> Result<Located, OwnershipError> {
+    locate_with(root, file, None)
+}
+
+/// Like [`locate`], with the owner decided by the `%% map` lines of `context` and no `.arch` file
+/// read. A directory is answered as a file directly in it.
+///
+/// # Errors
+/// As [`locate`], plus the errors of [`scan_mapped`](super::scan_mapped).
+pub fn locate_mapped(
+    root: &Path,
+    file: &Path,
+    context: MapContext<'_>,
+) -> Result<Located, OwnershipError> {
+    locate_with(root, file, Some(context))
+}
+
+fn locate_with(
+    root: &Path,
+    file: &Path,
+    context: Option<MapContext<'_>>,
+) -> Result<Located, OwnershipError> {
     let relative = relative_to_root(root, file)?;
     let full = root.join(&relative);
     let metadata = match fs::metadata(&full) {
@@ -79,13 +104,21 @@ pub fn locate(root: &Path, file: &Path) -> Result<Located, OwnershipError> {
             kind,
             node: None,
             arch_file: None,
+            map: None,
         });
     }
-    let Explanation {
-        node,
-        arch_file,
-        folded,
-    } = match explain(root, &relative) {
+    let explained = context.map_or_else(
+        || explain(root, &relative).map(|found| (found, None)),
+        |context| explain_mapped(root, &relative, kind == FileKind::Directory, context),
+    );
+    let (
+        Explanation {
+            node,
+            arch_file,
+            folded,
+        },
+        map,
+    ) = match explained {
         // why: an asset or unread file must never fail, so a name that is no node id is unowned.
         Err(OwnershipError::InvalidModule { .. })
             if matches!(
@@ -93,11 +126,14 @@ pub fn locate(root: &Path, file: &Path) -> Result<Located, OwnershipError> {
                 FileKind::Asset | FileKind::Unread(_) | FileKind::Excluded(_) | FileKind::Ignored
             ) =>
         {
-            Explanation {
-                node: None,
-                arch_file: None,
-                folded: false,
-            }
+            (
+                Explanation {
+                    node: None,
+                    arch_file: None,
+                    folded: false,
+                },
+                None,
+            )
         }
         other => other?,
     };
@@ -109,6 +145,7 @@ pub fn locate(root: &Path, file: &Path) -> Result<Located, OwnershipError> {
         },
         node,
         arch_file,
+        map,
     })
 }
 

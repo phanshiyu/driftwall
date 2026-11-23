@@ -21,7 +21,7 @@ mod witness {
     use driftwall::imports::ImportsError;
     use driftwall::init::InitError;
     use driftwall::lint::LintError;
-    use driftwall::model::{Location, ModelError, NodeId};
+    use driftwall::model::{GlobError, Location, MapSite, ModelError, NodeId};
     use driftwall::ownership::{ArchProblem, OwnershipError};
     use driftwall::report::ReportError;
 
@@ -55,6 +55,7 @@ mod witness {
     }
 
     witness!(ModelError: InvalidNodeId, InvalidPrefix);
+    witness!(GlobError: Empty, Negated, ParentDir, Unsupported, DoubleStar);
     witness!(
         ArchProblem: MissingNode,
         DuplicateNode,
@@ -81,8 +82,19 @@ mod witness {
         MalformedExports,
         DuplicateExports,
         UndeclaredExportsNode,
+        MalformedMap,
+        DuplicateMapGlob,
+        UndeclaredMapNode,
     );
-    witness!(OwnershipError: Io, InvalidArch, InvalidModule, Walk, NoSuchFile, OutsideRoot);
+    witness!(
+        OwnershipError: Io,
+        InvalidArch,
+        InvalidModule,
+        AmbiguousMap,
+        Walk,
+        NoSuchFile,
+        OutsideRoot,
+    );
     witness!(ImportsError: Io, Grammar, Query);
     witness!(LintError: Io, Diagram, Ownership, Imports, OldContract, NewContract);
     witness!(
@@ -93,6 +105,7 @@ mod witness {
         NoSources,
         Diagram,
         RoundTrip,
+        MapUnsupported,
     );
     witness!(ReportError: Serialize);
 
@@ -100,6 +113,7 @@ mod witness {
     /// the source tree.
     const COVERED: &[&str] = &[
         ModelError::TYPE,
+        GlobError::TYPE,
         ArchProblem::TYPE,
         DiagramError::TYPE,
         OwnershipError::TYPE,
@@ -149,6 +163,18 @@ mod witness {
     impl Build for ModelError {
         fn build() -> Vec<Self> {
             vec![model_error(), Self::InvalidPrefix("1".to_owned())]
+        }
+    }
+
+    impl Build for GlobError {
+        fn build() -> Vec<Self> {
+            vec![
+                Self::Empty,
+                Self::Negated,
+                Self::ParentDir,
+                Self::Unsupported('{'),
+                Self::DoubleStar,
+            ]
         }
     }
 
@@ -221,6 +247,16 @@ mod witness {
                     first_line: 2,
                 },
                 Self::UndeclaredExportsNode { line: 16, id: id() },
+                Self::MalformedMap {
+                    line: 17,
+                    reason: "x".to_owned(),
+                },
+                Self::DuplicateMapGlob {
+                    line: 18,
+                    glob: "x/".to_owned(),
+                    first_line: 2,
+                },
+                Self::UndeclaredMapNode { line: 19, id: id() },
             ]
         }
     }
@@ -247,6 +283,18 @@ mod witness {
                 Self::Walk {
                     root: path(),
                     source: ignore::Error::Io(io_error()),
+                },
+                Self::AmbiguousMap {
+                    contract: path(),
+                    file: path(),
+                    first: MapSite {
+                        line: 2,
+                        glob: "a/".to_owned(),
+                    },
+                    second: MapSite {
+                        line: 3,
+                        glob: "a/*".to_owned(),
+                    },
                 },
                 Self::NoSuchFile { path: path() },
                 Self::OutsideRoot {
@@ -311,6 +359,7 @@ mod witness {
                 Self::NoSources,
                 Self::Diagram(diagram_error()),
                 Self::RoundTrip,
+                Self::MapUnsupported { dir: path() },
             ]
         }
     }
@@ -349,6 +398,11 @@ mod witness {
     #[test]
     fn model_error_does_not_repeat_its_cause() {
         check::<ModelError>();
+    }
+
+    #[test]
+    fn glob_error_does_not_repeat_its_cause() {
+        check::<GlobError>();
     }
 
     #[test]

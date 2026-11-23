@@ -145,7 +145,18 @@ pub fn run(root: &Path, options: &LintOptions) -> Result<LintReport, LintError> 
 /// The same as [`run`].
 pub fn observe(root: &Path, options: &LintOptions) -> Result<Observation, LintError> {
     let contract = read_contract(root, &options.contract)?;
-    let ownership = ownership::scan(root)?;
+    // why: a contract with `%% map` lines decides ownership alone, so `.arch` files are not read.
+    let context = ownership::MapContext {
+        contract: &options.contract,
+        rules: &contract.maps,
+    };
+    let uses_maps = !contract.maps.is_empty();
+    let ownership = if uses_maps {
+        ownership::scan_mapped(root, context)?
+    } else {
+        ownership::scan(root)?
+    };
+    let mapper = ownership::Mapper::new(context);
 
     // why: files of unsupported languages are skipped here, so only extractable sources are read.
     let files: BTreeMap<PathBuf, Language> = ownership
@@ -177,7 +188,13 @@ pub fn observe(root: &Path, options: &LintOptions) -> Result<Observation, LintEr
     let undeclared = observe::undeclared_owners(&contract, &ownership, &imports);
     let blind_spots = BlindSpots::build(
         &ownership,
-        |path| ownership::owner_in(&ownership.tag_dirs, path),
+        |path| {
+            if uses_maps {
+                mapper.owner(path, &ownership.tag_dirs)
+            } else {
+                ownership::owner_in(&ownership.tag_dirs, path)
+            }
+        },
         |path| Some(ownership::line_count(root, path)),
         imports
             .values()

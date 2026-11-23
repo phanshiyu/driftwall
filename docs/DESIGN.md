@@ -29,6 +29,9 @@ flowchart LR
 - Edge endpoints must be declared nodes. Chained edges (`a --> b --> c`) and `&` fan-out are errors.
 - `-->` is `EdgeKind::Implemented`. `-.->` is `EdgeKind::Planned`.
 - Edges between nodes in different boundaries are normal. Boundaries never carry edges.
+- A comment whose first word is `exports` is the surface directive (see "Symbols and public
+  surfaces"), and one whose first word is `map` is the mapping directive (see "Contract map").
+  Every other comment is plain.
 
 ## Ownership
 
@@ -49,6 +52,85 @@ accepted value, and a `scope:` line without a `node:` line is the same `missing 
 empty file. The scope is a typed field of the tag (`Scope::Subtree`, the default, or `Scope::Here`).
 `where` and `scan` answer through the same rule: a `scope: here` file is skipped for any file that is
 not directly in its directory, and the search continues in the directories above it.
+
+### Contract map (`%% map`)
+
+A repository can adopt a hand-designed diagram without any `.arch` file: the mapping from code to
+nodes may live in the contract itself, which may sit anywhere (`docs/architecture.mmd`).
+
+```
+%% map ui: src/ui/, src/components/**/*.svelte
+%% map api: src/api/
+%% map ui: src/shared/ui.ts
+%% map store-*: src/stores/
+```
+
+**Syntax.** A comment line whose first word after `%%` is `map` (any whitespace around the words, any
+position in the file, like `exports`). It is `%% map <target>: <glob>[, <glob>...]`. A comment that
+starts with the word `map` and does not have this form is a contract error with its line number,
+never a plain comment (`%% map of the system` is an error). The target is a node id, which must be a
+node the contract declares (declaration order does not matter, as for `exports`), else the error
+is reported at the map line. Several map lines may name one node. The line number of every rule is kept
+in `Contract::maps` and is not part of the contract's equality, so a contract round-trips through
+`render` with its rules.
+
+**Globs** are relative to the repository root (the lint root), whatever directory the contract is in.
+A leading `/` or `./` is dropped, so `src/ui/` and `/src/ui/` are the same glob. They are anchored:
+`ui/` never matches `src/ui/`. Segments are separated by `/`. In a segment `*` matches any run of
+characters and `?` one character, neither crossing a `/`. A segment that is exactly `**` matches any
+number of whole segments, none included. A glob that ends in `/` names a directory and matches every
+file below it at any depth (`src/ui/` is `src/ui/**`); `./` (or `/`) is the whole repository. Any
+other glob matches a file path exactly, so `src/*` is the files directly in `src` and `src/ui`
+without a slash matches only a file called `ui`. This is the gitignore dialect `.driftwallignore`
+uses, with two differences chosen so that the answer is exact: globs are always anchored, and `*`
+never reaches into a subdirectory through a matched directory name. A glob must not be empty or
+start with `!`, and has no `..` segment, no `\`, no `[`, `]`, `{` or `}`, and `**` only as a whole
+segment. A repeated glob (after dropping `./`) anywhere in the contract is an error at the second
+line. The list is split at commas, so a glob has no comma. Globs apply to every walked file, source or
+asset or excluded, as a `.arch` tag does, but only a source file can be `unmapped-file`.
+
+**Specificity.** A file belongs to the node of the matching glob that is most specific. The
+specificity of a glob is, compared in this order,
+
+1. the number of leading segments that are literal (hold no `*` or `?`): `src/ui/` is 2, `src/*.ts`
+   is 1, `**/x.ts` is 0;
+2. the length of the literal prefix: the literal segments, each followed by the `/`, then the
+   literal characters of the first wildcard segment before its first wildcard (`src/ui/a*.ts` is
+   `src/ui/a`, 8; `src/ui/` is 7).
+
+A deeper directory glob therefore beats its parent, as the nearest `.arch` does. Two globs of the
+same node, or of the same module target, never conflict. A tie between the most specific globs of
+different targets for one source file is a contract error (exit `2`): `<contract>:<line> and
+<contract>:<line> both map <file> with equal specificity (<glob>, <glob>)`, naming the lines and the
+first such file in path order. Only source files can raise it: for an asset or excluded file a tie
+means no owner, so a tie never fails a scan through a file that is not code. A file no glob matches is
+unowned, and `unmapped-file` exactly as without a map.
+
+**Module form.** `%% map <prefix>*: <dir>/` (`%% map *: <dir>/` for no prefix, `<prefix>` as in
+`node: <prefix>*`, ending in `-`) makes every module in the directory its own node by the module rule
+of "Module nodes" (test files, entry files, folded entry files, leading underscores, a derived id that is
+no valid node id is an error, at the map line). It is the whole `<dir>/` subtree with a derived node,
+so it takes part in specificity like any directory glob, and a more specific plain glob inside it wins.
+The value is exactly one glob, a directory without wildcards ending in `/` (`./` for the root). The
+derived nodes are checked against the contract like those of a `node: *` tag: `unknown-node`, located
+at the map line.
+
+**One mechanism per repository.** A contract with any `%% map` line decides ownership alone: `.arch`
+files are not read, so one with a mistake does not fail the scan. When some exist anyway, `lint`
+reports them once as the warning `ignored-tag-files` (count and the first 3 paths, sorted), not a tool
+error: a repository can move to maps in steps, and `--strict` makes it a failure when it should be
+finished. A contract without map lines works as before.
+
+**Staleness.** A glob that matches no walked file (source, asset or excluded file, ignored files
+excluded) is the warning `stale-map` at its line, naming the glob. It is judged on the glob alone, not
+on the files it wins, so a glob shadowed by a more specific one is not stale.
+
+**Where.** `where <file>` answers `<node> (via <contract>:<line> (map <glob>))` with the contract path
+as given and the glob as written; JSON `arch_file` is the contract path and `map` is `{line, glob}`
+(absent for a `.arch` decision). `where` uses maps when the contract (`--contract`, else the default
+if it exists and is valid) has map lines. `brief` and `neighbors` show as the `dirs` of a node the
+globs of its plain map lines as written, and, for a module-form line, the module paths of the files it
+owns, as for a `node: *` tag.
 
 ### Source languages by file
 
@@ -1112,13 +1194,15 @@ module and no symbol and adds nothing to `uses:`.
 
 | Kind | Severity | When |
 | --- | --- | --- |
-| `unmapped-file` | error | source file has no inherited `.arch` tag |
+| `unmapped-file` | error | source file has no inherited `.arch` tag (no matching `%% map` glob, with a map) |
 | `unknown-node` | error | `.arch` names a node the diagram does not declare |
 | `undeclared-edge` | error | code imports across nodes and the diagram has no such edge |
 | `stale-edge` | warning | solid edge with no import backing it |
 | `planned-realized` | warning | dotted edge now backed by code, promote it to solid |
 | `unresolved-import` | warning | relative import resolves to nothing, whatever its extension; Python absolute import into a first-party package that holds no such module; shell `source` of a path that finds no file |
 | `private-symbol` | error | an import uses a symbol outside the target node's declared surface |
+| `stale-map` | warning | a `%% map` glob matches no file, see "Contract map" |
+| `ignored-tag-files` | warning | the contract has `%% map` lines and `.arch` files exist, which are not read |
 
 A dotted edge permits the import. `--strict` turns every warning into a failure.
 
@@ -1392,6 +1476,17 @@ the number of cycle lines. All of these are plain comments to the parser.
 
 ### Contract and writing
 
+`--map` writes the mapping into the contract and no `.arch` file (`--map` and `--no-tags` conflict).
+The nodes, the edges and the owner of every file are those of the run without it, and `lint` on the
+result with the same `--contract` reports the same findings: every tag `init` would write, and
+every existing `.arch` tag (which would stop being read), becomes map lines, sorted by directory.
+A directory tag `node: <id>` at `d` is `%% map <id>: d/`, with `scope: here` it is `d/*`, and at
+the root `./` and `*`; a `node: <prefix>*` tag is `%% map <prefix>*: d/`. A `node: *` tag with
+`scope: here` has no map form and is a tool error. The contract is checked to round-trip as without
+`--map`, existing `.arch` files stay (they are then reported by `ignored-tag-files`), and only the
+contract is a conflict without `--force`. The contract is presented as without `--map` (boundaries,
+labels, order, cycles), with the `%% map` lines last.
+
 - Every resolved import between files with different owners becomes one solid edge. Nothing is
   dotted, so a fresh baseline has no stale or planned-realized findings. Imports are resolved with
   the walked non-source files (assets) known, as `lint` does: an asset (a `.json`, a `.css`) has the
@@ -1428,7 +1523,7 @@ A failing lint is not an error, so `anyhow` is used only at the entry point and 
 
 ```
 driftwall lint [PATH] [--contract FILE] [--format text|json|sarif] [--strict]
-driftwall init [PATH] [--depth N] [--contract FILE] [--no-tags] [--force]
+driftwall init [PATH] [--depth N] [--contract FILE] [--no-tags | --map] [--force]
 driftwall where <FILE> [--root DIR] [--contract FILE] [--format text|json]
 driftwall brief [PATH] [--contract FILE] [--format text|json]
 driftwall neighbors <NODE> [PATH] [--contract FILE] [--format text|json] [--files] [--all-sites]
@@ -1445,7 +1540,7 @@ it. The text is `<file>: <answer>`, one of
 
 | What the file is | Answer | Exit |
 | --- | --- | --- |
-| source file with an owner | `<node> (via <arch file>)` | `0` |
+| source file with an owner | `<node> (via <arch file>)`, with a map `<node> (via <contract>:<line> (map <glob>))` | `0` |
 | source file no tag covers | `unmapped` | `1` |
 | folded entry file (see "Module nodes") | `folded, no node (via <arch file>)` | `0` |
 | asset | `asset of node <node> (via <arch file>)`, or `asset, unmapped` | `0` |

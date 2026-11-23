@@ -4,7 +4,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::model::{Contract, Edge, NodeId};
+use crate::model::{Contract, Edge, MapGlob, NodeId};
 
 const PREAMBLE: [&str; 3] = [
     "%% driftwall architecture contract.",
@@ -203,6 +203,13 @@ pub(super) fn render(contract: &Contract, test_only: &BTreeSet<Edge>) -> String 
         lines.push(String::new());
         lines.extend(cycles.iter().map(|line| format!("  {line}")));
     }
+    if !contract.maps.is_empty() {
+        lines.push(String::new());
+        lines.extend(contract.maps.iter().map(|rule| {
+            let globs: Vec<&str> = rule.globs.iter().map(MapGlob::as_str).collect();
+            format!("  %% map {}: {}", rule.target, globs.join(", "))
+        }));
+    }
     let mut out = lines.join("\n");
     out.push('\n');
     out
@@ -380,5 +387,20 @@ mod tests {
             &[("a", "b"), ("b", "a"), ("c", "a")],
         );
         assert_eq!(render(&c, &BTreeSet::new()), render(&c, &BTreeSet::new()));
+    }
+
+    #[test]
+    fn map_lines_follow_the_drawing_and_keep_boundaries_and_labels() {
+        let mut c = contract(&[("a", Some("g")), ("b", Some("g"))], &[("a", "b")]);
+        c.maps.push(crate::model::MapRule {
+            line: 0,
+            target: crate::model::MapTarget::Node(id("a")),
+            globs: vec![MapGlob::parse("src/a/").unwrap()],
+        });
+        let text = render(&c, &BTreeSet::new());
+        assert!(text.contains("subgraph g"), "{text}");
+        assert!(text.contains("a[\"a: x\"]"), "{text}");
+        assert!(text.ends_with("\n  %% map a: src/a/\n"), "{text}");
+        assert_eq!(parse(&text).as_ref(), Ok(&c));
     }
 }

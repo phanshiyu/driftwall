@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use thiserror::Error;
 
-use crate::model::{Location, ModelError};
+use crate::model::{Location, MapSite, ModelError};
 
 /// Why a `.arch` file was rejected.
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -58,6 +58,22 @@ pub enum OwnershipError {
         file: PathBuf,
         /// The invalid name.
         source: ModelError,
+    },
+    /// Two `%% map` globs of different targets map one source file with equal specificity.
+    #[error(
+        "{c}:{} and {c}:{} both map {} with equal specificity (`{}` and `{}`)",
+        first.line, second.line, file.display(), first.glob, second.glob,
+        c = contract.display()
+    )]
+    AmbiguousMap {
+        /// The contract path.
+        contract: PathBuf,
+        /// An example file both globs match.
+        file: PathBuf,
+        /// The glob on the earlier line.
+        first: MapSite,
+        /// The glob on the later line.
+        second: MapSite,
     },
     /// Walking the directory tree failed, or an ignore file was malformed.
     #[error("cannot walk {}", root.display())]

@@ -11,6 +11,9 @@ use serde::{Serialize, Serializer};
 use thiserror::Error;
 
 mod blind;
+mod map;
+
+pub use map::{GlobError, MapGlob, MapRule, MapSite, MapTarget, Specificity};
 
 pub use blind::{
     BlindFile, BlindRef, BlindSpots, BlindSummary, BlindTally, UnreadGroup, UnreadTotal,
@@ -147,6 +150,9 @@ pub struct Contract {
     /// Public surface per node, from `%% exports` lines. A node absent here is unrestricted, and a
     /// node present here has at least one name.
     pub surfaces: BTreeMap<NodeId, BTreeSet<String>>,
+    /// The `%% map` lines in file order. When any exists, they alone decide ownership.
+    #[serde(skip)]
+    pub maps: Vec<MapRule>,
 }
 
 /// Languages driftwall can extract imports from.
@@ -272,11 +278,19 @@ pub struct Ownership {
     pub owners: BTreeMap<PathBuf, NodeId>,
     /// Source files with no inherited tag.
     pub unmapped: BTreeSet<PathBuf>,
-    /// `.arch` tags, as (tag file, line, raw node name), for validating against the contract.
+    /// Tags as (file, line, raw node name), for validating against the contract: `.arch` files,
+    /// or the contract itself for the nodes a module-form `%% map` derives.
     pub tags: Vec<(Location, String)>,
     /// What each `.arch` file the scan saw says, by the repository-relative directory it is in
     /// (empty for the root).
     pub tag_dirs: BTreeMap<PathBuf, DirTag>,
+    /// With `%% map` lines: the rule and glob that decided every owned file (source, asset or
+    /// excluded). Empty when `.arch` files decide.
+    pub map_sites: BTreeMap<PathBuf, MapSite>,
+    /// With `%% map` lines: every glob that matches no walked file.
+    pub stale_maps: Vec<MapSite>,
+    /// With `%% map` lines: the `.arch` files that exist and are not read, sorted.
+    pub ignored_tags: Vec<PathBuf>,
     /// Source files the scan left out, by reason. They are neither owned nor unmapped.
     pub excluded: BTreeMap<Exclusion, BTreeSet<PathBuf>>,
     /// Owner per excluded file that a tag covers, by the same rules as source files and assets.
@@ -495,6 +509,10 @@ pub enum ViolationKind {
     UnresolvedImport,
     /// An import uses a symbol outside the public surface its target node declares.
     PrivateSymbol,
+    /// A `%% map` glob matches no file.
+    StaleMap,
+    /// The contract maps files itself, and `.arch` files exist that are not read.
+    IgnoredTagFiles,
 }
 
 /// How serious a violation is.

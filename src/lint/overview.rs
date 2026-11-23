@@ -4,8 +4,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use crate::model::{
-    BlindSpots, Contract, DirTag, Edge, EdgeSummary, LintReport, NodeId, NodeSummary, NodeView,
-    Overview, Ownership, Scope, Site, Symbol, Tag,
+    BlindSpots, Contract, DirTag, Edge, EdgeSummary, LintReport, MapTarget, NodeId, NodeSummary,
+    NodeView, Overview, Ownership, Scope, Site, Symbol, Tag,
 };
 
 /// Combines the contract, ownership, observed edges, the symbols they use and the lint report
@@ -28,12 +28,9 @@ pub fn overview(
     report: &LintReport,
     blind: &BlindSpots,
 ) -> Overview {
-    let mut modules: BTreeMap<&NodeId, BTreeSet<PathBuf>> = BTreeMap::new();
-    for (file, owner) in &ownership.owners {
-        if let Some(path) = module_path(&ownership.tag_dirs, file) {
-            modules.entry(owner).or_default().insert(path);
-        }
-    }
+    let mapped = !contract.maps.is_empty();
+    let mut modules = module_files(contract, ownership);
+    let mut globs = map_globs(contract);
     let mut assets: BTreeMap<&NodeId, BTreeSet<PathBuf>> = BTreeMap::new();
     for (file, owner) in &ownership.asset_owners {
         assets.entry(owner).or_default().insert(file.clone());
@@ -46,12 +43,18 @@ pub fn overview(
         .nodes
         .iter()
         .map(|(id, info)| {
-            let mut dirs: BTreeSet<PathBuf> = ownership
-                .tags
-                .iter()
-                .filter(|(at, name)| name == id.as_str() && !derives_modules(ownership, &at.file))
-                .map(|(at, _)| tagged_dir(&at.file))
-                .collect();
+            let mut dirs: BTreeSet<PathBuf> = if mapped {
+                globs.remove(id).unwrap_or_default()
+            } else {
+                ownership
+                    .tags
+                    .iter()
+                    .filter(|(at, name)| {
+                        name == id.as_str() && !derives_modules(ownership, &at.file)
+                    })
+                    .map(|(at, _)| tagged_dir(&at.file))
+                    .collect()
+            };
             dirs.extend(modules.remove(id).into_iter().flatten());
             let owned: BTreeSet<&PathBuf> = assets
                 .get(id)
@@ -155,6 +158,48 @@ fn owned_by(owners: &BTreeMap<PathBuf, NodeId>, id: &str) -> Vec<PathBuf> {
         .filter(|(_, owner)| owner.as_str() == id)
         .map(|(file, _)| file.clone())
         .collect()
+}
+
+/// The module path of every source file a module tag or module-form map owns, by node.
+fn module_files<'a>(
+    contract: &Contract,
+    ownership: &'a Ownership,
+) -> BTreeMap<&'a NodeId, BTreeSet<PathBuf>> {
+    let module_lines: BTreeSet<u32> = contract
+        .maps
+        .iter()
+        .filter(|rule| matches!(rule.target, MapTarget::Modules(_)))
+        .map(|rule| rule.line)
+        .collect();
+    let mut modules: BTreeMap<&NodeId, BTreeSet<PathBuf>> = BTreeMap::new();
+    for (file, owner) in &ownership.owners {
+        // why: a plain glob inside a module directory owns its file as a whole, not as a module.
+        let by_module = ownership
+            .map_sites
+            .get(file)
+            .is_none_or(|site| module_lines.contains(&site.line));
+        if !by_module {
+            continue;
+        }
+        if let Some(path) = module_path(&ownership.tag_dirs, file) {
+            modules.entry(owner).or_default().insert(path);
+        }
+    }
+    modules
+}
+
+/// The globs of the plain `%% map` lines, by node: with maps they are the `dirs` of a node.
+fn map_globs(contract: &Contract) -> BTreeMap<&NodeId, BTreeSet<PathBuf>> {
+    let mut globs: BTreeMap<&NodeId, BTreeSet<PathBuf>> = BTreeMap::new();
+    for rule in &contract.maps {
+        if let MapTarget::Node(id) = &rule.target {
+            globs
+                .entry(id)
+                .or_default()
+                .extend(rule.globs.iter().map(|glob| PathBuf::from(glob.as_str())));
+        }
+    }
+    globs
 }
 
 /// The module `file` is in when a `node: *` tag owns it: the tagged directory joined with the
