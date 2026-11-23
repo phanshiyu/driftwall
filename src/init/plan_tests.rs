@@ -248,3 +248,56 @@ fn existing_of_labels_nodes_by_their_tag_directory() {
     );
     assert_eq!(existing.owners, ownership.owners);
 }
+
+#[test]
+fn a_module_that_is_the_dash_prefix_of_another_units_ids_gets_its_directory_as_prefix() {
+    let units = [
+        unit("", UnitKind::Crate),
+        unit("engine/core", UnitKind::Crate),
+    ];
+    let p = planned(
+        &[
+            "src/engine.rs",
+            "src/other.rs",
+            "engine/core/src/lib.rs",
+            "engine/core/src/x.rs",
+        ],
+        &units,
+        &Existing::default(),
+    );
+    assert_eq!(
+        tags(&p),
+        pairs(&[("engine/core/src", "engine-core-*"), ("src", "src-*")])
+    );
+    assert_eq!(
+        node_ids(&p),
+        [
+            "engine-core-lib",
+            "engine-core-x",
+            "src-engine",
+            "src-other"
+        ]
+    );
+}
+
+#[test]
+fn modules_without_a_colliding_family_keep_their_plain_ids() {
+    let units = [
+        unit("", UnitKind::Crate),
+        unit("engine/core", UnitKind::Crate),
+    ];
+    let p = planned(
+        &[
+            "src/engines.rs",
+            "src/other.rs",
+            "engine/core/src/lib.rs",
+            "engine/core/src/x.rs",
+        ],
+        &units,
+        &Existing::default(),
+    );
+    assert_eq!(
+        tags(&p),
+        pairs(&[("engine/core/src", "engine-core-*"), ("src", "*")])
+    );
+}

@@ -1305,6 +1305,15 @@ same prefix, see "Ids".
 - A Swift target directory is named by its target name: the name sanitised as above replaces the
   path derivation, and the directory does not count for the shared prefix of the others. The same
   collision rules as for any directory node apply.
+- **A module id never collides with another directory's id family.** A plain `node: *` (no prefix)
+  that `init` is about to write is written as `node: <dir>-*`, `<dir>` being the sanitised name of the
+  tagged directory, when any module id it derives equals, or is a dash-prefix of, an id of another
+  directory: the id of a unit that has a prefix (`engine-core` for the crate `engine/core`, whose
+  modules are `engine-core-*`) or a fixed id (so `engine` is a prefix of `engine-core-anim`). The rule
+  is applied to the whole tag, because a prefix is a property of the tag: `src/engine.ts` and
+  `src/engine/` become `src-engine` along with every other module of `src/`. A tag at the repository
+  root has no directory name and keeps its ids. A repository with no such collision gets the same ids
+  as before.
 - Module ids (`node: *`) are fixed by the module rule and are never renamed. Node ids named by
   existing tags are fixed too. Two existing tags may name the same node on purpose (that is
   grouping); `init` itself never merges two units silently.

@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
 use std::path::{Component, Path, PathBuf};
 
-use super::ids::RESERVED;
+use super::ids::{RESERVED, sanitize};
 use crate::model::{NodeId, Prefix};
 use crate::ownership::{folds, is_test_file, module_name, peers_in};
 
@@ -31,6 +31,9 @@ pub(super) enum Owner {
     /// A module node, whose id the module rule fixes.
     Module(NodeId),
 }
+
+/// The modules of a fork: each file with its id and module name, and the peers directly in the fork.
+type Derived = (BTreeMap<PathBuf, (NodeId, String)>, BTreeSet<String>);
 
 /// A directory that gets a `node: <prefix>*` tag.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -63,6 +66,9 @@ pub(super) struct Draft {
     /// Ids that cannot be used for a new module node, or for a directory node without a suffix:
     /// the nodes existing tags name, and the modules in `modules`.
     pub fixed: BTreeSet<NodeId>,
+    /// The ids of the units that have a prefix (`engine-core` for the prefix `engine-core-`): the
+    /// id families of directories other than the one a plain `node: *` tags.
+    pub families: BTreeSet<String>,
     /// Every source file of the repository, owned or not: the modules a `node: *` directory has
     /// are the ones the scan will see there, whoever owns them.
     pub all_files: BTreeSet<PathBuf>,
@@ -97,6 +103,10 @@ impl Draft {
     /// module node. Fails, changing nothing, when fewer than two distinct modules sit directly in
     /// `fork` (what is a module is up to `counted`), or a derived id is not valid, is reserved, or
     /// is already fixed.
+    ///
+    /// A tag with no prefix whose ids collide with the id family of another directory (see
+    /// [`Draft::families`]) is written with the prefix `<parent>-` instead, `src-engine` for the
+    /// module `engine` of `src/`.
     pub fn try_modules(
         &mut self,
         fork: &Path,
@@ -104,31 +114,20 @@ impl Draft {
         prefix: &Prefix,
         counted: Counted,
     ) -> bool {
-        let mut derived: BTreeMap<PathBuf, (NodeId, String)> = BTreeMap::new();
-        let mut direct: BTreeSet<&NodeId> = BTreeSet::new();
-        let peers = peers_in(
-            fork,
-            self.all_files
-                .iter()
-                .filter(|file| !self.trivial.contains(*file))
-                .map(PathBuf::as_path),
-        );
-        for file in files {
-            // why: a folded entry file declares no node, so the module decision never sees it.
-            if self.trivial.contains(*file) && folds(fork, file, &peers) {
-                continue;
-            }
-            let Some(name) = module_name(fork, file, &peers) else {
-                return false;
-            };
-            let Ok(id) = prefix.derive(&name) else {
-                return false;
-            };
-            if RESERVED.contains(&id.as_str()) || self.fixed.contains(&id) {
-                return false;
-            }
-            derived.insert((*file).to_path_buf(), (id, name));
+        let mut prefix = prefix.clone();
+        let mut found = self.derive(fork, files, &prefix);
+        if prefix.as_str().is_empty()
+            && let Some((derived, _)) = &found
+            && derived.values().any(|(id, _)| self.collides(id))
+            && let Some(parent) = parent_prefix(fork)
+        {
+            prefix = parent;
+            found = self.derive(fork, files, &prefix);
         }
+        let Some((derived, peers)) = found else {
+            return false;
+        };
+        let mut direct: BTreeSet<&NodeId> = BTreeSet::new();
         // why: a test file never makes a module of its own, so it does not count towards two.
         for (file, (id, _)) in &derived {
             let is_direct = file.parent() == Some(fork);
@@ -149,14 +148,48 @@ impl Draft {
             self.fixed.insert(id.clone());
             self.owners.insert(file, Owner::Module(id));
         }
-        self.module_dirs.insert(
-            fork.to_path_buf(),
-            ModuleDir {
-                prefix: prefix.clone(),
-                peers,
-            },
-        );
+        self.module_dirs
+            .insert(fork.to_path_buf(), ModuleDir { prefix, peers });
         true
+    }
+
+    /// The module of every file of `files` under `prefix`, with the non-test modules directly in
+    /// `fork`; `None` when a name or id is not valid, or an id is reserved or already fixed.
+    fn derive(&self, fork: &Path, files: &[&Path], prefix: &Prefix) -> Option<Derived> {
+        let mut derived: BTreeMap<PathBuf, (NodeId, String)> = BTreeMap::new();
+        let peers = peers_in(
+            fork,
+            self.all_files
+                .iter()
+                .filter(|file| !self.trivial.contains(*file))
+                .map(PathBuf::as_path),
+        );
+        for file in files {
+            // why: a folded entry file declares no node, so the module decision never sees it.
+            if self.trivial.contains(*file) && folds(fork, file, &peers) {
+                continue;
+            }
+            let name = module_name(fork, file, &peers)?;
+            let id = prefix.derive(&name).ok()?;
+            if RESERVED.contains(&id.as_str()) || self.fixed.contains(&id) {
+                return None;
+            }
+            derived.insert((*file).to_path_buf(), (id, name));
+        }
+        Some((derived, peers))
+    }
+
+    /// Whether the unprefixed module id `id` equals or is a dash-prefix of the id family of another
+    /// directory: a unit id (`engine-core`) or a fixed id, so `engine` against `engine-core-anim`.
+    fn collides(&self, id: &NodeId) -> bool {
+        let lead = format!("{id}-");
+        self.families
+            .iter()
+            .any(|family| family == id.as_str() || family.starts_with(&lead))
+            || self
+                .fixed
+                .iter()
+                .any(|fixed| fixed.as_str().starts_with(&lead))
     }
 
     /// The automatic cut of `files` (see `docs/DESIGN.md`, "The automatic cut"): module nodes at
@@ -243,4 +276,11 @@ pub(super) fn label_of(dir: &Path) -> String {
             }
         })
         .collect()
+}
+
+/// The prefix `<parent>-` for the modules of `fork`, named after its own directory, or `None` for
+/// the repository root, which has no name.
+fn parent_prefix(fork: &Path) -> Option<Prefix> {
+    let name = fork.file_name()?.to_string_lossy();
+    Prefix::new(&format!("{}-", sanitize(&name))).ok()
 }

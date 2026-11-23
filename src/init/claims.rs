@@ -40,6 +40,7 @@ pub(super) fn claim<'a>(draft: &mut Draft, fresh: &[&'a Path], units: &[Unit]) -
         }
     }
     let primary = primary_unit(&files_of, &kinds);
+    note_families(draft, &files_of, &kinds, primary);
     let has_source_directories = fresh
         .iter()
         .any(|file| file.parent().is_some_and(|dir| !dir.as_os_str().is_empty()));
@@ -178,6 +179,24 @@ fn primary_unit<'a>(
         (Some(root), _) => Some(root),
         (None, 1) => counted.first().copied(),
         (None, _) => None,
+    }
+}
+
+/// Records the id family of every unit that has a prefix, so a module of another directory can
+/// avoid it (see `Draft::try_modules`).
+fn note_families(
+    draft: &mut Draft,
+    files_of: &BTreeMap<&Path, Vec<&Path>>,
+    kinds: &BTreeMap<&Path, UnitKind>,
+    primary: Option<&Path>,
+) {
+    for dir in files_of.keys() {
+        let prefixed = kinds.get(dir) != Some(&UnitKind::SwiftTarget) && primary != Some(*dir);
+        if prefixed && let Some(prefix) = prefix_of(dir) {
+            draft
+                .families
+                .insert(prefix.as_str().trim_end_matches('-').to_owned());
+        }
     }
 }
 
