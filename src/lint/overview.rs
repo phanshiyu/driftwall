@@ -35,12 +35,12 @@ pub fn overview(
         }
     }
     let mut assets: BTreeMap<&NodeId, BTreeSet<PathBuf>> = BTreeMap::new();
-    for (file, owner) in ownership
-        .asset_owners
-        .iter()
-        .chain(&ownership.excluded_owners)
-    {
+    for (file, owner) in &ownership.asset_owners {
         assets.entry(owner).or_default().insert(file.clone());
+    }
+    let mut excluded: BTreeMap<&NodeId, BTreeSet<PathBuf>> = BTreeMap::new();
+    for (file, owner) in &ownership.excluded_owners {
+        excluded.entry(owner).or_default().insert(file.clone());
     }
     let nodes = contract
         .nodes
@@ -53,13 +53,17 @@ pub fn overview(
                 .map(|(at, _)| tagged_dir(&at.file))
                 .collect();
             dirs.extend(modules.remove(id).into_iter().flatten());
-            let owned = assets.get(id);
+            let owned: BTreeSet<&PathBuf> = assets
+                .get(id)
+                .into_iter()
+                .chain(excluded.get(id))
+                .flatten()
+                .collect();
             // why: a node that owns only assets (`app.css`) must still say where it lives.
             if dirs.is_empty() {
                 dirs.extend(
                     owned
-                        .into_iter()
-                        .flatten()
+                        .iter()
                         .filter_map(|file| module_path(&ownership.tag_dirs, file)),
                 );
             }
@@ -72,7 +76,8 @@ pub fn overview(
                     .values()
                     .filter(|owner| *owner == id)
                     .count(),
-                assets: owned.map_or(0, BTreeSet::len),
+                assets: assets.get(id).map_or(0, BTreeSet::len),
+                excluded: excluded.get(id).map_or(0, BTreeSet::len),
                 exports: contract.surfaces.get(id).cloned(),
                 blind_spots: blind.tally(Some(id)),
             }
@@ -137,17 +142,19 @@ pub fn node_view(
             .filter(|(_, owner)| owner.as_str() == id)
             .map(|(file, _)| file.clone())
             .collect(),
-        asset_files: ownership
-            .asset_owners
-            .iter()
-            .chain(&ownership.excluded_owners)
-            .filter(|(_, owner)| owner.as_str() == id)
-            .map(|(file, _)| file.clone())
-            .collect::<BTreeSet<_>>()
-            .into_iter()
-            .collect(),
+        asset_files: owned_by(&ownership.asset_owners, id),
+        excluded_files: owned_by(&ownership.excluded_owners, id),
         blind_spots: blind.of_node(&node.id),
     })
+}
+
+/// The files of `owners` that the node `id` owns, sorted.
+fn owned_by(owners: &BTreeMap<PathBuf, NodeId>, id: &str) -> Vec<PathBuf> {
+    owners
+        .iter()
+        .filter(|(_, owner)| owner.as_str() == id)
+        .map(|(file, _)| file.clone())
+        .collect()
 }
 
 /// The module `file` is in when a `node: *` tag owns it: the tagged directory joined with the
@@ -323,7 +330,7 @@ mod tests {
         );
         let app = &view.nodes[0];
         assert_eq!(app.files, 0);
-        assert_eq!(app.assets, 2);
+        assert_eq!((app.assets, app.excluded), (1, 1));
         assert_eq!(
             app.dirs,
             [
@@ -334,13 +341,8 @@ mod tests {
         let ui = &view.nodes[1];
         assert_eq!((ui.assets, ui.dirs.len()), (0, 1));
         let listed = node_view(&view, &own, &BlindSpots::default(), "app").unwrap();
-        assert_eq!(
-            listed.asset_files,
-            [
-                PathBuf::from("src/app.css"),
-                PathBuf::from("src/app.min.js")
-            ]
-        );
+        assert_eq!(listed.asset_files, [PathBuf::from("src/app.css")]);
+        assert_eq!(listed.excluded_files, [PathBuf::from("src/app.min.js")]);
     }
 
     #[test]

@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 use driftwall::lint;
+use driftwall::model::DEFAULT_CONTRACT;
 use driftwall::ownership::{self, FileKind, Located};
 use serde::Serialize;
 
@@ -23,7 +24,19 @@ pub fn run(args: &WhereArgs) -> Result<Run> {
         lint::read_contract(&args.root, contract)?;
     }
     let file = inside_root(&args.root, &args.file);
-    let located = ownership::locate(&args.root, &file)?;
+    let mut located = ownership::locate(&args.root, &file)?;
+    let contract = args
+        .contract
+        .as_deref()
+        .unwrap_or_else(|| Path::new(DEFAULT_CONTRACT));
+    // why: only the command knows the contract path, so it names the file; the contract is no asset.
+    if located.kind != FileKind::Directory && slash_path(&file) == slash_path(contract) {
+        located = Located {
+            kind: FileKind::Contract,
+            node: None,
+            arch_file: None,
+        };
+    }
     let shown = slash_path(&args.file);
     let stdout = match args.format {
         WhereFormat::Text => render_text(&shown, &located),
@@ -77,8 +90,16 @@ fn render_text(file: &str, located: &Located) -> String {
         (FileKind::Asset, None) => "asset, unmapped".to_owned(),
         (FileKind::Unread(key), Some(owner)) => format!("not read ({key}) in node {owner}"),
         (FileKind::Unread(key), None) => format!("not read ({key}), unmapped"),
-        (FileKind::Excluded(reason), _) => format!("excluded ({})", reason.as_str()),
-        (FileKind::Ignored, _) => "ignored by .driftwallignore".to_owned(),
+        (FileKind::Excluded(reason), Some(owner)) => {
+            format!("excluded ({}), owned by {owner}", reason.as_str())
+        }
+        (FileKind::Excluded(reason), None) => format!("excluded ({})", reason.as_str()),
+        (FileKind::Ignored, Some(owner)) => {
+            format!("ignored by .driftwallignore, owned by {owner}")
+        }
+        (FileKind::Ignored, None) => "ignored by .driftwallignore".to_owned(),
+        (FileKind::TagFile, _) => "tag file".to_owned(),
+        (FileKind::Contract, _) => "contract".to_owned(),
         (FileKind::Folded, _) => located.arch_file.as_deref().map_or_else(
             || "folded, no node".to_owned(),
             |arch_file| format!("folded, no node (via {})", slash_path(arch_file)),
@@ -107,6 +128,8 @@ fn render_json(file: &str, located: &Located) -> Result<String> {
         FileKind::Ignored => ("ignored", None),
         FileKind::Directory => ("directory", None),
         FileKind::Folded => ("folded", None),
+        FileKind::TagFile => ("tag-file", None),
+        FileKind::Contract => ("contract", None),
     };
     let answer = Answer {
         file,
@@ -182,9 +205,19 @@ mod tests {
             "f: excluded (vendored)\n"
         );
         assert_eq!(
+            text(FileKind::Excluded(Exclusion::Generated), true),
+            "f: excluded (generated), owned by lint (via src/lint/.arch)\n"
+        );
+        assert_eq!(
             text(FileKind::Ignored, false),
             "f: ignored by .driftwallignore\n"
         );
+        assert_eq!(
+            text(FileKind::Ignored, true),
+            "f: ignored by .driftwallignore, owned by lint (via src/lint/.arch)\n"
+        );
+        assert_eq!(text(FileKind::TagFile, false), "f: tag file\n");
+        assert_eq!(text(FileKind::Contract, false), "f: contract\n");
         let folded = Located {
             kind: FileKind::Folded,
             node: None,
@@ -233,6 +266,18 @@ mod tests {
                 .ends_with("\"kind\": \"excluded\",\n  \"detail\": \"generated\"\n}\n")
         );
         assert!(json(FileKind::Ignored).ends_with("\"kind\": \"ignored\"\n}\n"));
+    }
+
+    #[test]
+    fn json_names_the_owner_of_an_excluded_file_and_the_tool_files() {
+        let excluded = located(FileKind::Excluded(Exclusion::Generated), true);
+        let json = render_json("f", &excluded).unwrap();
+        assert!(json.contains("\"node\": \"lint\""), "{json}");
+        assert!(json.contains("\"kind\": \"excluded\""), "{json}");
+        let tag = render_json("f", &located(FileKind::TagFile, false)).unwrap();
+        assert!(tag.contains("\"kind\": \"tag-file\""), "{tag}");
+        let contract = render_json("f", &located(FileKind::Contract, false)).unwrap();
+        assert!(contract.contains("\"kind\": \"contract\""), "{contract}");
     }
 
     #[test]

@@ -303,7 +303,8 @@ node: a
 label: a
 dirs: a
 files: 1
-assets: 4
+assets: 3
+excluded: 1
 outgoing:
   a --> b (1 import) uses: b
     a/main.ts:1
@@ -320,8 +321,8 @@ incoming:
         expected
             .replace("files: 1\n", "files: 1\n  a/main.ts\n")
             .replace(
-                "assets: 4\n",
-                "assets: 4\n  a/App.go\n  a/View.go\n  a/run.pl\n  a/vendor/lib.js\n"
+                "assets: 3\nexcluded: 1\n",
+                "assets: 3\n  a/App.go\n  a/View.go\n  a/run.pl\nexcluded: 1\n  a/vendor/lib.js\n"
             )
     );
 }

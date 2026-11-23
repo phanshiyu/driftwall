@@ -1394,20 +1394,27 @@ it. The text is `<file>: <answer>`, one of
 | folded entry file (see "Module nodes") | `folded, no node (via <arch file>)` | `0` |
 | asset | `asset of node <node> (via <arch file>)`, or `asset, unmapped` | `0` |
 | unread code file (see "Blind spots") | `not read (<key>) in node <node> (via <arch file>)`, or `not read (<key>), unmapped` | `0` |
-| excluded source file | `excluded (<reason>)` | `0` |
-| source file `.driftwallignore` hides | `ignored by .driftwallignore` | `0` |
+| excluded source file | `excluded (<reason>), owned by <node> (via <arch file>)`, or `excluded (<reason>)` when no tag covers it | `0` |
+| source file `.driftwallignore` hides | `ignored by .driftwallignore, owned by <node> (via <arch file>)`, or `ignored by .driftwallignore` when no tag covers it | `0` |
+| an `.arch` file | `tag file` | `0` |
+| the contract (`--contract`, default `architecture.mmd`) | `contract` | `0` |
 
-A directory is answered like a source file, by the tag that covers it. The JSON has `file`, `node`,
-`arch_file` and `kind` (`source`, `folded`, `asset`, `unread`, `excluded`, `ignored` or `directory`), plus
-`detail` for the unread key and the exclusion reason (absent otherwise). `node` and `arch_file` are
-`null` for an excluded or ignored file, and for anything no tag covers.
+An excluded or ignored file is owned by the tag rules of source files, as `brief` and `lint` attribute it
+(see "Excluded files" and "Blind spots"), so `where` and they name the same node. The `.arch` files and
+the contract are driftwall's own input: they are never assets, and the answer names no node. A directory
+is answered like a source file, by the tag that covers it. The JSON has `file`, `node`,
+`arch_file` and `kind` (`source`, `folded`, `asset`, `unread`, `excluded`, `ignored`, `tag-file`,
+`contract` or `directory`), plus `detail` for the unread key and the exclusion reason (absent
+otherwise). `node` and `arch_file` are `null` for anything no tag covers, a tag file and the contract,
+and carry the owner of an excluded or ignored file that a tag covers.
 
 `brief`, `neighbors` and `diff` are read-only maps for agents and reviewers:
 
 - `brief` prints every node (directories, file count, see "Node directories" below; a node with no
-  source file that owns assets or excluded files prints `0 source files, N assets` in place of
-  `0 files`; every node's JSON has `assets`, the number of asset and excluded files it owns, which
-  are not in `files`) and every edge, declared or observed, with
+  source file that owns assets or excluded files prints `0 source files, N assets` or `0 source files,
+  N excluded` (both, in that order, when it owns both) in place of `0 files`; every node's JSON has
+  `assets`, the number of asset files it owns, and `excluded`, the number of excluded files it owns:
+  excluded files are not assets, and neither is in `files`) and every edge, declared or observed, with
   the number of import sites that realise it and how they are used (kinds, symbols, see "Import
   kind" and "Symbols and public surfaces"). An edge code uses and the contract lacks is marked
   `UNDECLARED`. It is informational: exit `0` unless the tool fails (`2`).
@@ -1451,8 +1458,9 @@ A directory is answered like a source file, by the tag that covers it. The JSON 
   `file`, `line`, `specifier`, `node` and `message` when it has one), and every node has `blind_spots`, a tally with `unread`, `excluded`,
   `ignored`, `skipped` and `unresolved` file or reference counts.
 - **Node directories.** The `dirs` of a node, in `brief`, `neighbors` and the JSON `dirs`, are where
-  its code lives, not where its `.arch` file lies. They are the union, sorted and without
-  duplicates, of
+  its code lives, not where its `.arch` file lies. The name is kept for compatibility: an entry is a
+  repository path, a directory or, for a one-file module, the file itself (`src/fonts.ts`). They are
+  the union, sorted and without duplicates, of
 
   - the directory of every `.arch` file whose plain `node: <id>` names it (the repository root is
     `.`), also when no file is left under it;
@@ -1472,8 +1480,9 @@ A directory is answered like a source file, by the tag that covers it. The JSON 
 - `neighbors <NODE>` prints one node's incoming and outgoing edges with up to 3 `file:line`
   example sites each (`--all-sites` prints every site; JSON always has every site, with no cap
   anywhere). `--files` lists the node's source files under its `files:` line, two spaces indented
-  (JSON always has `files`, the sorted list). A node that owns assets or excluded files has an
-  `assets: <n>` line after them, and `--files` lists those the same way (JSON `asset_files`). It also lists, always, everything the node is blind to
+  (JSON always has `files`, the sorted list). A node that owns assets has an `assets: <n>` line
+  after them and one that owns excluded files an `excluded: <n>` line after that, and `--files` lists
+  each the same way (JSON `asset_files` and `excluded_files`). It also lists, always, everything the node is blind to
   in a `blind spots:` block, one item per line (`blind spots: none` when it has none):
   `  not read: <file> (<key>, <n> lines)`, `  excluded: <file> (<reason>)`,
   `  ignored: <file>`, `  skipped: <file>:<line> <specifier> (<reason>)` (followed by ` - <message>`

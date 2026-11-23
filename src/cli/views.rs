@@ -107,6 +107,7 @@ mod tests {
                     dirs: Vec::new(),
                     files: 0,
                     assets: 0,
+                    excluded: 0,
                     exports: None,
                     blind_spots: BlindTally::default(),
                 })

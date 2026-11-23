@@ -1,11 +1,13 @@
 //! What a path is, and who owns it: the answer behind `driftwall where`.
 
+use std::ffi::OsStr;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
 use super::{
-    Discovered, Explanation, OwnershipError, discover, explain, language_of, relative_to_root,
+    ARCH_FILE, Discovered, Explanation, OwnershipError, discover, explain, language_of,
+    relative_to_root,
 };
 use crate::model::{Exclusion, NodeId};
 
@@ -26,6 +28,11 @@ pub enum FileKind {
     Directory,
     /// An entry file that declares nothing and makes no node of its own under `node: *`.
     Folded,
+    /// An `.arch` tag file: driftwall's own input, never an asset, and owned by no node.
+    TagFile,
+    /// The contract file. [`locate`] never answers it: the caller that knows the contract path
+    /// replaces the kind of that path.
+    Contract,
 }
 
 /// The answer of [`locate`].
@@ -33,7 +40,8 @@ pub enum FileKind {
 pub struct Located {
     /// What the path is.
     pub kind: FileKind,
-    /// The owning node. Always `None` for an excluded or ignored file, which nothing owns.
+    /// The owning node, by the tag rules of source files, also for an excluded or ignored file.
+    /// `None` when no tag covers the file, and for a tag file, a contract and a folded entry file.
     pub node: Option<NodeId>,
     /// The `.arch` file that decided it, relative to the root.
     pub arch_file: Option<PathBuf>,
@@ -61,10 +69,12 @@ pub fn locate(root: &Path, file: &Path) -> Result<Located, OwnershipError> {
     };
     let kind = if metadata.is_dir() {
         FileKind::Directory
+    } else if relative.file_name() == Some(OsStr::new(ARCH_FILE)) {
+        FileKind::TagFile
     } else {
         kind_of(root, &relative)?
     };
-    if matches!(kind, FileKind::Excluded(_) | FileKind::Ignored) {
+    if kind == FileKind::TagFile {
         return Ok(Located {
             kind,
             node: None,
@@ -78,7 +88,10 @@ pub fn locate(root: &Path, file: &Path) -> Result<Located, OwnershipError> {
     } = match explain(root, &relative) {
         // why: an asset or unread file must never fail, so a name that is no node id is unowned.
         Err(OwnershipError::InvalidModule { .. })
-            if matches!(kind, FileKind::Asset | FileKind::Unread(_)) =>
+            if matches!(
+                kind,
+                FileKind::Asset | FileKind::Unread(_) | FileKind::Excluded(_) | FileKind::Ignored
+            ) =>
         {
             Explanation {
                 node: None,
@@ -192,9 +205,16 @@ mod tests {
         );
         assert_eq!(
             named("a/vendor/lib.js"),
-            (FileKind::Excluded(Exclusion::Vendored), None)
+            (
+                FileKind::Excluded(Exclusion::Vendored),
+                Some("a".to_owned())
+            )
         );
-        assert_eq!(named("a/hidden.ts"), (FileKind::Ignored, None));
+        assert_eq!(
+            named("a/hidden.ts"),
+            (FileKind::Ignored, Some("a".to_owned()))
+        );
+        assert_eq!(named("a/.arch"), (FileKind::TagFile, None));
         assert_eq!(
             named("a/secret.ts"),
             (FileKind::Source, Some("a".to_owned()))

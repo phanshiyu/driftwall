@@ -97,6 +97,7 @@ pub fn render_node_view_text(view: &NodeView, options: NodeViewOptions) -> Strin
         incoming,
         files,
         asset_files,
+        excluded_files,
         blind_spots,
     } = view;
     let mut out = format!("node: {}\n", node.id);
@@ -116,6 +117,14 @@ pub fn render_node_view_text(view: &NodeView, options: NodeViewOptions) -> Strin
     }
     if options.files {
         for file in asset_files {
+            let _ = writeln!(out, "  {}", slash_path(file));
+        }
+    }
+    if node.excluded > 0 {
+        let _ = writeln!(out, "excluded: {}", node.excluded);
+    }
+    if options.files {
+        for file in excluded_files {
             let _ = writeln!(out, "  {}", slash_path(file));
         }
     }
@@ -200,6 +209,7 @@ pub fn render_node_view_json(view: &NodeView) -> Result<String, ReportError> {
         incoming: &'a [EdgeSummary],
         files: &'a [PathBuf],
         asset_files: &'a [PathBuf],
+        excluded_files: &'a [PathBuf],
         blind_spots: &'a BlindSpots,
     }
     to_json(&Document {
@@ -209,6 +219,7 @@ pub fn render_node_view_json(view: &NodeView) -> Result<String, ReportError> {
         incoming: &view.incoming,
         files: &view.files,
         asset_files: &view.asset_files,
+        excluded_files: &view.excluded_files,
         blind_spots: &view.blind_spots,
     })
 }
@@ -294,13 +305,20 @@ fn usage(edge: &EdgeSummary) -> String {
 }
 
 /// The directories joined by `, `, or `-` for a node no `.arch` file names.
-/// `3 files`, or `0 source files, 1 asset` for a node with no source file that owns assets or
-/// excluded files.
+/// `3 files`, or `0 source files, 1 asset, 1 excluded` for a node with no source file that owns
+/// assets or excluded files (only the non-zero parts).
 fn file_counts(node: &NodeSummary) -> String {
-    if node.files > 0 || node.assets == 0 {
+    if node.files > 0 || node.assets + node.excluded == 0 {
         return plural(node.files, "file");
     }
-    format!("0 source files, {}", plural(node.assets, "asset"))
+    let mut parts = vec!["0 source files".to_owned()];
+    if node.assets > 0 {
+        parts.push(plural(node.assets, "asset"));
+    }
+    if node.excluded > 0 {
+        parts.push(format!("{} excluded", node.excluded));
+    }
+    parts.join(", ")
 }
 
 fn dirs_str(dirs: &[PathBuf]) -> String {
@@ -338,6 +356,7 @@ mod tests {
             dirs: dirs.iter().map(PathBuf::from).collect(),
             files,
             assets: 0,
+            excluded: 0,
             exports: None,
             blind_spots: BlindTally::default(),
         }
@@ -427,6 +446,7 @@ blind spots: none
         let view = NodeView {
             files: Vec::new(),
             asset_files: Vec::new(),
+            excluded_files: Vec::new(),
             blind_spots: BlindSpots::default(),
             node: node("lint", &["src/lint"], 5),
             outgoing: vec![
@@ -465,6 +485,7 @@ blind spots: none
         let view = NodeView {
             files: Vec::new(),
             asset_files: Vec::new(),
+            excluded_files: Vec::new(),
             blind_spots: BlindSpots::default(),
             node: summary,
             outgoing: vec![],
@@ -570,6 +591,7 @@ nodes:
         let view = NodeView {
             files: Vec::new(),
             asset_files: Vec::new(),
+            excluded_files: Vec::new(),
             blind_spots: BlindSpots::default(),
             node: exporting(
                 node("b", &["src/b"], 2),
@@ -633,6 +655,7 @@ blind spots: none
         let view = NodeView {
             files: Vec::new(),
             asset_files: Vec::new(),
+            excluded_files: Vec::new(),
             blind_spots: BlindSpots::default(),
             node: overview.nodes[0].clone(),
             outgoing: overview.edges.clone(),
@@ -744,6 +767,7 @@ blind spots: none
         let view = NodeView {
             files: Vec::new(),
             asset_files: Vec::new(),
+            excluded_files: Vec::new(),
             blind_spots: BlindSpots::default(),
             node: node("a", &[], 0),
             outgoing: vec![marked(5, &[])],
@@ -784,6 +808,7 @@ blind spots: none
         let view = NodeView {
             files: Vec::new(),
             asset_files: vec![PathBuf::from("src/app.css")],
+            excluded_files: Vec::new(),
             blind_spots: BlindSpots::default(),
             node: app,
             outgoing: vec![],
@@ -803,6 +828,53 @@ blind spots: none
         let json = parse(&render_node_view_json(&view).unwrap());
         assert_eq!(json["asset_files"], json!(["src/app.css"]));
         assert_eq!(json["node"]["assets"], json!(1));
+    }
+
+    #[test]
+    fn excluded_files_are_counted_apart_from_assets() {
+        let mut gen_only = node("route-table", &["src/route-table.ts"], 0);
+        gen_only.excluded = 1;
+        let mut both = node("mixed", &["src/m.css"], 0);
+        both.assets = 2;
+        both.excluded = 1;
+        let overview = Overview {
+            nodes: vec![gen_only.clone(), both],
+            ..Overview::default()
+        };
+        let text = render_overview_text(&overview);
+        assert!(
+            text.contains("  route-table: src/route-table.ts (0 source files, 1 excluded)\n"),
+            "{text}"
+        );
+        assert!(
+            text.contains("(0 source files, 2 assets, 1 excluded)\n"),
+            "{text}"
+        );
+        let view = NodeView {
+            files: Vec::new(),
+            asset_files: Vec::new(),
+            excluded_files: vec![PathBuf::from("src/route-table.ts")],
+            blind_spots: BlindSpots::default(),
+            node: gen_only,
+            outgoing: vec![],
+            incoming: vec![],
+        };
+        let listed = render_node_view_text(
+            &view,
+            NodeViewOptions {
+                files: true,
+                ..NodeViewOptions::default()
+            },
+        );
+        assert!(
+            listed.contains("files: 0\nexcluded: 1\n  src/route-table.ts\n"),
+            "{listed}"
+        );
+        assert!(!listed.contains("assets:"), "{listed}");
+        let json = parse(&render_node_view_json(&view).unwrap());
+        assert_eq!(json["excluded_files"], json!(["src/route-table.ts"]));
+        assert_eq!(json["node"]["excluded"], json!(1));
+        assert_eq!(json["node"]["assets"], json!(0));
     }
 
     fn skipped_overview(count: usize) -> Overview {
@@ -885,6 +957,7 @@ blind spots: none
                 "dirs": ["src/lint", "src/lint2"],
                 "files": 1,
                 "assets": 0,
+                "excluded": 0,
                 "blind_spots": { "unread": 0, "excluded": 0, "ignored": 0, "skipped": 0, "unresolved": 0 },
             })
         );
@@ -914,6 +987,7 @@ blind spots: none
         let view = NodeView {
             files: Vec::new(),
             asset_files: Vec::new(),
+            excluded_files: Vec::new(),
             blind_spots: BlindSpots::default(),
             node: node("lint", &["src/lint"], 5),
             outgoing: vec![edge("lint", "model", Some(EdgeKind::Implemented), &[3])],

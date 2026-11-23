@@ -66,6 +66,7 @@ fn where_files() -> Vec<(&'static str, &'static str)> {
         ("a/view.go", "package a\n"),
         ("a/vendor/lib.js", "export const v = 1;\n"),
         ("a/hidden.ts", "export const h = 1;\n"),
+        ("loose/vendor/x.js", "export const x = 1;\n"),
         ("loose/free.ts", "export const c = 1;\n"),
         ("loose/free.json", "{}\n"),
         ("loose/run.pl", "print 1;\n"),
@@ -89,14 +90,21 @@ fn where_says_what_every_kind_of_file_is() {
         ),
         (
             "a/vendor/lib.js",
-            "a/vendor/lib.js: excluded (vendored)\n",
+            "a/vendor/lib.js: excluded (vendored), owned by a (via a/.arch)\n",
+            0,
+        ),
+        (
+            "loose/vendor/x.js",
+            "loose/vendor/x.js: excluded (vendored)\n",
             0,
         ),
         (
             "a/hidden.ts",
-            "a/hidden.ts: ignored by .driftwallignore\n",
+            "a/hidden.ts: ignored by .driftwallignore, owned by a (via a/.arch)\n",
             0,
         ),
+        ("a/.arch", "a/.arch: tag file\n", 0),
+        ("architecture.mmd", "architecture.mmd: contract\n", 0),
         ("loose/free.ts", "loose/free.ts: unmapped\n", 1),
         ("loose/free.json", "loose/free.json: asset, unmapped\n", 0),
         ("loose/run.pl", "loose/run.pl: not read (pl), unmapped\n", 0),
@@ -122,12 +130,20 @@ fn where_json_carries_the_kind_and_its_detail() {
     );
     assert_eq!(
         json_of("a/vendor/lib.js"),
-        json!({"file": "a/vendor/lib.js", "node": null, "arch_file": null,
+        json!({"file": "a/vendor/lib.js", "node": "a", "arch_file": "a/.arch",
                "kind": "excluded", "detail": "vendored"})
     );
     assert_eq!(
         json_of("a/hidden.ts"),
-        json!({"file": "a/hidden.ts", "node": null, "arch_file": null, "kind": "ignored"})
+        json!({"file": "a/hidden.ts", "node": "a", "arch_file": "a/.arch", "kind": "ignored"})
+    );
+    assert_eq!(
+        json_of("a/.arch"),
+        json!({"file": "a/.arch", "node": null, "arch_file": null, "kind": "tag-file"})
+    );
+    assert_eq!(
+        json_of("architecture.mmd"),
+        json!({"file": "architecture.mmd", "node": null, "arch_file": null, "kind": "contract"})
     );
     assert_eq!(
         json_of("a/data.json"),
