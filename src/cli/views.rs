@@ -110,6 +110,7 @@ mod tests {
                     excluded: 0,
                     exports: None,
                     blind_spots: BlindTally::default(),
+                    layer: None,
                 })
                 .collect(),
             ..Overview::default()

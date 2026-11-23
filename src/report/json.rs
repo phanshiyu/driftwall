@@ -148,6 +148,7 @@ mod tests {
                 "private-symbol",
                 "stale-map",
                 "ignored-tag-files",
+                "upward-edge",
             ]
         );
     }

@@ -7,8 +7,8 @@ use std::path::PathBuf;
 use serde::Serialize;
 
 use crate::model::{
-    BlindRef, BlindSpots, BlindSummary, BlindTally, EdgeKind, EdgeSummary, ImportKind, MAX_SITES,
-    NodeSummary, NodeView, Overview, Site, SkipReason, Symbol,
+    BlindRef, BlindSpots, BlindSummary, BlindTally, EdgeKind, EdgeSummary, ImportKind, Layer,
+    MAX_SITES, NodeSummary, NodeView, Overview, RulesSummary, Site, SkipReason, Symbol,
 };
 
 use super::ReportError;
@@ -60,9 +60,13 @@ pub fn render_overview_text(overview: &Overview) -> String {
         let exports = node.exports.as_ref().map_or_else(String::new, |names| {
             format!(" exports: {}", capped(names.iter().map(String::as_str)))
         });
+        let layer = node
+            .layer
+            .as_ref()
+            .map_or_else(String::new, |layer| format!(" layer: {}", layer_str(layer)));
         let _ = writeln!(
             out,
-            "  {}: {} ({}){exports}{}",
+            "  {}: {} ({}){exports}{layer}{}",
             node.id,
             dirs_str(&node.dirs),
             file_counts(node),
@@ -75,6 +79,12 @@ pub fn render_overview_text(overview: &Overview) -> String {
     }
     for edge in &overview.edges {
         let _ = writeln!(out, "  {}", edge_line(edge));
+    }
+    if !overview.rules.is_empty() {
+        out.push_str("rules:\n");
+        if !overview.rules.order.is_empty() {
+            let _ = writeln!(out, "  order: {}", overview.rules.order.join(" > "));
+        }
     }
     out.push_str(&blind::summary_block(
         &overview.blind_spots,
@@ -118,6 +128,9 @@ pub fn render_node_view_text(view: &NodeView, options: NodeViewOptions) -> Strin
         let _ = writeln!(out, "label: {label}");
     }
     let _ = writeln!(out, "dirs: {}", dirs_str(&node.dirs));
+    if let Some(layer) = &node.layer {
+        let _ = writeln!(out, "layer: {}", layer_str(layer));
+    }
     let _ = writeln!(out, "files: {}", node.files);
     if options.files {
         for file in files {
@@ -181,6 +194,8 @@ pub fn render_overview_json(overview: &Overview) -> Result<String, ReportError> 
         nodes: &'a [NodeSummary],
         edges: &'a [EdgeSummary],
         blind_spots: Blind<'a>,
+        #[serde(skip_serializing_if = "RulesSummary::is_empty")]
+        rules: &'a RulesSummary,
     }
     /// The summary beside the tally of what no node owns.
     #[derive(Serialize)]
@@ -205,6 +220,7 @@ pub fn render_overview_json(overview: &Overview) -> Result<String, ReportError> 
             unmapped_items: &overview.unmapped_items,
             skipped_references: &overview.skipped_references,
         },
+        rules: &overview.rules,
     })
 }
 
@@ -250,6 +266,11 @@ fn to_json(document: &impl Serialize) -> Result<String, ReportError> {
 
 /// The word an edge shows for a use of the target module itself, see "Symbols" in the design.
 const MODULE_USE: &str = "module";
+
+/// `engine (2 of 4)`: the boundary and its place in the order, counted from the top.
+fn layer_str(layer: &Layer) -> String {
+    format!("{} ({} of {})", layer.boundary, layer.rank + 1, layer.of)
+}
 
 /// `a --> b (2 imports)`, then the kinds of the imports (see [`usage`]), ` UNDECLARED` when the
 /// contract has no such edge and ` uses: module, x, y` when the imports use the module or symbols.
@@ -377,6 +398,7 @@ mod tests {
             excluded: 0,
             exports: None,
             blind_spots: BlindTally::default(),
+            layer: None,
         }
     }
 
@@ -415,6 +437,7 @@ mod tests {
             unmapped: BlindTally::default(),
             unmapped_items: BlindSpots::default(),
             skipped_references: BTreeMap::new(),
+            rules: RulesSummary::default(),
             nodes: vec![
                 node("cli", &["src"], 3),
                 node("lint", &["src/lint", "src/lint2"], 1),
@@ -533,6 +556,7 @@ blind spots: none
             unmapped: BlindTally::default(),
             unmapped_items: BlindSpots::default(),
             skipped_references: BTreeMap::new(),
+            rules: RulesSummary::default(),
             nodes: vec![],
             edges: vec![
                 using(
@@ -648,6 +672,7 @@ blind spots: none
             unmapped: BlindTally::default(),
             unmapped_items: BlindSpots::default(),
             skipped_references: BTreeMap::new(),
+            rules: RulesSummary::default(),
             nodes: vec![
                 exporting(node("a", &[], 0), &["Client", "fetch"]),
                 node("b", &[], 0),

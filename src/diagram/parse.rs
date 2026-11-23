@@ -4,6 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use super::error::DiagramError;
 use super::label;
+use super::rules::{self, RuleParser};
 use crate::model::{
     Contract, Edge, EdgeKind, MapGlob, MapRule, MapTarget, NodeId, NodeInfo, Prefix,
 };
@@ -44,6 +45,10 @@ pub fn parse(src: &str) -> Result<Contract, DiagramError> {
             parser.map(directive, line)?;
             continue;
         }
+        if let Some(found) = rules::directive(text) {
+            parser.rules.record(&found, line)?;
+            continue;
+        }
         if text.is_empty() || text.starts_with("%%") {
             continue;
         }
@@ -77,6 +82,7 @@ struct Parser {
     exports_lines: BTreeMap<NodeId, u32>,
     maps: Vec<MapRule>,
     map_globs: BTreeMap<String, u32>,
+    rules: RuleParser,
 }
 
 impl Parser {
@@ -370,11 +376,15 @@ impl Parser {
                 });
             }
         }
+        let rules = self
+            .rules
+            .finish(&self.nodes, &self.boundaries, &edges, &edge_lines)?;
         Ok(Contract {
             nodes: self.nodes,
             edges,
             surfaces,
             maps: self.maps,
+            rules,
         })
     }
 }

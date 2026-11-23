@@ -12,8 +12,10 @@ use thiserror::Error;
 
 mod blind;
 mod map;
+mod rules;
 
 pub use map::{GlobError, MapGlob, MapRule, MapSite, MapTarget, Specificity};
+pub use rules::{Layer, LayerOrder, Rules, RulesSummary};
 
 pub use blind::{
     BlindFile, BlindRef, BlindSpots, BlindSummary, BlindTally, UnreadGroup, UnreadTotal,
@@ -256,6 +258,9 @@ pub struct Contract {
     /// The `%% map` lines in file order. When any exists, they alone decide ownership.
     #[serde(skip)]
     pub maps: Vec<MapRule>,
+    /// The rule directives: layer order and the others of "Contract rules".
+    #[serde(skip)]
+    pub rules: Rules,
 }
 
 /// Languages driftwall can extract imports from.
@@ -636,6 +641,8 @@ pub enum ViolationKind {
     StaleMap,
     /// The contract maps files itself, and `.arch` files exist that are not read.
     IgnoredTagFiles,
+    /// Code in a lower boundary imports a node in a higher one, against `%% order`.
+    UpwardEdge,
 }
 
 /// How serious a violation is.
@@ -770,6 +777,10 @@ pub struct NodeSummary {
     /// What the node is blind to: its unread, excluded and ignored files and its skipped and
     /// unresolved references.
     pub blind_spots: BlindTally,
+    /// Where the node's boundary sits in `%% order`, or `None` when it is not listed. Omitted from
+    /// JSON when `None`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub layer: Option<Layer>,
 }
 
 /// One edge as the overview presents it: declared, observed in code, or both.
@@ -816,6 +827,8 @@ pub struct Overview {
     pub unmapped_items: BlindSpots,
     /// Every skipped reference, by reason, sorted: what `brief` lists.
     pub skipped_references: BTreeMap<SkipReason, Vec<BlindRef>>,
+    /// The contract's rule directives.
+    pub rules: RulesSummary,
 }
 
 /// One node with the edges that touch it.

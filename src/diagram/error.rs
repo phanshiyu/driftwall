@@ -175,6 +175,43 @@ pub enum DiagramError {
         /// The repeated word.
         word: String,
     },
+    /// A rule directive (`%% order:` and the others of "Contract rules") that is malformed or names
+    /// something that is not declared.
+    #[error("line {line}: malformed `%% {rule}` line: {reason}")]
+    MalformedRule {
+        /// Line of the directive.
+        line: u32,
+        /// The directive keyword, such as `order`.
+        rule: String,
+        /// What is wrong with it.
+        reason: String,
+    },
+    /// A rule directive given twice (once per node for `%% budget`).
+    #[error("line {line}: `%% {rule}` is already given on line {first_line}")]
+    DuplicateRule {
+        /// Line of the second directive.
+        line: u32,
+        /// The directive keyword and its node for a budget, such as `order` or `budget lint`.
+        rule: String,
+        /// Line of the first directive.
+        first_line: u32,
+    },
+    /// An arrow that points up the `%% order`.
+    #[error(
+        "line {line}: edge `{from}` to `{to}` points upward: {relation} in the `%% order` on line {order_line}"
+    )]
+    UpwardArrow {
+        /// Line of the edge.
+        line: u32,
+        /// Importing node.
+        from: NodeId,
+        /// Imported node.
+        to: NodeId,
+        /// What puts it upward, such as "`shared` is below `engine`".
+        relation: String,
+        /// Line of the `%% order` directive.
+        order_line: u32,
+    },
     /// A `%% map` line that is not `%% map <target>: <glob>, <glob>`.
     #[error("line {line}: malformed `%% map` line: {reason}")]
     MalformedMap {
@@ -229,6 +266,9 @@ impl DiagramError {
             | Self::MalformedMap { line, .. }
             | Self::DuplicateMapGlob { line, .. }
             | Self::RepeatedLabelWord { line, .. }
+            | Self::MalformedRule { line, .. }
+            | Self::DuplicateRule { line, .. }
+            | Self::UpwardArrow { line, .. }
             | Self::UndeclaredMapNode { line, .. } => Some(*line),
         }
     }

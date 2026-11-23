@@ -7,6 +7,10 @@ mod error;
 mod label;
 mod parse;
 mod render;
+mod rules;
+
+#[cfg(test)]
+mod rules_tests;
 
 pub use error::DiagramError;
 pub use parse::parse;

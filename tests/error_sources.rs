@@ -81,6 +81,9 @@ mod witness {
         UnclosedSubgraph,
         StrayEnd,
         RepeatedLabelWord,
+        MalformedRule,
+        DuplicateRule,
+        UpwardArrow,
         MalformedExports,
         DuplicateExports,
         UndeclaredExportsNode,
@@ -245,6 +248,23 @@ mod witness {
                     id: "x".to_owned(),
                 },
                 Self::StrayEnd { line: 13 },
+                Self::MalformedRule {
+                    line: 13,
+                    rule: "order".to_owned(),
+                    reason: "x".to_owned(),
+                },
+                Self::DuplicateRule {
+                    line: 13,
+                    rule: "order".to_owned(),
+                    first_line: 2,
+                },
+                Self::UpwardArrow {
+                    line: 13,
+                    from: id(),
+                    to: id(),
+                    relation: "x".to_owned(),
+                    order_line: 2,
+                },
                 Self::RepeatedLabelWord {
                     line: 13,
                     word: "type".to_owned(),

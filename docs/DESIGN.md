@@ -54,7 +54,10 @@ flowchart LR
 - Edges between nodes in different boundaries are normal. Boundaries never carry edges.
 - A comment whose first word is `exports` is the surface directive (see "Symbols and public
   surfaces"), and one whose first word is `map` is the mapping directive (see "Contract map").
-  Every other comment is plain.
+  The comments whose first word is `order:` (see "Layer order"), `no-cycles` or `no-cycles:` (see
+  "No cycles"), `budget` (see "Budgets") or `tests:` (see "Test isolation") are the rule directives
+  of "Contract rules". The colon must follow the word directly, so a comment such as `%% tests -->
+  ...` stays plain. Every other comment is plain.
 
 ### Test edges
 
@@ -128,6 +131,44 @@ existing names, and `diff` writes them the same way (`a -->|type| b (type)`). An
 `-->` (solid, unrestricted) whose every site is type-only, and which has at least one site, is marked
 `could be -->|type|` after its annotations in `brief` and `neighbors` text, and has
 `"type_candidate": true` in JSON (absent otherwise), so a designer can choose to tighten it.
+
+### Contract rules
+
+Rules that are not about one pair of nodes are directives, one `%%` line each, parsed with the
+contract and stored in `Contract::rules`. Each is checked deterministically from data driftwall
+already has. A directive that is malformed, names something undeclared, or is given twice (one
+`%% order`, one `%% tests`, one `%% no-cycles`, one `%% no-cycles: boundaries`, one `%% budget` per
+node) is a contract error with its line, like any other syntax outside the subset: silently
+ignoring one would let a typo become a missing rule. `render` writes them back, after the edges.
+`brief` and `neighbors` show them, see below.
+
+#### Layer order
+
+`%% order: <boundary> > <boundary> > ...` lists boundaries (`subgraph` ids) from the top, the
+entry points, to the bottom, the foundations. A node may depend on nodes in its own boundary, in
+a lower listed boundary, or in none: it may not depend on a node in a higher listed boundary, so a
+contract need not draw every arrow to forbid the wrong direction.
+
+- Every id must be a declared `subgraph` (a node id, an undeclared id, an id listed twice, and
+  fewer than two ids are contract errors). One `%% order` line per contract.
+- Nodes in the same boundary, and nodes in no listed boundary (declared outside every `subgraph`,
+  or in an unlisted one) are unconstrained by this rule, in both directions.
+- Every import site that crosses from a node in a lower listed boundary to a node in a higher
+  one is an `upward-edge` error at the site, whatever the contract declares: an arrow does not
+  excuse it. One finding per site, like `undeclared-edge`, and an undeclared pair is both: the
+  missing edge and the wrong direction are two findings with two fixes. The message names the two
+  nodes and boundaries.
+- A declared arrow that points upward (dotted ones too) is a contract error at its line, naming the
+  order line: the contract contradicts itself, so there is no lint to run. The exception is a
+  `-->|test|` or `-.->|test|` edge, see below. A type edge (`|type|`, `|type, test|`) is not an
+  exception: a type-only import is a dependency, and the layer order forbids it too.
+- Test sites. A site that is test-only (see "Import kind") is exempt only when the pair has a test
+  edge `a -->|test| b` (or `-.->|test|`): the designer then approved test code
+  reaching up explicitly, one pair at a time, and the arrow is not a contract error. Without
+  that edge, test code is held to the order like production code (a test of a low layer that
+  drives it from the entry point must say so with a test edge). The exemption is for sites the
+  edge allows: a production site on the same pair is not allowed by the edge, so it is `undeclared-edge`
+  as well as `upward-edge`.
 
 ## Ownership
 
@@ -1319,6 +1360,7 @@ module and no symbol and adds nothing to `uses:`.
 | `test-only-edge` | warning | solid edge whose every import site is test-only, declare it `-->|test|` |
 | `unresolved-import` | warning | relative import resolves to nothing, whatever its extension; Python absolute import into a first-party package that holds no such module; shell `source` of a path that finds no file |
 | `private-symbol` | error | an import uses a symbol outside the target node's declared surface |
+| `upward-edge` | error | an import goes from a node in a lower `%% order` boundary to one in a higher boundary, see "Layer order" |
 | `stale-map` | warning | a `%% map` glob matches no file, see "Contract map" |
 | `ignored-tag-files` | warning | the contract has `%% map` lines and `.arch` files exist, which are not read |
 
@@ -1749,6 +1791,12 @@ and carry the owner of an excluded or ignored file that a tag covers.
 
   A `scope: here` group is a plain tag: its directory. The rule reads only the source files the
   node owns and the tags, so it is the same in `brief`, `neighbors` and JSON, and for every run.
+- A contract with rule directives (see "Contract rules") adds to `brief`: a `rules:` block after the
+  edges, one line per directive (`  order: entry > engine > shared`), and for a node in a listed
+  boundary ` layer: engine (2 of 3)` at the end of its line, before the blind spots. In JSON the
+  document has `rules` (`order`, the boundaries top first) and the node has `layer` (`boundary`,
+  `rank` from 0 at the top, `of`); both are absent when the contract has no such rule, so a contract
+  without rule directives reads as before. `neighbors` prints the same `layer:` line after `dirs:`.
 - `neighbors <NODE>` prints one node's incoming and outgoing edges with up to 3 `file:line`
   example sites each (`--all-sites` prints every site; JSON always has every site, with no cap
   anywhere). `--files` lists the node's source files under its `files:` line, two spaces indented
@@ -1821,6 +1869,7 @@ with `why:`. The golden rule is to leave an agent as little room to err as possi
       see "Type edges");
     - test-only edges: production code may not import test helpers (done: `-->|test|`, see
       "Test edges"; the check is per edge, not yet per helper);
-    - layer order: a node may use only nodes in lower boundaries, so arrows need not be drawn;
+    - layer order: a node may use only nodes in lower boundaries, so arrows need not be drawn
+      (done: `%% order:`, see "Layer order");
     - no cycles between named nodes or boundaries;
     - budgets: maximum fan-out or size per node.

@@ -184,9 +184,10 @@ mod tests {
                 "unknown-node",
                 "unmapped-file",
                 "unresolved-import",
+                "upward-edge",
             ]
         );
-        assert_eq!(value["runs"][0]["results"].as_array().unwrap().len(), 10);
+        assert_eq!(value["runs"][0]["results"].as_array().unwrap().len(), 11);
     }
 
     #[test]

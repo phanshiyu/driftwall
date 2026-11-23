@@ -17,6 +17,7 @@ pub(super) const fn kind_str(kind: ViolationKind) -> &'static str {
         ViolationKind::PrivateSymbol => "private-symbol",
         ViolationKind::StaleMap => "stale-map",
         ViolationKind::IgnoredTagFiles => "ignored-tag-files",
+        ViolationKind::UpwardEdge => "upward-edge",
     }
 }
 

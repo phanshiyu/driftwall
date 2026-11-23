@@ -9,6 +9,7 @@ use crate::model::{
     ViolationKind,
 };
 
+use super::layers;
 use super::observe::crossings;
 use super::rules::violation;
 
@@ -104,6 +105,7 @@ pub fn reconcile(
     }
 
     violations.extend(edge_findings(contract, &crossings));
+    violations.extend(layers::upward_findings(contract, &crossings));
 
     violations.sort();
     violations.dedup();

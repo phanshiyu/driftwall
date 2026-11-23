@@ -6,6 +6,7 @@
 //! ([`overview`], [`node_view`]) or compare contracts ([`contract_diff`]).
 
 mod diff;
+mod layers;
 mod observe;
 mod overview;
 mod reconcile;

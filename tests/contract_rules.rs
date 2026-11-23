@@ -1,0 +1,155 @@
+//! End-to-end tests of the rule directives of "Contract rules": what `lint`, `brief` and
+//! `neighbors` say about them.
+
+// why: clippy's allow-*-in-tests covers only cfg(test) code, and these helpers are not #[test] fns.
+#[cfg(test)]
+mod support {
+    use std::fs;
+    use std::process::{Command, Output};
+
+    use tempfile::TempDir;
+
+    /// Writes `files` (relative path, contents) into a fresh temp directory.
+    pub fn repo(files: &[(&str, &str)]) -> TempDir {
+        let dir = TempDir::new().unwrap();
+        for (path, contents) in files {
+            let full = dir.path().join(path);
+            fs::create_dir_all(full.parent().unwrap()).unwrap();
+            fs::write(full, contents).unwrap();
+        }
+        dir
+    }
+
+    /// Runs `driftwall <args...>` with `dir` as the last argument.
+    pub fn driftwall(dir: &TempDir, args: &[&str]) -> Output {
+        Command::new(env!("CARGO_BIN_EXE_driftwall"))
+            .args(args)
+            .arg(dir.path())
+            .output()
+            .unwrap()
+    }
+
+    pub fn code(output: &Output) -> i32 {
+        output.status.code().unwrap()
+    }
+
+    pub fn stdout(output: &Output) -> String {
+        String::from_utf8(output.stdout.clone()).unwrap()
+    }
+
+    pub fn json(output: &Output) -> serde_json::Value {
+        serde_json::from_str(&stdout(output)).unwrap()
+    }
+
+    pub fn kinds(value: &serde_json::Value) -> Vec<&str> {
+        value["violations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v["kind"].as_str().unwrap())
+            .collect()
+    }
+
+    pub fn stderr(output: &Output) -> String {
+        String::from_utf8(output.stderr.clone()).unwrap()
+    }
+}
+
+use support::{code, driftwall, json, kinds, repo, stderr, stdout};
+
+/// Two boundaries, `entry` with `app` and `core` with `lib`, a declared `app --> lib` edge and the
+/// given extra contract lines. `lib` imports `app` when `upward`.
+fn layered(extra: &str, upward: bool) -> tempfile::TempDir {
+    let contract = format!(
+        "flowchart LR\n  subgraph entry[\"Entry\"]\n    app\n  end\n  subgraph core[\"Core\"]\n    lib\n  end\n  app --> lib\n{extra}"
+    );
+    let lib = if upward {
+        "import { go } from '../app/main';\nexport const x = 1;\n"
+    } else {
+        "export const x = 1;\n"
+    };
+    repo(&[
+        ("architecture.mmd", &contract),
+        ("app/.arch", "node: app\n"),
+        ("lib/.arch", "node: lib\n"),
+        (
+            "app/main.ts",
+            "import { x } from '../lib/lib';\nexport const go = x;\n",
+        ),
+        ("lib/lib.ts", lib),
+    ])
+}
+
+#[test]
+fn an_upward_import_is_an_upward_edge_error_with_its_site() {
+    let dir = layered("  %% order: entry > core\n", true);
+    let output = driftwall(&dir, &["lint", "--format", "json"]);
+    assert_eq!(code(&output), 1);
+    let value = json(&output);
+    assert_eq!(kinds(&value), ["undeclared-edge", "upward-edge"]);
+    let upward = &value["violations"][1];
+    assert_eq!(upward["severity"], "error");
+    assert_eq!(upward["at"]["file"], "lib/lib.ts");
+    assert_eq!(upward["at"]["line"], 1);
+    assert!(
+        upward["message"]
+            .as_str()
+            .unwrap()
+            .contains("`entry` above `core`"),
+        "{upward}"
+    );
+}
+
+#[test]
+fn the_same_code_without_an_order_line_only_lacks_the_edge() {
+    let dir = layered("", true);
+    let output = driftwall(&dir, &["lint", "--format", "json"]);
+    assert_eq!(kinds(&json(&output)), ["undeclared-edge"]);
+}
+
+#[test]
+fn a_declared_upward_arrow_fails_the_contract_with_its_line() {
+    let dir = layered("  lib --> app\n  %% order: entry > core\n", false);
+    let output = driftwall(&dir, &["lint"]);
+    assert_eq!(code(&output), 2);
+    let text = stderr(&output);
+    assert!(text.contains("line 9"), "{text}");
+    assert!(text.contains("points upward"), "{text}");
+}
+
+#[test]
+fn brief_and_neighbors_show_the_layer_and_the_order() {
+    let dir = layered("  %% order: entry > core\n", false);
+    let brief = stdout(&driftwall(&dir, &["brief"]));
+    assert!(
+        brief.contains("app: app (1 file) layer: entry (1 of 2)"),
+        "{brief}"
+    );
+    assert!(
+        brief.contains("lib: lib (1 file) layer: core (2 of 2)"),
+        "{brief}"
+    );
+    assert!(brief.contains("rules:\n  order: entry > core\n"), "{brief}");
+    let neighbors = stdout(&driftwall(&dir, &["neighbors", "lib"]));
+    assert!(neighbors.contains("layer: core (2 of 2)"), "{neighbors}");
+    let value = json(&driftwall(&dir, &["brief", "--format", "json"]));
+    assert_eq!(
+        value["rules"]["order"],
+        serde_json::json!(["entry", "core"])
+    );
+    assert_eq!(value["nodes"][1]["layer"]["boundary"], "core");
+    assert_eq!(value["nodes"][1]["layer"]["rank"], 1);
+}
+
+#[test]
+fn a_contract_without_rules_has_no_rules_in_brief() {
+    let dir = layered("", false);
+    let text = stdout(&driftwall(&dir, &["brief"]));
+    assert!(
+        !text.contains("rules:") && !text.contains("layer:"),
+        "{text}"
+    );
+    let value = json(&driftwall(&dir, &["brief", "--format", "json"]));
+    assert!(value.get("rules").is_none(), "{value}");
+    assert!(value["nodes"][0].get("layer").is_none(), "{value}");
+}

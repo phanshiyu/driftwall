@@ -5,6 +5,12 @@
 - Release: the npm package is published through npm trusted publishing (an OIDC id-token from
   `.github/workflows/publish-npm.yml`), so no `NPM_TOKEN` secret is needed. `tests/release.rs` pins
   it, and the hand fix for dist 0.34's `uses: $/` path in the generated `release.yml`.
+- Layer order: `%% order: entry > engine > shared` lists boundaries from the top to the
+  foundations, and an import from a node in a lower listed boundary to one in a higher boundary is
+  the new error `upward-edge`, whatever arrows the contract draws. A declared arrow that points
+  upward is a contract error at its line (a `-->|test|` edge may point up, and exempts its
+  test-only sites). Nodes in one boundary or outside the listed ones are unconstrained. `brief`
+  and `neighbors` show each node's layer and the order (JSON `layer`, `rules.order`).
 - Type edges: `a -->|type| b` (and the planned `a -.->|type| b`) allow the dependency from
   type-only import sites (TypeScript `import type`, type-position `import()`, JSDoc types, Python
   `if TYPE_CHECKING:`) and nothing else. A runtime import on a pair with only a type edge is an

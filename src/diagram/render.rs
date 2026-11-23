@@ -75,6 +75,12 @@ pub fn render(contract: &Contract) -> String {
         lines.extend(exports);
     }
 
+    let rules = super::rules::render(&contract.rules);
+    if !rules.is_empty() {
+        lines.push(String::new());
+        lines.extend(rules);
+    }
+
     if !contract.maps.is_empty() {
         lines.push(String::new());
         for rule in &contract.maps {
