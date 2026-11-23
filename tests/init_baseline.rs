@@ -100,7 +100,7 @@ fn an_excluded_file_nothing_imports_declares_no_node() {
     let init = support::run("init", dir.path(), &[]);
     assert!(init.status.success(), "{init:?}");
     let contract = std::fs::read_to_string(dir.path().join("architecture.mmd")).unwrap();
-    assert!(!contract.contains("gen"), "{contract}");
+    assert!(!contract.contains("src/gen"), "{contract}");
 }
 
 #[test]

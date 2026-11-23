@@ -8,7 +8,7 @@ use crate::model::{DirTag, SCOPE_HERE, Scope};
 
 use crate::model::BlindSummary;
 
-use super::{InitError, InitPlan, InitSummary, WriteOptions};
+use super::{InitError, InitPlan, InitSummary, WriteOptions, present};
 
 /// Name of the file that tags a directory with a node.
 const ARCH_FILE: &str = ".arch";
@@ -19,7 +19,7 @@ pub fn apply(
     baseline: &InitPlan,
     write: &WriteOptions,
 ) -> Result<InitSummary, InitError> {
-    let rendered = diagram::render(&baseline.contract);
+    let rendered = present::render(&baseline.contract, &baseline.test_only);
     if diagram::parse(&rendered)? != baseline.contract {
         return Err(InitError::RoundTrip);
     }

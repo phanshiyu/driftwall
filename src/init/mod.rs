@@ -4,11 +4,14 @@
 //! shell that discovers files, extracts imports and writes the result. A repository initialised
 //! this way lints clean, because the contract is the observed import graph.
 
+mod boundaries;
 mod claims;
+mod describe;
 mod existing;
 mod ids;
 mod layout;
 mod plan;
+mod present;
 mod split;
 mod units;
 mod write;
@@ -182,6 +185,24 @@ pub fn run(
             &files, &assets, &excluded, &imports, options, &units, &existing,
         );
     }
+    let every_unit: Vec<Unit> = units
+        .iter()
+        .cloned()
+        .chain(units::python_units(files.keys()))
+        .collect();
+    let mut all_tags = existing.tags;
+    all_tags.extend(baseline.tags.clone());
+    for (id, text) in describe::describe(root, &files, &baseline.owners, &all_tags, &every_unit) {
+        if let Some(info) = baseline.contract.nodes.get_mut(&id) {
+            info.label = Some(format!("{id}: {text}"));
+        }
+    }
+    boundaries::assign(
+        &mut baseline.contract,
+        &baseline.owners,
+        &all_tags,
+        &every_unit,
+    );
     let mut summary = write::apply(root, &baseline, write)?;
     // why: init has no owners or line counts to give, and the note shows neither.
     summary.blind_spots = BlindSpots::build(

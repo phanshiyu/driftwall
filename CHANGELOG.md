@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- `init` drafts read as an architecture: nodes are grouped into `subgraph` boundaries by code unit
+  and directory, labelled `id: description` where a Rust `//!` doc, a Python docstring, a JSDoc
+  file block or a manifest description states one (else the path), written from entry points to
+  foundations, with a `%% cycles: a <-> b` comment per dependency cycle (tests-only cycles named
+  apart) and a summary comment. Presentation only: the nodes, tags and edges are unchanged and
+  `lint` stays clean on a fresh baseline.
 - Rust: `#[path = "b/impl.rs"] mod a;` places module `a` at that file (relative to the declaring
   file, with the inline-module and non-mod-rs rules), so `crate::a::..` resolves to it instead of
   producing a false edge to the crate root file. A `#[cfg(test)] #[path = ..] mod` makes its file

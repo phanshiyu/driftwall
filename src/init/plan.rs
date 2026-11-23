@@ -31,6 +31,11 @@ pub struct InitPlan {
     /// id, or `node: *` (with its prefix) when the nodes are derived from module names, and the
     /// scope. Existing tags are not here.
     pub tags: BTreeMap<PathBuf, DirTag>,
+    /// The owner of every file the plan decided or knows: source files and the assets and excluded
+    /// files a tag covers. The presentation reads it to find where each node lives.
+    pub owners: BTreeMap<PathBuf, NodeId>,
+    /// The edges that only test code backs: every import behind them is `test_only`.
+    pub test_only: BTreeSet<Edge>,
 }
 
 /// Builds the baseline for `files` and the `imports` found in them.
@@ -119,24 +124,7 @@ pub fn plan(
         );
     }
 
-    let mut tags: BTreeMap<PathBuf, DirTag> = BTreeMap::new();
-    for (dir, id) in &directory_ids {
-        let scope = scope_of(dir, &draft);
-        let tag = Tag::Node(id.clone());
-        let peers = BTreeSet::new();
-        tags.insert(dir.clone(), DirTag { tag, scope, peers });
-    }
-    for (dir, region) in std::mem::take(&mut draft.module_dirs) {
-        let tag = Tag::Modules(region.prefix);
-        tags.insert(
-            dir,
-            DirTag {
-                tag,
-                scope: Scope::Subtree,
-                peers: region.peers,
-            },
-        );
-    }
+    let tags = planned_tags(&directory_ids, &mut draft);
 
     let mut all_tags = existing.tags.clone();
     all_tags.extend(tags.clone());
@@ -160,8 +148,39 @@ pub fn plan(
             owners.insert(asset.clone(), owner);
         }
     }
-    add_edges(&mut contract, imports, &owners);
-    InitPlan { contract, tags }
+    let test_only = add_edges(&mut contract, imports, &owners);
+    InitPlan {
+        contract,
+        tags,
+        owners,
+        test_only,
+    }
+}
+
+/// The tags the plan writes: one per directory node, and one `node: *` per module directory.
+fn planned_tags(
+    directory_ids: &BTreeMap<PathBuf, NodeId>,
+    draft: &mut Draft,
+) -> BTreeMap<PathBuf, DirTag> {
+    let mut tags: BTreeMap<PathBuf, DirTag> = BTreeMap::new();
+    for (dir, id) in directory_ids {
+        let scope = scope_of(dir, draft);
+        let tag = Tag::Node(id.clone());
+        let peers = BTreeSet::new();
+        tags.insert(dir.clone(), DirTag { tag, scope, peers });
+    }
+    for (dir, region) in std::mem::take(&mut draft.module_dirs) {
+        let tag = Tag::Modules(region.prefix);
+        tags.insert(
+            dir,
+            DirTag {
+                tag,
+                scope: Scope::Subtree,
+                peers: region.peers,
+            },
+        );
+    }
+    tags
 }
 
 /// The label of a node that only an asset names: the directory of the tag that owns `asset`, or
@@ -207,14 +226,15 @@ fn scope_of(dir: &Path, draft: &Draft) -> Scope {
 }
 
 /// One solid edge per pair of different owners with an import between them. Both owners must be
-/// declared in the contract, as `lint` requires.
+/// declared in the contract, as `lint` requires. Returns the edges whose every import is test code.
 fn add_edges(
     contract: &mut Contract,
     imports: &BTreeMap<PathBuf, FileImports>,
     owners: &BTreeMap<PathBuf, NodeId>,
-) {
+) -> BTreeSet<Edge> {
     let declared = |id: &&NodeId| contract.nodes.contains_key(*id);
     let mut found = BTreeSet::new();
+    let mut production = BTreeSet::new();
     for (file, file_imports) in imports {
         let Some(from) = owners.get(file).filter(declared) else {
             continue;
@@ -224,14 +244,20 @@ fn add_edges(
                 continue;
             };
             if from != to {
-                found.insert(Edge {
+                let edge = Edge {
                     from: from.clone(),
                     to: to.clone(),
-                });
+                };
+                if !import.test_only {
+                    production.insert(edge.clone());
+                }
+                found.insert(edge);
             }
         }
     }
+    let test_only = found.difference(&production).cloned().collect();
     for edge in found {
         contract.edges.insert(edge, EdgeKind::Implemented);
     }
+    test_only
 }

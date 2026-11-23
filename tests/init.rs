@@ -432,7 +432,9 @@ fn written_contract_parses_and_round_trips() {
         let text = read(&dir, "architecture.mmd");
         let contract = driftwall::diagram::parse(&text).unwrap_or_else(|e| panic!("{name}: {e}"));
         assert!(!contract.nodes.is_empty(), "{name}");
-        assert_eq!(driftwall::diagram::render(&contract), text, "{name}");
+        // why: init lays the draft out in layers, so only the contract it means must round-trip.
+        let again = driftwall::diagram::parse(&driftwall::diagram::render(&contract));
+        assert_eq!(again.as_ref(), Ok(&contract), "{name}");
     }
 }
 
