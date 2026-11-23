@@ -16,7 +16,8 @@ flowchart LR
   subgraph shared["Shared"]
     model["model: ids, edges"]
   end
-  %% node: id["label"] or a bare id. Boundaries group nodes, one level deep; an edge may name one.
+  %% node: id["label"] or a bare id. Boundaries group nodes and may nest, see "Nested boundaries".
+  %% An edge may name one.
   %% Planned edge, tolerated until built:
   lint -.-> model
   %% Implemented edge, must be backed by code:
@@ -58,8 +59,8 @@ flowchart LR
   shorthand for the node edges between its members, see "Boundary edges".
 - A comment whose first word is `exports` is the surface directive (see "Symbols and public
   surfaces"), and one whose first word is `map` is the mapping directive (see "Contract map").
-  The comments whose first word is `order:` or `order open:` (see "Layer order"), `no-cycles` or `no-cycles:` (see
-  "No cycles"), `budget` (see "Budgets") `tests:` (see "Test isolation") or `facade` (see "Re-exports") are the rule directives
+  The comments whose first word is `order:` or `order open:` (see "Layer order"), `isolated:` (see
+  "Isolated boundaries"), `no-cycles` or `no-cycles:` (see "No cycles"), `budget` (see "Budgets") `tests:` (see "Test isolation") or `facade` (see "Re-exports") are the rule directives
   of "Contract rules". The colon must follow the word directly, so a comment such as `%% tests -->
   ...` stays plain. The comments whose first word is `packages` or `forbid-packages` are package rules (see
   "Package rules"). Every other comment is plain.
@@ -145,6 +146,44 @@ existing names, and `diff` writes them the same way (`a -->|type| b (type)`). An
 `could be -->|type|` after its annotations in `brief` and `neighbors` text, and has
 `"type_candidate": true` in JSON (absent otherwise), so a designer can choose to tighten it.
 
+### Nested boundaries
+
+A `subgraph` may contain another `subgraph`, to any depth, each closed by its own `end`:
+
+```
+flowchart LR
+  subgraph features["Features"]
+    subgraph billing["Billing"]
+      billing-controller
+      billing-service
+    end
+    subgraph search["Search"]
+      search-service
+    end
+    features-shell
+  end
+```
+
+- Membership is transitive. A node belongs to the boundary it is written in and to every boundary
+  around that one: `billing-service` is a member of `billing` and of `features`. The members of a
+  boundary are the nodes declared between its `subgraph` line and its `end`, at any depth. A boundary
+  with no node at any depth has no members (an edge to it is a contract error, see "Boundary edges").
+- Ids are one namespace across nodes and boundaries at every level: the id rules of "Contract
+  format" apply to a boundary however deep it sits, and a boundary cannot reuse the id of one that
+  contains it or of one beside it.
+- Every rule that names a boundary uses its members: boundary edges, `%% order`, `%% no-cycles:
+  boundaries`, `%% isolated` and the `via` and `redundant-edge` findings. Each section says how
+  nesting enters it.
+- Malformed nesting is a contract error at its line: an `end` with no open `subgraph` (`line 9:
+  `end` without an open subgraph`), and a `subgraph` still open at the end of the file, reported at the
+  line of the innermost one that is open (`subgraph `billing` opened on line 3 is never closed`).
+  What `end` closes is the innermost open `subgraph`, as in Mermaid.
+- Only the innermost boundary of a node is kept as its `boundary`; the ones around it are its outer
+  boundaries. `render` writes the nesting back, so a contract round-trips. Boundary labels are still
+  not stored (a rendered boundary is labelled with its id), and a boundary with no node at any depth
+  is not rendered, as before.
+- `init` drafts have one level and no nesting.
+
 ### Boundary edges
 
 An edge endpoint may be a boundary (a `subgraph` id) as well as a node: `a --> b`, `a --> sub`,
@@ -158,9 +197,17 @@ A boundary edge is shorthand: it declares an edge of its own kind for every pair
 - Covered pairs. A side is the node itself, or every node of the boundary. The edge `S --> T` covers
   every ordered pair `(x, y)` with `x` in the side `S`, `y` in the side `T`, and `x` different from
   `y`: an import inside one node is never an edge, so no pair has the same node on both sides.
-- Members. Nesting is a contract error (see "Contract format"), so the contract has one level and the
-  members of a boundary are exactly the nodes declared between its `subgraph` line and its `end`. A
-  node is in at most one boundary, and a node in no boundary is reachable only as a node endpoint.
+- Members. The members of a boundary are the nodes declared inside it at any depth (see "Nested
+  boundaries"). A node is written in exactly one boundary and is a member of it and of every boundary
+  around it. A node in no boundary is reachable only as a node endpoint. An edge from or to an inner
+  boundary covers only the nodes of that inner boundary: `billing --> shared` says nothing about
+  `search`, while `features --> shared` covers `billing` and `search` too.
+- Nested ends. The two ends of a boundary edge may be the same boundary, or one may contain the other
+  (`features --> billing`, `billing --> features`, `features --> features`). That is allowed and means
+  what the covered pairs say: `features --> billing` is every member of `features` using every member of
+  `billing`, other than a node using itself, including the members of `billing` using each other. The
+  exception is `%% isolated`, which refuses such an arrow when it covers a pair between two children
+  of the isolated boundary, see "Isolated boundaries".
 - A boundary to itself, `features --> features`, means the members may depend on each other: it
   covers every ordered pair of distinct members. Without it, imports between two nodes of one
   boundary need node edges like any others: a boundary is a grouping and grants nothing by itself.
@@ -234,7 +281,7 @@ Rules that are not about one pair of nodes are directives, one `%%` line each, p
 contract and stored in `Contract::rules`. Each is checked deterministically from data driftwall
 already has. A directive that is malformed, names something undeclared, or is given twice (one
 `%% order`, one `%% tests`, one `%% no-cycles`, one `%% no-cycles: boundaries`, one `%% budget` per
-node, a node once in `%% facade`) is a contract error with its line, like any other syntax outside the subset: silently
+node, a node once in `%% facade`, a boundary once in `%% isolated`) is a contract error with its line, like any other syntax outside the subset: silently
 ignoring one would let a typo become a missing rule. `render` writes them back, after the edges.
 `brief` and `neighbors` show them, see below.
 
@@ -255,7 +302,17 @@ contract need not draw every arrow to forbid the wrong direction.
   naming the earlier line: `%% order` on line 14 contradicts the one on line 12: `b` is below `a`
   there but above it here. Only boundaries two chains share are compared: chains are not merged, so
   `a > b` and `b > c` say nothing about `a` and `c`.
-- Nodes in the same boundary, and nodes in no listed boundary (declared outside every `subgraph`,
+- Nesting. A listed boundary stands for all its members at any depth (see "Nested boundaries"): a node
+  is in the listed boundary that contains it, directly or through inner boundaries, and `%% order:
+  app > features > shared` orders every node inside `features` as one layer. Inner boundaries are
+  not ordered by their outer boundary's place; they are ordered only if a chain lists them. A chain may
+  not list a boundary together with one nested in it (`features > billing` with `billing` inside
+  `features`, or the reverse order): the node's layer would be ambiguous, so it is a contract error at
+  the directive: `line 12: `%% order` lists `billing` and `features`, which contains it`. To order the
+  inner boundaries of one boundary, list them in a chain without the outer one; two chains may list a
+  boundary and one nested in it, because chains are independent (a node takes its layer, in each
+  chain, from the boundary that chain lists).
+- Nodes in the same listed boundary, and nodes in no listed boundary (declared outside every `subgraph`,
   or in an unlisted one) are unconstrained by this rule, in both directions. So are two nodes whose
   boundaries no one chain lists together: the check applies per chain, and a pair is constrained
   only by a chain that lists both of its boundaries.
@@ -358,8 +415,13 @@ already `undeclared-edge`, so a cycle in code can only come from a declared one.
   expresses that tests reach across the design, and the usual shape of tests is the reverse of the
   production dependency, so it would read as a cycle without being one. A `type, test` edge counts:
   its type-only production sites are dependencies.
-- Boundaries: there is an edge from boundary `X` to boundary `Y` when a counted node edge goes from
-  a node in `X` to a node in `Y`. Edges inside one boundary and nodes in no boundary add nothing.
+- Boundaries: every boundary at every level is a vertex (see "Nested boundaries"). There is an edge
+  from boundary `X` to boundary `Y` when a counted node edge goes from a node in `X` that is not in
+  `Y` to a node in `Y` that is not in `X`. So `X` and `Y` never contain each other, and a boundary
+  never has an edge to one around it or inside it: an edge from `billing` to a node of `features` that
+  is not in `billing` adds nothing between `billing` and `features`, and between two features
+  it adds an edge between the two feature boundaries only (not to `features`, which holds both). Edges
+  inside one boundary and nodes in no boundary add nothing.
 - A cycle is a contract error at the line of the directive: `line 12: `%% no-cycles` but the
   declared edges form a cycle: a --> b (line 20), b --> c (line 21), c --> a (line 22)`. A step that
   comes from a boundary edge names it and its line, `a --> b (via features --> core, line 31)`; when a
@@ -369,6 +431,50 @@ already `undeclared-edge`, so a cycle in code can only come from a declared one.
   lists boundaries without lines: `a --> b --> a`.
 - A cycle inside a node (`marks` and `camera` modules of one node) is invisible by construction:
   a node is the unit, and imports within it are no edges.
+
+#### Isolated boundaries
+
+`%% isolated: <boundary>[, <boundary>...]` makes the children of a boundary independent of each
+other. It is for a feature-module layout: `features` holds one boundary per feature and the
+features must not use each other. Without it that is only the absence of arrows, and anyone who
+meets the lint error can add an arrow between two features; with it the arrow is refused.
+
+- The children of an isolated boundary are its direct children: each boundary written directly inside
+  it, taken with everything nested in it, and each node written directly inside it. A child boundary
+  with no node at any depth is not a child. Dependencies inside one child, however deep, are not
+  affected, and neither are dependencies between a child and anything outside the isolated boundary.
+- Every id must be a declared `subgraph`, each at most once in the whole contract (an id listed twice, in
+  one line or two, a node id, an undeclared id, and an empty list are contract errors). Several
+  boundaries may be listed, nested ones too: `features` and `billing` inside it each isolate their own
+  children.
+- Breach. Every import site from a node in one child to a node in a different child is an
+  `isolation-breach` error at the site, whatever the contract declares: no arrow excuses it, because
+  no such arrow can exist (below). Type-only, test-only, embed and asset sites are sites like any
+  other. The message names the isolated boundary, the two children and the two nodes: "boundary
+  `features` is isolated: `billing-service` (in `billing`) imports `search-view` (in `search`)". One finding per site, and an
+  undeclared pair is also `undeclared-edge`, as with `upward-edge`: two findings with two fixes.
+- Test sites are not exempt. A test of one feature that imports another feature's code is the same
+  coupling in tests, and the point of the rule is that a feature can be read, changed or removed by
+  looking inside it. The shared test helper belongs in a node outside the isolated boundary. A test
+  edge between children would reopen the escape hatch for one kind of site, so there is none.
+- Arrows. A declared edge that covers a pair of nodes in two different children of an isolated
+  boundary is a contract error at its line, node edge or boundary edge, whatever its arrow or label
+  (dotted, `test`, `type` too): `line 31: edge `billing-service --> search-view` joins `billing` and
+  `search`, children of `features`, which `%% isolated` on line 12 keeps apart`. A boundary edge is
+  judged on its covered pairs: `billing --> search` and `features --> features` are errors,
+  `features --> shared` is not (its pairs leave `features`), `billing --> billing-service` is not
+  (inside one child), and `features --> billing` is an error (it covers pairs from other features into
+  `billing`). The first such edge by line is reported.
+- Fewer than two children is the warning `stale-isolation` ("`%% isolated` on line 12 names `features`, which has
+  one child, so there is nothing to keep apart"), without a source location, naming the line of the
+  directive. `--strict` fails on it.
+- `brief` and `neighbors` show the rule in the `rules:` block, `isolated: features (billing, search,
+  features-shell)`, the children in id order, and JSON has `rules.isolated`, a list of `{"boundary": "features",
+  "children": ["billing", "search", "features-shell"]}` in boundary id order, absent when the
+  contract has none. `diff` does not report rule directives (so not this one) and does not model which
+  boundary a node is in, so a move between boundaries or a change of nesting is not a `diff` change:
+  it compares nodes, edges and boundary edges only. What such a change does to coverage shows in
+  the lint.
 
 #### Budgets
 
@@ -1858,6 +1964,8 @@ module and no symbol and adds nothing to `uses:`.
 | `private-symbol` | error | an import uses a symbol outside the target node's declared surface |
 | `over-budget` | warning | a node exceeds a `%% budget` limit (fan-out, files or lines), see "Budgets" |
 | `production-imports-test` | error | a production import site whose target is a test file, with `%% tests: isolated`, see "Test isolation" |
+| `isolation-breach` | error | an import goes between two children of a `%% isolated` boundary, see "Isolated boundaries" |
+| `stale-isolation` | warning | a `%% isolated` boundary has fewer than two children, see "Isolated boundaries" |
 | `upward-edge` | error | an import goes from a node in a lower `%% order` boundary to one in a higher boundary, see "Layer order" |
 | `forbidden-package` | error | a non-test package use that a `%% forbid-packages` line names, or a third-party one a `%% packages` allow-list of its node lacks, see "Package rules" |
 | `stale-map` | warning | a `%% map` glob matches no file, see "Contract map" |
@@ -2316,11 +2424,11 @@ needs a valid contract: with none, `where` answers as before and lists nothing.
   node owns and the tags, so it is the same in `brief`, `neighbors` and JSON, and for every run.
 - A contract with rule directives (see "Contract rules") adds to `brief`: a `rules:` block after the
   edges, one line per directive (`  order: entry > engine > shared`, one line per `%% order` chain, `  no-cycles`,
-  `  no-cycles: boundaries`, `  tests: isolated`, `  facade: ui-lib, wire`), and for a node in a listed
-  boundary ` layer: engine (2 of 3)` (the place in the first chain that lists the boundary) and for a node with a budget ` budget: fan-out 3/5, files 21/20
+  `  no-cycles: boundaries`, `  tests: isolated`, `  isolated: features (billing, search)`, `  facade: ui-lib, wire`), and for a node in a listed
+  boundary ` layer: engine (2 of 3)` (the place in the first chain that lists a boundary around the node) and for a node with a budget ` budget: fan-out 3/5, files 21/20
   over` at the end of its line, before the blind spots. In JSON the
   document has `rules` (`order`, a list of chains, each the boundaries top first; `no_cycles` and `no_cycles_boundaries`,
-  `true` when the line is there; `tests_isolated`; `facades`, the node ids sorted) and the node has `layer` (`boundary`,
+  `true` when the line is there; `tests_isolated`; `isolated`, a list of `boundary` and `children`; `facades`, the node ids sorted) and the node has `layer` (`boundary`,
   `rank` from 0 at the top, `of`); both are absent when the contract has no such rule, so a contract
   without rule directives reads as before. `neighbors` prints the same `layer:` and `budget:` lines after `dirs:`.
 - **Packages.** A node that uses packages lists them in `brief` and `neighbors`, third party
