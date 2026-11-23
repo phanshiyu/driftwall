@@ -35,8 +35,10 @@ use std::path::{Path, PathBuf};
 use thiserror::Error;
 
 use crate::diagram::DiagramError;
-use crate::imports::{self, ImportsError};
-use crate::model::{BlindSpots, BlindSummary, DEFAULT_CONTRACT, Language, SkipReason};
+use crate::imports::{self, FileImports, ImportsError};
+use crate::model::{
+    BlindSpots, BlindSummary, DEFAULT_CONTRACT, Language, NodeId, PackageKind, SkipReason,
+};
 use crate::ownership::{self, OwnershipError};
 
 pub use existing::Existing;
@@ -133,6 +135,26 @@ fn list(paths: &[PathBuf]) -> String {
         .join(", ")
 }
 
+/// The third-party packages each node's files use outside test code, by node.
+fn observed_packages(
+    imports: &BTreeMap<PathBuf, FileImports>,
+    owners: &BTreeMap<PathBuf, NodeId>,
+) -> BTreeMap<NodeId, BTreeSet<String>> {
+    let mut observed: BTreeMap<NodeId, BTreeSet<String>> = BTreeMap::new();
+    for used in imports.values().flat_map(|found| &found.packages) {
+        if used.test_only || used.kind != PackageKind::ThirdParty {
+            continue;
+        }
+        if let Some(node) = owners.get(&used.at.file) {
+            observed
+                .entry(node.clone())
+                .or_default()
+                .insert(used.name.clone());
+        }
+    }
+    observed
+}
+
 /// Baselines the repository at `root`: writes the contract and, unless disabled, the tags.
 ///
 /// All conflicts are checked before anything is written, so a refusal leaves `root` untouched.
@@ -216,7 +238,8 @@ pub fn run(
         &all_tags,
         &every_unit,
     );
-    let mut summary = write::apply(root, &baseline, &all_tags, write)?;
+    let observed = observed_packages(&imports, &baseline.owners);
+    let mut summary = write::apply(root, &baseline, &all_tags, write, &observed)?;
     // why: init has no owners or line counts to give, and the note shows neither.
     summary.blind_spots = BlindSpots::build(
         &ownership,

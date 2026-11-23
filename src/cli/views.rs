@@ -67,7 +67,7 @@ fn scan(path: &std::path::Path, contract: Option<&PathBuf>) -> Result<(Overview,
     require_directory(path)?;
     let options: LintOptions = lint_options(contract);
     let observation = lint::observe(path, &options)?;
-    let mut overview = lint::overview(
+    let overview = lint::overview(
         &observation.contract,
         &observation.ownership,
         &observation.observed,
@@ -75,6 +75,7 @@ fn scan(path: &std::path::Path, contract: Option<&PathBuf>) -> Result<(Overview,
         &observation.report,
         &observation.blind_spots,
     );
+    let mut overview = lint::with_packages(overview, &observation.packages);
     lint::attach_budgets(&mut overview, &observation.budgets);
     Ok((overview, observation))
 }
@@ -113,6 +114,7 @@ mod tests {
                     blind_spots: BlindTally::default(),
                     layer: None,
                     budget: None,
+                    packages: Vec::new(),
                 })
                 .collect(),
             ..Overview::default()

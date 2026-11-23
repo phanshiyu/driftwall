@@ -297,3 +297,61 @@ fn a_contract_without_package_rules_reports_nothing_whatever_the_uses() {
     );
     assert_eq!(found, Vec::new());
 }
+
+#[test]
+fn node_packages_count_uses_and_test_uses_third_party_first_then_by_name() {
+    let summary = packages::node_packages(
+        &rules(""),
+        &owners(),
+        &uses(&[
+            ("db/a.ts", 1, "node:fs", Stdlib, false),
+            ("db/a.ts", 2, "zod", ThirdParty, false),
+            ("db/b.ts", 3, "zod", ThirdParty, true),
+            ("db/b.ts", 4, "lit", ThirdParty, false),
+            ("loose/c.ts", 1, "lit", ThirdParty, false),
+        ]),
+    );
+    let db: Vec<(&str, &str, usize, usize)> = summary[&node("db")]
+        .iter()
+        .map(|p| (p.name.as_str(), p.kind.as_str(), p.count, p.tests))
+        .collect();
+    assert_eq!(
+        db,
+        [
+            ("lit", "third-party", 1, 0),
+            ("zod", "third-party", 2, 1),
+            ("node:fs", "stdlib", 1, 0),
+        ]
+    );
+    assert_eq!(summary.len(), 1);
+}
+
+#[test]
+fn with_packages_fills_each_node_and_leaves_the_others_empty() {
+    use crate::model::{NodeSummary, Overview};
+    let summary = packages::node_packages(
+        &rules(""),
+        &owners(),
+        &uses(&[("db/a.ts", 1, "lit", ThirdParty, false)]),
+    );
+    let blank = |raw: &str| NodeSummary {
+        id: node(raw),
+        label: None,
+        dirs: Vec::new(),
+        files: 0,
+        assets: 0,
+        excluded: 0,
+        exports: None,
+        blind_spots: crate::model::BlindTally::default(),
+        layer: None,
+        budget: None,
+        packages: Vec::new(),
+    };
+    let overview = Overview {
+        nodes: vec![blank("db"), blank("ui")],
+        ..Overview::default()
+    };
+    let filled = with_packages(overview, &summary);
+    assert_eq!(filled.nodes[0].packages.len(), 1);
+    assert_eq!(filled.nodes[1].packages, Vec::new());
+}

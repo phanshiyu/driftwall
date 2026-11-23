@@ -28,6 +28,14 @@ mod support {
             .unwrap()
     }
 
+    pub fn run_in(dir: &TempDir, args: &[&str]) -> Output {
+        Command::new(env!("CARGO_BIN_EXE_driftwall"))
+            .current_dir(dir.path())
+            .args(args)
+            .output()
+            .unwrap()
+    }
+
     pub fn text(output: &Output) -> String {
         String::from_utf8_lossy(&output.stdout).into_owned()
     }
@@ -92,7 +100,7 @@ mod support {
 }
 
 use serde_json::Value;
-use support::{findings, pick, repo_with, run, stderr, text};
+use support::{findings, pick, repo, repo_with, run, run_in, stderr, text};
 
 #[test]
 fn without_package_rules_nothing_changes() {
@@ -153,4 +161,151 @@ fn test_files_are_exempt() {
     let (code, found) = findings(&dir, &[]);
     assert_eq!(code, Some(0));
     assert_eq!(found, Vec::<Value>::new());
+}
+
+#[test]
+fn brief_shows_each_nodes_packages_third_party_first_with_counts() {
+    let dir = repo_with("");
+    let out = text(&run("brief", &dir, &[]));
+    assert!(
+        out.contains("  web: web/ (2 files) packages: lit (third-party, 1), three (third-party, 1), vitest (third-party, 1, 1 test), node:fs (stdlib, 1) blind: 1 skipped\n"),
+        "{out}"
+    );
+    assert!(
+        out.contains("  core: core/ (1 file) packages: lit (third-party, 1), zod (third-party, 1), node:child_process (stdlib, 1)\n"),
+        "{out}"
+    );
+}
+
+#[test]
+fn brief_json_lists_name_kind_count_and_test_uses() {
+    let dir = repo_with("");
+    let json: Value =
+        serde_json::from_str(&text(&run("brief", &dir, &["--format", "json"]))).unwrap();
+    let core = json["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|node| node["id"] == "core")
+        .unwrap();
+    assert_eq!(
+        core["packages"],
+        serde_json::json!([
+            {"kind": "third-party", "name": "lit", "count": 1, "tests": 0},
+            {"kind": "third-party", "name": "zod", "count": 1, "tests": 0},
+            {"kind": "stdlib", "name": "node:child_process", "count": 1, "tests": 0},
+        ])
+    );
+}
+
+#[test]
+fn a_node_that_uses_no_package_has_no_packages_key_and_no_packages_text() {
+    let dir = repo(&[
+        ("architecture.mmd", "flowchart LR\n  a\n  %% map a: a/\n"),
+        ("a/x.ts", "export const x = 1;\n"),
+    ]);
+    let brief = text(&run("brief", &dir, &[]));
+    assert!(!brief.contains("packages"), "{brief}");
+    let json = text(&run("brief", &dir, &["--format", "json"]));
+    assert!(!json.contains("packages"), "{json}");
+}
+
+#[test]
+fn neighbors_lists_the_packages_of_the_node_and_in_json() {
+    let dir = repo_with("");
+    let out = text(&run_in(&dir, &["neighbors", "web"]));
+    assert!(
+        out.contains("packages:\n  lit (third-party, 1)\n  three (third-party, 1)\n  vitest (third-party, 1, 1 test)\n  node:fs (stdlib, 1)\n"),
+        "{out}"
+    );
+    let json: Value = serde_json::from_str(&text(&run_in(
+        &dir,
+        &["neighbors", "web", "--format", "json"],
+    )))
+    .unwrap();
+    assert_eq!(json["node"]["packages"].as_array().unwrap().len(), 4);
+}
+
+#[test]
+fn where_lists_the_package_uses_of_a_source_file() {
+    let dir = repo_with("");
+    let out = text(&run_in(&dir, &["where", "web/a.ts"]));
+    assert_eq!(
+        out,
+        "web/a.ts: web (via architecture.mmd:4 (map web/))\n  package lit (third-party) line 1\n  package three (third-party) line 2\n  package node:fs (stdlib) line 3\n"
+    );
+    let test = text(&run_in(&dir, &["where", "web/a.test.ts"]));
+    assert!(
+        test.ends_with("  package vitest (third-party) line 1 (test)\n"),
+        "{test}"
+    );
+    let json: Value = serde_json::from_str(&text(&run_in(
+        &dir,
+        &["where", "web/a.ts", "--format", "json"],
+    )))
+    .unwrap();
+    assert_eq!(
+        json["packages"][1],
+        serde_json::json!({"line": 2, "name": "three", "kind": "third-party", "test_only": false})
+    );
+}
+
+#[test]
+fn where_adds_nothing_for_a_file_without_uses_and_for_a_directory() {
+    let dir = repo_with("");
+    let json = text(&run_in(&dir, &["where", "web", "--format", "json"]));
+    assert!(!json.contains("packages"), "{json}");
+    let none = repo(&[
+        ("architecture.mmd", "flowchart LR\n  a\n  %% map a: a/\n"),
+        ("a/x.ts", "export const x = 1;\n"),
+    ]);
+    assert_eq!(
+        text(&run_in(&none, &["where", "a/x.ts"])),
+        "a/x.ts: a (via architecture.mmd:3 (map a/))\n"
+    );
+}
+
+#[test]
+fn init_drafts_observed_third_party_packages_as_plain_comments_that_lint_ignores() {
+    let dir = repo(&[
+        (
+            "package.json",
+            r#"{"dependencies": {"lit": "1", "three": "1"}}"#,
+        ),
+        ("a/.arch", "node: a\n"),
+        ("b/.arch", "node: b\n"),
+        (
+            "a/x.ts",
+            "import { html } from 'lit';\nimport fs from 'node:fs';\nimport { y } from '../b/y';\n",
+        ),
+        ("a/x.test.ts", "import { it } from 'vitest';\n"),
+        (
+            "b/y.ts",
+            "import * as T from 'three';\nexport const y = 1;\n",
+        ),
+    ]);
+    let init = run("init", &dir, &[]);
+    assert!(init.status.success(), "{init:?}");
+    let contract = std::fs::read_to_string(dir.path().join("architecture.mmd")).unwrap();
+    assert!(
+        contract.contains("  %% observed packages a: lit\n  %% observed packages b: three\n"),
+        "{contract}"
+    );
+    assert!(!contract.contains("vitest"), "{contract}");
+    assert!(!contract.contains("node:fs"), "{contract}");
+    assert!(contract.contains("not enforced"), "{contract}");
+    let strict = run("lint", &dir, &["--strict"]);
+    assert!(strict.status.success(), "{strict:?}");
+}
+
+#[test]
+fn init_writes_no_observed_line_for_a_repository_without_third_party_packages() {
+    let dir = repo(&[
+        ("a/.arch", "node: a\n"),
+        ("a/x.ts", "import fs from 'node:fs';\n"),
+    ]);
+    let init = run("init", &dir, &[]);
+    assert!(init.status.success(), "{init:?}");
+    let contract = std::fs::read_to_string(dir.path().join("architecture.mmd")).unwrap();
+    assert!(!contract.contains("observed"), "{contract}");
 }

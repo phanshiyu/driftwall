@@ -1,11 +1,11 @@
 //! The IO half of `init`: conflict checks, then writes in a fixed order.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::diagram;
-use crate::model::{DirTag, SCOPE_HERE, Scope};
+use crate::model::{DirTag, NodeId, SCOPE_HERE, Scope};
 
 use crate::model::BlindSummary;
 
@@ -21,13 +21,14 @@ pub fn apply(
     baseline: &InitPlan,
     every: &BTreeMap<PathBuf, DirTag>,
     write: &WriteOptions,
+    observed: &BTreeMap<NodeId, BTreeSet<String>>,
 ) -> Result<InitSummary, InitError> {
     // why: with `--map` every tag, new or existing, moves into the contract: `.arch` files stop being read.
     let mut contract = baseline.contract.clone();
     if write.write_map {
         contract.maps = rules_of(every)?;
     }
-    let rendered = present::render(&contract);
+    let rendered = present::render(&contract, observed);
     if diagram::parse(&rendered)? != contract {
         return Err(InitError::RoundTrip);
     }

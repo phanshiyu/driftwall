@@ -1,11 +1,12 @@
 //! `driftwall where`: what a file is, which node owns it, and which `.arch` file decided it.
 
+use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 use driftwall::lint;
-use driftwall::model::DEFAULT_CONTRACT;
+use driftwall::model::{DEFAULT_CONTRACT, PackageUse};
 use driftwall::ownership::{self, FileKind, Located};
 use serde::Serialize;
 
@@ -30,6 +31,7 @@ pub fn run(args: &WhereArgs) -> Result<Run> {
     } else {
         lint::read_contract(&args.root, contract).ok()
     };
+    let has_contract = parsed.is_some();
     let rules = parsed.map(|parsed| parsed.maps).unwrap_or_default();
     let file = inside_root(&args.root, &args.file);
     let mut located = if rules.is_empty() {
@@ -51,14 +53,38 @@ pub fn run(args: &WhereArgs) -> Result<Run> {
         };
     }
     let shown = slash_path(&args.file);
+    let uses = package_uses(args, &file, contract, has_contract, &located)?;
     let stdout = match args.format {
-        WhereFormat::Text => render_text(&shown, &located),
-        WhereFormat::Json => render_json(&shown, &located)?,
+        WhereFormat::Text => render_text_with(&shown, &located, &uses),
+        WhereFormat::Json => render_json_with(&shown, &located, &uses)?,
     };
     Ok(Run {
         stdout,
         outcome: Outcome::of_where(&located),
     })
+}
+
+/// The package uses of `file`, a source file, which only a scan of the whole repository can tell:
+/// none for any other kind of file and when there is no valid contract to scan against.
+fn package_uses(
+    args: &WhereArgs,
+    file: &Path,
+    contract: &Path,
+    has_contract: bool,
+    located: &Located,
+) -> Result<Vec<PackageUse>> {
+    if !has_contract || located.kind != FileKind::Source {
+        return Ok(Vec::new());
+    }
+    let options = lint::LintOptions {
+        contract: contract.to_path_buf(),
+    };
+    let observation = lint::observe(&args.root, &options)?;
+    Ok(observation
+        .package_uses
+        .get(file)
+        .cloned()
+        .unwrap_or_default())
 }
 
 /// Turns an absolute `file` below `root` into the root-relative path `locate` accepts.
@@ -121,6 +147,24 @@ fn render_text(file: &str, located: &Located) -> String {
     format!("{file}: {answer}\n")
 }
 
+/// [`render_text`], then one line per package use of the file: `  package lit (third-party) line 3`,
+/// with ` (test)` when the use is in test code.
+fn render_text_with(file: &str, located: &Located, uses: &[PackageUse]) -> String {
+    let mut out = render_text(file, located);
+    for used in uses {
+        let test = if used.test_only { " (test)" } else { "" };
+        // why: fmt::Write into a String is infallible, so the discarded Result carries no error.
+        let _ = writeln!(
+            out,
+            "  package {} ({}) line {}{test}",
+            used.name,
+            used.kind.as_str(),
+            used.at.line
+        );
+    }
+    out
+}
+
 /// The file that decided the owner, with the line and glob when a `%% map` did.
 fn via(located: &Located) -> String {
     let file = located
@@ -145,6 +189,17 @@ struct Answer<'a> {
     detail: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     map: Option<MapAnswer<'a>>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    packages: Vec<PackageAnswer<'a>>,
+}
+
+/// One package use of the file, for `where --format json`.
+#[derive(Debug, Serialize)]
+struct PackageAnswer<'a> {
+    line: u32,
+    name: &'a str,
+    kind: &'static str,
+    test_only: bool,
 }
 
 /// The `%% map` line and glob that decided the owner.
@@ -154,7 +209,7 @@ struct MapAnswer<'a> {
     glob: &'a str,
 }
 
-fn render_json(file: &str, located: &Located) -> Result<String> {
+fn render_json_with(file: &str, located: &Located, uses: &[PackageUse]) -> Result<String> {
     let (kind, detail) = match &located.kind {
         FileKind::Source => ("source", None),
         FileKind::Asset => ("asset", None),
@@ -176,6 +231,15 @@ fn render_json(file: &str, located: &Located) -> Result<String> {
             line: site.line,
             glob: &site.glob,
         }),
+        packages: uses
+            .iter()
+            .map(|used| PackageAnswer {
+                line: used.at.line,
+                name: &used.name,
+                kind: used.kind.as_str(),
+                test_only: used.test_only,
+            })
+            .collect(),
     };
     let mut out = serde_json::to_string_pretty(&answer)?;
     out.push('\n');
@@ -195,6 +259,10 @@ mod tests {
     use driftwall::model::{Exclusion, NodeId};
 
     use super::*;
+
+    fn render_json(file: &str, located: &Located) -> Result<String> {
+        render_json_with(file, located, &[])
+    }
 
     fn located(kind: FileKind, owned: bool) -> Located {
         Located {

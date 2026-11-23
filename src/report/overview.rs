@@ -8,7 +8,8 @@ use serde::Serialize;
 
 use crate::model::{
     BlindRef, BlindSpots, BlindSummary, BlindTally, EdgeKind, EdgeSummary, ImportKind, Layer,
-    MAX_SITES, NodeBudget, NodeSummary, NodeView, Overview, RulesSummary, Site, SkipReason, Symbol,
+    MAX_SITES, NodeBudget, NodeSummary, NodeView, Overview, PackageSummary, RulesSummary, Site,
+    SkipReason, Symbol,
 };
 
 use super::ReportError;
@@ -60,6 +61,12 @@ pub fn render_overview_text(overview: &Overview) -> String {
         let exports = node.exports.as_ref().map_or_else(String::new, |names| {
             format!(" exports: {}", capped(names.iter().map(String::as_str)))
         });
+        let packages = if node.packages.is_empty() {
+            String::new()
+        } else {
+            let names: Vec<String> = node.packages.iter().map(package_str).collect();
+            format!(" packages: {}", capped(names.iter().map(String::as_str)))
+        };
         let layer = node
             .layer
             .as_ref()
@@ -75,7 +82,7 @@ pub fn render_overview_text(overview: &Overview) -> String {
         );
         let _ = writeln!(
             out,
-            "  {}: {} ({}){exports}{layer}{}",
+            "  {}: {} ({}){exports}{layer}{packages}{}",
             node.id,
             dirs_str(&node.dirs),
             file_counts(node),
@@ -177,6 +184,12 @@ pub fn render_node_view_text(view: &NodeView, options: NodeViewOptions) -> Strin
     if let Some(names) = &node.exports {
         let names: Vec<&str> = names.iter().map(String::as_str).collect();
         let _ = writeln!(out, "exports: {}", names.join(", "));
+    }
+    if !node.packages.is_empty() {
+        let _ = writeln!(out, "packages:");
+        for package in &node.packages {
+            let _ = writeln!(out, "  {}", package_str(package));
+        }
     }
     for (title, edges) in [("outgoing", outgoing), ("incoming", incoming)] {
         let _ = writeln!(out, "{title}:");
@@ -283,6 +296,22 @@ fn to_json(document: &impl Serialize) -> Result<String, ReportError> {
     let mut out = serde_json::to_string_pretty(document)?;
     out.push('\n');
     Ok(out)
+}
+
+/// `lit (third-party, 4)`: the package, its kind and its number of uses, followed by how many of
+/// them are in test code when any is: `vitest (third-party, 3, 3 test)`.
+fn package_str(package: &PackageSummary) -> String {
+    let tests = if package.tests == 0 {
+        String::new()
+    } else {
+        format!(", {} test", package.tests)
+    };
+    format!(
+        "{} ({}, {}{tests})",
+        package.name,
+        package.kind.as_str(),
+        package.count
+    )
 }
 
 /// The word an edge shows for a use of the target module itself, see "Symbols" in the design.
@@ -435,6 +464,7 @@ mod tests {
             blind_spots: BlindTally::default(),
             layer: None,
             budget: None,
+            packages: Vec::new(),
         }
     }
 

@@ -108,7 +108,7 @@ fn brief_ends_with_the_blind_spots_block_and_every_node_line_counts_its_own() {
     let expected = "\
 driftwall: 2 nodes, 1 edges (1 implemented, 0 planned), 0 errors, 1 warnings
 nodes:
-  a: a (1 file) blind: 3 not read, 1 excluded, 1 ignored, 2 skipped, 1 unresolved
+  a: a (1 file) packages: left-pad (third-party, 1) blind: 3 not read, 1 excluded, 1 ignored, 2 skipped, 1 unresolved
   b: b (1 file) blind: 1 not read
 edges:
   a --> b (1 import) uses: b
@@ -305,6 +305,8 @@ dirs: a
 files: 1
 assets: 3
 excluded: 1
+packages:
+  left-pad (third-party, 1)
 outgoing:
   a --> b (1 import) uses: b
     a/main.ts:1

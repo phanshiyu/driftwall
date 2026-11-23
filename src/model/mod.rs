@@ -836,6 +836,23 @@ pub struct NodeSummary {
     /// when `None`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub budget: Option<NodeBudget>,
+    /// The packages the node's files use, third party first, then by name. Omitted from JSON when
+    /// the node uses none.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub packages: Vec<PackageSummary>,
+}
+
+/// One package as the overview presents it: how often a node's files use it.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+pub struct PackageSummary {
+    /// Third party or standard library. Sorts first so third party packages lead.
+    pub kind: PackageKind,
+    /// The package, see [`PackageUse::name`].
+    pub name: String,
+    /// Number of uses, in production and test code.
+    pub count: usize,
+    /// How many of `count` are written in test code.
+    pub tests: usize,
 }
 
 /// One edge as the overview presents it: declared, observed in code, or both.

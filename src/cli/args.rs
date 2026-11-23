@@ -133,7 +133,8 @@ pub struct WhereArgs {
 pub enum WhereFormat {
     /// `<file>: <what it is and who owns it>`, for example `<file>: <node> (via <arch file>)`.
     Text,
-    /// An object with `file`, `node`, `arch_file`, `kind` and, when there is one, `detail`.
+    /// An object with `file`, `node`, `arch_file`, `kind` and, when there is one, `detail`; for a
+    /// source file that uses packages also `packages`.
     Json,
 }
 

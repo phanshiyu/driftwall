@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use crate::imports::FileImports;
 use crate::model::{
     Contract, Location, NodeId, Ownership, PackageKind, PackagePattern, PackageRule,
-    PackageRuleKind, PackageUse, Violation, ViolationKind,
+    PackageRuleKind, PackageSummary, PackageUse, Violation, ViolationKind,
 };
 
 use super::observe::declared_owner;
@@ -23,6 +23,38 @@ pub(super) fn owned_uses<'a>(
         .values()
         .flat_map(|found| &found.packages)
         .filter_map(|used| Some((declared_owner(contract, ownership, &used.at.file)?, used)))
+}
+
+/// The packages each declared node's files use, with how often, third party first then by name.
+pub(super) fn node_packages(
+    contract: &Contract,
+    ownership: &Ownership,
+    imports: &BTreeMap<PathBuf, FileImports>,
+) -> BTreeMap<NodeId, Vec<PackageSummary>> {
+    let mut counts: BTreeMap<(&NodeId, PackageKind, &str), (usize, usize)> = BTreeMap::new();
+    for (node, used) in owned_uses(contract, ownership, imports) {
+        let entry = counts
+            .entry((node, used.kind, used.name.as_str()))
+            .or_default();
+        entry.0 += 1;
+        entry.1 += usize::from(used.test_only);
+    }
+    let mut packages: BTreeMap<NodeId, Vec<PackageSummary>> = BTreeMap::new();
+    for ((node, kind, name), (count, tests)) in counts {
+        packages
+            .entry(node.clone())
+            .or_default()
+            .push(PackageSummary {
+                kind,
+                name: name.to_owned(),
+                count,
+                tests,
+            });
+    }
+    for list in packages.values_mut() {
+        list.sort();
+    }
+    packages
 }
 
 /// The findings of the package rules: a `forbidden-package` per use that breaks a rule, and a

@@ -43,13 +43,13 @@ use crate::diagram::{self, DiagramError};
 use crate::imports::{self, ImportsError};
 use crate::model::{
     BlindSpots, Contract, DEFAULT_CONTRACT, Edge, Language, LintReport, NodeBudget, NodeId,
-    Ownership, Site, Symbol,
+    Ownership, PackageSummary, PackageUse, Site, Symbol,
 };
 use crate::ownership::{self, OwnershipError};
 
 pub use diff::{EMPTY_CONTRACT, contract_diff};
 pub use observe::{observed_edges, observed_symbols};
-pub use overview::{attach_budgets, node_view, overview};
+pub use overview::{attach_budgets, node_view, overview, with_packages};
 pub use reconcile::reconcile;
 
 /// Settings for [`run`].
@@ -121,6 +121,10 @@ pub struct Observation {
     pub budgets: BTreeMap<NodeId, NodeBudget>,
     /// The symbols the imports behind each observed edge use.
     pub symbols: BTreeMap<Edge, BTreeSet<Symbol>>,
+    /// The packages each declared node's files use, see [`with_packages`].
+    pub packages: BTreeMap<NodeId, Vec<PackageSummary>>,
+    /// Every package use of every source file, by file, for the commands that explain one file.
+    pub package_uses: BTreeMap<PathBuf, Vec<PackageUse>>,
     /// The lint result for the same scan.
     pub report: LintReport,
     /// Everything the scan could not see: unread, excluded and ignored files, skipped references
@@ -229,12 +233,20 @@ pub fn observe(root: &Path, options: &LintOptions) -> Result<Observation, LintEr
             .chain(&undeclared),
         imports.values().flat_map(|found| &found.unresolved),
     );
+    let packages = packages::node_packages(&contract, &ownership, &imports);
+    let package_uses = imports
+        .iter()
+        .filter(|(_, found)| !found.packages.is_empty())
+        .map(|(file, found)| (file.clone(), found.packages.clone()))
+        .collect();
     Ok(Observation {
         contract,
         ownership,
         observed,
         budgets,
         symbols,
+        packages,
+        package_uses,
         report,
         blind_spots,
     })

@@ -5,7 +5,8 @@ use std::path::{Path, PathBuf};
 
 use crate::model::{
     BlindSpots, Contract, DirTag, Edge, EdgeKind, EdgeSummary, ImportKind, LintReport, MapTarget,
-    NodeBudget, NodeId, NodeSummary, NodeView, Overview, Ownership, Scope, Site, Symbol, Tag,
+    NodeBudget, NodeId, NodeSummary, NodeView, Overview, Ownership, PackageSummary, Scope, Site,
+    Symbol, Tag,
 };
 
 /// Combines the contract, ownership, observed edges, the symbols they use and the lint report
@@ -85,6 +86,7 @@ pub fn overview(
                 blind_spots: blind.tally(Some(id)),
                 layer: contract.rules.layer(info.boundary.as_deref()),
                 budget: None,
+                packages: Vec::new(),
             }
         })
         .collect();
@@ -128,6 +130,19 @@ pub fn attach_budgets(overview: &mut Overview, budgets: &BTreeMap<NodeId, NodeBu
     for node in &mut overview.nodes {
         node.budget = budgets.get(&node.id).copied();
     }
+}
+
+/// `overview` with each node's `packages` set from `packages`, which [`Observation`](super::Observation)
+/// holds. A node `packages` has no entry for uses none. Pure.
+#[must_use]
+pub fn with_packages(
+    mut overview: Overview,
+    packages: &BTreeMap<NodeId, Vec<PackageSummary>>,
+) -> Overview {
+    for node in &mut overview.nodes {
+        node.packages = packages.get(&node.id).cloned().unwrap_or_default();
+    }
+    overview
 }
 
 /// The node named `id` with every edge that leaves or enters it, the source files it owns and

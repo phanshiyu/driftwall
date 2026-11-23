@@ -33,6 +33,14 @@
   type-only imports. There is no warning for a solid edge realised only by type imports: `brief` and
   `neighbors` mark it `could be -->|type|` (JSON `type_candidate`). `brief`, `neighbors` and `diff`
   show the kinds (`type`, `planned-type`, `type-test`, `planned-type-test` in JSON).
+- Package visibility: `brief` and `neighbors` list the packages each node's files use (name, kind,
+  number of uses and how many are in test code), third party first, as `packages: lit
+  (third-party, 4), node:fs (stdlib, 2)` in text and `packages` (`kind`, `name`, `count`, `tests`)
+  in JSON, absent for a node that uses none. `where <file>` lists the package uses of a source file
+  (`  package lit (third-party) line 3`, JSON `packages`). `init` drafts a `%% observed packages
+  <node>: ..` comment per node with third-party packages in production code: a plain comment, a
+  starting point that is never enforced until written as a `%% packages` rule.
+
 - Package rules: `%% packages <node>: <name>, ...` is an allow-list of third-party packages and
   `%% forbid-packages <node>: <name>, ...` a deny-list of any package, the standard library
   included (`node:child_process`, `subprocess`, `lit`). A use that is not allowed, or is denied, is
