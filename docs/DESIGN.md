@@ -170,6 +170,28 @@ contract need not draw every arrow to forbid the wrong direction.
   edge allows: a production site on the same pair is not allowed by the edge, so it is `undeclared-edge`
   as well as `upward-edge`.
 
+#### No cycles
+
+`%% no-cycles` makes the declared edges a directed acyclic graph over nodes, and
+`%% no-cycles: boundaries` makes the boundary graph one too. They are independent lines, each at
+most once, and both are checks of the contract alone: code that crosses an undeclared pair is
+already `undeclared-edge`, so a cycle in code can only come from a declared one.
+
+- Nodes: every declared edge counts, solid or dotted (a planned cycle is still a cycle you intend to
+  build), type edges included, and test edges (`-->|test|`, `-.->|test|`) excluded. A test edge
+  expresses that tests reach across the design, and the usual shape of tests is the reverse of the
+  production dependency, so it would read as a cycle without being one. A `type, test` edge counts:
+  its type-only production sites are dependencies.
+- Boundaries: there is an edge from boundary `X` to boundary `Y` when a counted node edge goes from
+  a node in `X` to a node in `Y`. Edges inside one boundary and nodes in no boundary add nothing.
+- A cycle is a contract error at the line of the directive: `line 12: `%% no-cycles` but the
+  declared edges form a cycle: a --> b (line 20), b --> c (line 21), c --> a (line 22)`. Only one is
+  listed: the shortest cycle through the smallest node id (boundary id) that is on any cycle, so
+  the message is the same on every run. Fix it and run again for the next one. The boundary form
+  lists boundaries without lines: `a --> b --> a`.
+- A cycle inside a node (`marks` and `camera` modules of one node) is invisible by construction:
+  a node is the unit, and imports within it are no edges.
+
 ## Ownership
 
 A `.arch` file contains `node: <id>` and, optionally, `scope: here` (comments start with `#`; each
@@ -1792,9 +1814,11 @@ and carry the owner of an excluded or ignored file that a tag covers.
   A `scope: here` group is a plain tag: its directory. The rule reads only the source files the
   node owns and the tags, so it is the same in `brief`, `neighbors` and JSON, and for every run.
 - A contract with rule directives (see "Contract rules") adds to `brief`: a `rules:` block after the
-  edges, one line per directive (`  order: entry > engine > shared`), and for a node in a listed
+  edges, one line per directive (`  order: entry > engine > shared`, `  no-cycles`,
+  `  no-cycles: boundaries`), and for a node in a listed
   boundary ` layer: engine (2 of 3)` at the end of its line, before the blind spots. In JSON the
-  document has `rules` (`order`, the boundaries top first) and the node has `layer` (`boundary`,
+  document has `rules` (`order`, the boundaries top first; `no_cycles` and `no_cycles_boundaries`,
+  `true` when the line is there) and the node has `layer` (`boundary`,
   `rank` from 0 at the top, `of`); both are absent when the contract has no such rule, so a contract
   without rule directives reads as before. `neighbors` prints the same `layer:` line after `dirs:`.
 - `neighbors <NODE>` prints one node's incoming and outgoing edges with up to 3 `file:line`
@@ -1871,5 +1895,5 @@ with `why:`. The golden rule is to leave an agent as little room to err as possi
       "Test edges"; the check is per edge, not yet per helper);
     - layer order: a node may use only nodes in lower boundaries, so arrows need not be drawn
       (done: `%% order:`, see "Layer order");
-    - no cycles between named nodes or boundaries;
+    - no cycles between named nodes or boundaries (done: `%% no-cycles`, see "No cycles");
     - budgets: maximum fan-out or size per node.

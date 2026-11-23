@@ -153,3 +153,30 @@ fn a_contract_without_rules_has_no_rules_in_brief() {
     assert!(value.get("rules").is_none(), "{value}");
     assert!(value["nodes"][0].get("layer").is_none(), "{value}");
 }
+
+#[test]
+fn brief_lists_the_no_cycles_lines_and_json_flags_them() {
+    let dir = layered("  %% no-cycles\n  %% no-cycles: boundaries\n", false);
+    let text = stdout(&driftwall(&dir, &["brief"]));
+    assert!(
+        text.contains("rules:\n  no-cycles\n  no-cycles: boundaries\n"),
+        "{text}"
+    );
+    let value = json(&driftwall(&dir, &["brief", "--format", "json"]));
+    assert_eq!(value["rules"]["no_cycles"], true);
+    assert_eq!(value["rules"]["no_cycles_boundaries"], true);
+    assert!(value["rules"].get("order").is_none(), "{value}");
+}
+
+#[test]
+fn a_declared_cycle_fails_lint_with_exit_two_and_the_cycle() {
+    let dir = layered("  lib --> app\n  %% no-cycles\n", false);
+    let output = driftwall(&dir, &["lint"]);
+    assert_eq!(code(&output), 2);
+    let text = stderr(&output);
+    assert!(text.contains("line 10"), "{text}");
+    assert!(
+        text.contains("app --> lib (line 8), lib --> app (line 9)"),
+        "{text}"
+    );
+}

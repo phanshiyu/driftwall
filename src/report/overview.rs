@@ -85,6 +85,12 @@ pub fn render_overview_text(overview: &Overview) -> String {
         if !overview.rules.order.is_empty() {
             let _ = writeln!(out, "  order: {}", overview.rules.order.join(" > "));
         }
+        if overview.rules.no_cycles {
+            out.push_str("  no-cycles\n");
+        }
+        if overview.rules.no_cycles_boundaries {
+            out.push_str("  no-cycles: boundaries\n");
+        }
     }
     out.push_str(&blind::summary_block(
         &overview.blind_spots,

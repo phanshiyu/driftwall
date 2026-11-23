@@ -36,13 +36,19 @@ pub struct RulesSummary {
     /// The boundaries of `%% order`, top first. Empty, and omitted from JSON, without one.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub order: Vec<String>,
+    /// Whether the contract has `%% no-cycles`. Omitted from JSON when false.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub no_cycles: bool,
+    /// Whether the contract has `%% no-cycles: boundaries`. Omitted from JSON when false.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub no_cycles_boundaries: bool,
 }
 
 impl RulesSummary {
     /// Whether the contract has no rule directive at all.
     #[must_use]
     pub const fn is_empty(&self) -> bool {
-        self.order.is_empty()
+        self.order.is_empty() && !self.no_cycles && !self.no_cycles_boundaries
     }
 }
 
@@ -56,6 +62,8 @@ impl Rules {
                 .as_ref()
                 .map(|order| order.boundaries.clone())
                 .unwrap_or_default(),
+            no_cycles: self.no_cycles.is_some(),
+            no_cycles_boundaries: self.no_cycles_boundaries.is_some(),
         }
     }
 
@@ -77,12 +85,16 @@ impl Rules {
 pub struct Rules {
     /// `%% order: ...`, see "Layer order".
     pub order: Option<LayerOrder>,
+    /// The line of `%% no-cycles`, see "No cycles".
+    pub no_cycles: Option<u32>,
+    /// The line of `%% no-cycles: boundaries`, see "No cycles".
+    pub no_cycles_boundaries: Option<u32>,
 }
 
 impl Rules {
     /// Whether the contract has no rule directive at all.
     #[must_use]
     pub const fn is_empty(&self) -> bool {
-        self.order.is_none()
+        self.order.is_none() && self.no_cycles.is_none() && self.no_cycles_boundaries.is_none()
     }
 }

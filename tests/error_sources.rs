@@ -84,6 +84,7 @@ mod witness {
         MalformedRule,
         DuplicateRule,
         UpwardArrow,
+        DeclaredCycle,
         MalformedExports,
         DuplicateExports,
         UndeclaredExportsNode,
@@ -257,6 +258,11 @@ mod witness {
                     line: 13,
                     rule: "order".to_owned(),
                     first_line: 2,
+                },
+                Self::DeclaredCycle {
+                    line: 13,
+                    what: "node".to_owned(),
+                    cycle: "a --> b --> a".to_owned(),
                 },
                 Self::UpwardArrow {
                     line: 13,

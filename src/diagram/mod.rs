@@ -3,6 +3,7 @@
 //! The accepted grammar is specified in `docs/DESIGN.md` under "Contract format". Anything
 //! outside it is a hard [`DiagramError`] carrying a line number.
 
+mod cycles;
 mod error;
 mod label;
 mod parse;

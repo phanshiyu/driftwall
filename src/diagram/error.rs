@@ -196,6 +196,18 @@ pub enum DiagramError {
         /// Line of the first directive.
         first_line: u32,
     },
+    /// The declared edges form a cycle that a `%% no-cycles` line forbids.
+    #[error(
+        "line {line}: `%% no-cycles` forbids {what} cycles, but the declared edges form one: {cycle}"
+    )]
+    DeclaredCycle {
+        /// Line of the directive.
+        line: u32,
+        /// What the directive covers: `node` or `boundary`.
+        what: String,
+        /// The cycle, written as its edges.
+        cycle: String,
+    },
     /// An arrow that points up the `%% order`.
     #[error(
         "line {line}: edge `{from}` to `{to}` points upward: {relation} in the `%% order` on line {order_line}"
@@ -269,6 +281,7 @@ impl DiagramError {
             | Self::MalformedRule { line, .. }
             | Self::DuplicateRule { line, .. }
             | Self::UpwardArrow { line, .. }
+            | Self::DeclaredCycle { line, .. }
             | Self::UndeclaredMapNode { line, .. } => Some(*line),
         }
     }

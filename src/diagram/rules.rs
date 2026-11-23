@@ -1,7 +1,8 @@
 //! The rule directives of a contract: `%% order:`, and the others of "Contract rules".
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
+use super::cycles::find_cycle;
 use super::error::DiagramError;
 use crate::model::{Edge, EdgeKind, LayerOrder, NodeId, NodeInfo, Rules};
 
@@ -9,6 +10,8 @@ use crate::model::{Edge, EdgeKind, LayerOrder, NodeId, NodeInfo, Rules};
 pub(super) enum Directive<'a> {
     /// `%% order: <boundary> > <boundary>`
     Order(&'a str),
+    /// `%% no-cycles` or `%% no-cycles: boundaries`: the text after the keyword.
+    NoCycles(&'a str),
 }
 
 /// The rule directive a comment line is, or `None` for anything else.
@@ -17,8 +20,12 @@ pub(super) enum Directive<'a> {
 /// so a comment such as `%% orders of magnitude` stays plain.
 pub(super) fn directive(text: &str) -> Option<Directive<'_>> {
     let body = text.strip_prefix("%%")?.trim_start();
-    body.strip_prefix("order:")
-        .map(|rest| Directive::Order(rest.trim()))
+    if let Some(rest) = body.strip_prefix("order:") {
+        return Some(Directive::Order(rest.trim()));
+    }
+    let rest = body.strip_prefix("no-cycles")?;
+    (rest.is_empty() || rest.starts_with(|c: char| c == ':' || c.is_whitespace()))
+        .then(|| Directive::NoCycles(rest.trim()))
 }
 
 /// The directive lines that write `rules` back, in the order of "Contract rules".
@@ -27,6 +34,12 @@ pub(super) fn render(rules: &Rules) -> Vec<String> {
     if let Some(order) = &rules.order {
         lines.push(format!("  %% order: {}", order.boundaries.join(" > ")));
     }
+    if rules.no_cycles.is_some() {
+        lines.push("  %% no-cycles".to_owned());
+    }
+    if rules.no_cycles_boundaries.is_some() {
+        lines.push("  %% no-cycles: boundaries".to_owned());
+    }
     lines
 }
 
@@ -34,6 +47,8 @@ pub(super) fn render(rules: &Rules) -> Vec<String> {
 #[derive(Default)]
 pub(super) struct RuleParser {
     order: Option<LayerOrder>,
+    no_cycles: Option<u32>,
+    no_cycles_boundaries: Option<u32>,
 }
 
 impl RuleParser {
@@ -41,7 +56,31 @@ impl RuleParser {
     pub(super) fn record(&mut self, found: &Directive<'_>, line: u32) -> Result<(), DiagramError> {
         match *found {
             Directive::Order(rest) => self.order(rest, line),
+            Directive::NoCycles(rest) => self.no_cycles(rest, line),
         }
+    }
+
+    fn no_cycles(&mut self, rest: &str, line: u32) -> Result<(), DiagramError> {
+        let (slot, rule) = match rest.strip_prefix(':').map(str::trim) {
+            None if rest.is_empty() => (&mut self.no_cycles, "no-cycles"),
+            Some("boundaries") => (&mut self.no_cycles_boundaries, "no-cycles: boundaries"),
+            _ => {
+                return Err(DiagramError::MalformedRule {
+                    line,
+                    rule: "no-cycles".to_owned(),
+                    reason: "expected `%% no-cycles` or `%% no-cycles: boundaries`".to_owned(),
+                });
+            }
+        };
+        if let Some(first_line) = *slot {
+            return Err(DiagramError::DuplicateRule {
+                line,
+                rule: rule.to_owned(),
+                first_line,
+            });
+        }
+        *slot = Some(line);
+        Ok(())
     }
 
     fn order(&mut self, rest: &str, line: u32) -> Result<(), DiagramError> {
@@ -89,7 +128,17 @@ impl RuleParser {
         if let Some(order) = &self.order {
             check_order(order, nodes, boundaries, edges, edge_lines)?;
         }
-        Ok(Rules { order: self.order })
+        if let Some(line) = self.no_cycles {
+            check_node_cycles(line, nodes, edges, edge_lines)?;
+        }
+        if let Some(line) = self.no_cycles_boundaries {
+            check_boundary_cycles(line, nodes, edges)?;
+        }
+        Ok(Rules {
+            order: self.order,
+            no_cycles: self.no_cycles,
+            no_cycles_boundaries: self.no_cycles_boundaries,
+        })
     }
 }
 
@@ -143,4 +192,82 @@ fn check_order(
         }),
         None => Ok(()),
     }
+}
+
+/// Whether `kind` counts for `%% no-cycles`: every edge but a pure test edge.
+const fn counts_for_cycles(kind: EdgeKind) -> bool {
+    !matches!(kind, EdgeKind::Test | EdgeKind::PlannedTest)
+}
+
+/// The declared edges, test edges excluded, must have no cycle between nodes.
+fn check_node_cycles(
+    line: u32,
+    nodes: &BTreeMap<NodeId, NodeInfo>,
+    edges: &BTreeMap<Edge, EdgeKind>,
+    edge_lines: &BTreeMap<Edge, u32>,
+) -> Result<(), DiagramError> {
+    let mut graph: BTreeMap<String, BTreeSet<String>> = nodes
+        .keys()
+        .map(|id| (id.to_string(), BTreeSet::new()))
+        .collect();
+    for (edge, _) in edges.iter().filter(|(_, kind)| counts_for_cycles(**kind)) {
+        graph
+            .entry(edge.from.to_string())
+            .or_default()
+            .insert(edge.to.to_string());
+    }
+    let Some(cycle) = find_cycle(&graph) else {
+        return Ok(());
+    };
+    let described: Vec<String> = cycle
+        .iter()
+        .zip(cycle.iter().cycle().skip(1))
+        .map(|(from, to)| {
+            let at = NodeId::new(from)
+                .ok()
+                .zip(NodeId::new(to).ok())
+                .and_then(|(from, to)| edge_lines.get(&Edge { from, to }));
+            at.map_or_else(
+                || format!("{from} --> {to}"),
+                |at| format!("{from} --> {to} (line {at})"),
+            )
+        })
+        .collect();
+    Err(DiagramError::DeclaredCycle {
+        line,
+        what: "node".to_owned(),
+        cycle: described.join(", "),
+    })
+}
+
+/// The boundary graph of the declared edges, test edges excluded, must have no cycle.
+fn check_boundary_cycles(
+    line: u32,
+    nodes: &BTreeMap<NodeId, NodeInfo>,
+    edges: &BTreeMap<Edge, EdgeKind>,
+) -> Result<(), DiagramError> {
+    let boundary = |id: &NodeId| nodes.get(id)?.boundary.clone();
+    let mut graph: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    for info in nodes.values() {
+        if let Some(name) = &info.boundary {
+            graph.entry(name.clone()).or_default();
+        }
+    }
+    for (edge, _) in edges.iter().filter(|(_, kind)| counts_for_cycles(**kind)) {
+        if let (Some(from), Some(to)) = (boundary(&edge.from), boundary(&edge.to))
+            && from != to
+        {
+            graph.entry(from).or_default().insert(to);
+        }
+    }
+    let Some(cycle) = find_cycle(&graph) else {
+        return Ok(());
+    };
+    let mut path = cycle.clone();
+    path.extend(cycle.first().cloned());
+    Err(DiagramError::DeclaredCycle {
+        line,
+        what: "boundary".to_owned(),
+        cycle: path.join(" --> "),
+    })
 }

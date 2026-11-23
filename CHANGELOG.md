@@ -5,6 +5,10 @@
 - Release: the npm package is published through npm trusted publishing (an OIDC id-token from
   `.github/workflows/publish-npm.yml`), so no `NPM_TOKEN` secret is needed. `tests/release.rs` pins
   it, and the hand fix for dist 0.34's `uses: $/` path in the generated `release.yml`.
+- No cycles: `%% no-cycles` makes the declared edges, test edges excluded, a DAG over nodes, and
+  `%% no-cycles: boundaries` does the same for the boundary graph. A declared cycle is a contract
+  error at the directive's line that lists the cycle with its edge lines. `brief` shows both lines
+  in its `rules:` block (JSON `rules.no_cycles`, `rules.no_cycles_boundaries`).
 - Layer order: `%% order: entry > engine > shared` lists boundaries from the top to the
   foundations, and an import from a node in a lower listed boundary to one in a higher boundary is
   the new error `upward-edge`, whatever arrows the contract draws. A declared arrow that points
