@@ -93,6 +93,8 @@
   relative to the config directory, and `process.cwd()` is the config directory, so
   `alias: { w: path.resolve('wasm/pkg/w.js') }` is `alias-target-missing` instead of
   `undeclared-package`.
+- `init` labels name paths that exist: the node of orphan tests is labelled with its directory
+  (`src`, not `src/src`) and a node only an asset names with the asset's path (`src/index.css`).
 - HTML `<link>` elements with a `rel` of `stylesheet`, `preload`, `prefetch`, `icon`,
   `apple-touch-icon` or `manifest` are asset references to their `href`, resolved like a script `src`.
 - Vite virtual modules (`virtual:pwa-register`, a `\0` prefix) are ignored instead of being skipped

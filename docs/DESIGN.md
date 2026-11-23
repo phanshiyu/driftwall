@@ -1215,6 +1215,15 @@ same prefix, see "Ids".
   backstop: prefixes keep the ids of different units apart in the ordinary case.
 - A `node: *` region (rule 2 or 3) whose derived ids are not valid, or collide with a fixed id or
   with an earlier region's ids, is not created; its files get directory nodes instead.
+- **Labels name paths that exist.** A directory node is labelled with its directory (`.` for the
+  repository root). A module of a `node: *` directory is labelled `<directory>/<name>`, the path
+  of its file without extension (`src/cli` for `src/cli.ts`) or its subdirectory, except the
+  module that only test files make (see "Module nodes"): it has no file or directory of its own,
+  so it is labelled with the directory (`src`, not `src/src`). A node that only an asset or an
+  excluded file names is labelled with the subdirectory below the tag that holds it, or with the
+  asset's own path when it lies directly in the directory (`src/index.css`, not `src/index`). The
+  same labels come from existing tags (`Existing`). A test asserts that every label `init` writes
+  names an existing path.
 
 ### Contract and writing
 

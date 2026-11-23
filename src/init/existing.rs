@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use super::layout::label_of;
+use super::layout::{label_of, module_label};
 use crate::model::{DirTag, NodeId, Ownership, Tag};
 
 /// What the existing `.arch` files decided. `init` plans only for files they do not cover.
@@ -30,11 +30,17 @@ impl Existing {
                 continue;
             };
             let dir = at.file.parent().unwrap_or_else(|| Path::new(""));
-            let label = match ownership.tag_dirs.get(dir).map(|found| &found.tag) {
-                Some(Tag::Modules(prefix)) => {
-                    label_of(&dir.join(name.strip_prefix(prefix.as_str()).unwrap_or(name)))
-                }
-                Some(Tag::Node(_)) | None => label_of(dir),
+            let label = match ownership.tag_dirs.get(dir) {
+                Some(DirTag {
+                    tag: Tag::Modules(prefix),
+                    peers,
+                    ..
+                }) => module_label(
+                    dir,
+                    name.strip_prefix(prefix.as_str()).unwrap_or(name),
+                    peers,
+                ),
+                _ => label_of(dir),
             };
             nodes.entry(id).or_insert(label);
         }

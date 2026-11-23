@@ -132,7 +132,7 @@ impl Draft {
         for (file, (id, name)) in derived {
             self.modules
                 .entry(id.clone())
-                .or_insert_with(|| label_of(&fork.join(name)));
+                .or_insert_with(|| module_label(fork, &name, &peers));
             self.fixed.insert(id.clone());
             self.owners.insert(file, Owner::Module(id));
         }
@@ -195,6 +195,18 @@ fn automatic_fork(source_dirs: &BTreeSet<PathBuf>) -> PathBuf {
             (false, Some(only), None) => prefix.push(only),
             _ => return prefix,
         }
+    }
+}
+
+/// The label of the module `name` of the `node: *` directory `dir`, whose non-test modules are
+/// `peers`: `dir/name` for a module a file or directory of that name makes, and `dir` itself for
+/// the module that only test files there make (see "Module nodes" in `docs/DESIGN.md`), since
+/// no path `dir/name` exists for it.
+pub(super) fn module_label(dir: &Path, name: &str, peers: &BTreeSet<String>) -> String {
+    if peers.contains(name) {
+        label_of(&dir.join(name))
+    } else {
+        label_of(dir)
     }
 }
 

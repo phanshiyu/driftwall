@@ -164,7 +164,8 @@ pub fn plan(
 }
 
 /// The label of a node that only an asset names: the directory of the tag that owns `asset`, or
-/// that directory with the asset's name when a `node: *` tag derived the node from it.
+/// the subdirectory below it, or the asset file itself, when a `node: *` tag derived the node from
+/// it. Every label names a path that exists.
 fn asset_label(tags: &BTreeMap<PathBuf, DirTag>, asset: &Path) -> String {
     let tagged = asset
         .parent()
@@ -182,7 +183,7 @@ fn asset_label(tags: &BTreeMap<PathBuf, DirTag>, asset: &Path) -> String {
         (Some(Tag::Modules(_)), Some(first)) if below.components().count() > 1 => {
             label_of(&tagged.join(first))
         }
-        (Some(Tag::Modules(_)), _) => label_of(&tagged.join(asset.file_stem().unwrap_or_default())),
+        (Some(Tag::Modules(_)), _) => label_of(asset),
         _ => label_of(&tagged),
     }
 }
