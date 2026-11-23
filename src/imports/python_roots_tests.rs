@@ -665,3 +665,20 @@ fn a_file_loader_with_any_other_path_is_a_dynamic_specifier() {
         [4, 5, 6, 7, 8].map(|line| (line, SkipReason::DynamicSpecifier))
     );
 }
+
+#[test]
+fn a_module_below_directories_without_python_is_unreachable() {
+    let repo = repo(&[
+        ("a/bt/x.py", "from c.g.m import X\nimport c.g.zzz\n"),
+        ("a/c/g/m.py", "X = 1\n"),
+    ]);
+    assert_eq!(repo.edges("a/bt/x.py"), Vec::new());
+    let skipped = repo.imports("a/bt/x.py").skipped;
+    assert_eq!(skipped.len(), 1);
+    assert_eq!(skipped[0].at.line, 1);
+    assert_eq!(skipped[0].reason, SkipReason::UnreachableModule);
+    assert_eq!(
+        skipped[0].message.as_deref(),
+        Some("`c.g.m` matches `a/c/g/m.py`, which no import root of `a/bt/x.py` reaches")
+    );
+}

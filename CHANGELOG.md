@@ -101,3 +101,6 @@
   as `undeclared-package`.
 - TypeScript types: `let x: import("./a").T`, a field typed `import("./a").T` and `typeof import("./a")`
   are `type-only` imports using `T` (the first member) or `*`, not runtime `*`.
+- Python `unreachable-module` also matches a dotted module nested below directories that hold no Python
+  (`from controllers.generic.carry_ctl import X` with `vendorkit/controllers/generic/carry_ctl.py`): it is
+  no longer a silent drop.

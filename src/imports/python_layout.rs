@@ -23,6 +23,10 @@ pub struct PythonLayout {
     /// Top-level name to the first repository path in path order that can supply it: a
     /// `<name>.py` file or a directory named `<name>` that holds a `.py` file directly.
     names: BTreeMap<String, PathBuf>,
+    /// Last segment of a module path to the modules ending in it: the module path (without
+    /// `.py` or `/__init__.py`), the repository path that supplies it and whether that is a
+    /// file (a directory only holds Python directly).
+    modules: BTreeMap<String, Vec<(PathBuf, PathBuf, bool)>>,
 }
 
 impl PythonLayout {
@@ -41,6 +45,7 @@ impl PythonLayout {
                 continue;
             }
             holders.extend(file.parent());
+            layout.record_module(file);
             if file.file_name().is_some_and(|name| name == INIT_FILE) {
                 layout.packages.extend(file.parent().map(Path::to_path_buf));
             } else if let Some(stem) = file.file_stem().and_then(|stem| stem.to_str()) {
@@ -54,11 +59,38 @@ impl PythonLayout {
             );
         }
         for dir in holders {
+            layout.record_directory(dir);
             if let Some(name) = dir.file_name().and_then(|name| name.to_str()) {
                 layout.offer(name, dir);
             }
         }
         layout
+    }
+
+    /// Records the Python file `file` as a module (`a/b.py`) or package (`a/b/__init__.py`).
+    fn record_module(&mut self, file: &Path) {
+        let module = if file.file_name().is_some_and(|name| name == INIT_FILE) {
+            file.parent().map(Path::to_path_buf)
+        } else {
+            Some(file.with_extension(""))
+        };
+        if let Some(module) = module {
+            self.record(module, file.to_path_buf(), true);
+        }
+    }
+
+    /// Records `dir`, which holds a Python file directly, as a package-like path.
+    fn record_directory(&mut self, dir: &Path) {
+        self.record(dir.to_path_buf(), dir.to_path_buf(), false);
+    }
+
+    fn record(&mut self, module: PathBuf, shown: PathBuf, file: bool) {
+        if let Some(tail) = module.file_name().and_then(|name| name.to_str()) {
+            self.modules
+                .entry(tail.to_owned())
+                .or_default()
+                .push((module, shown, file));
+        }
     }
 
     /// Records `path` as a place the top-level `name` can come from, keeping the first in path
@@ -108,6 +140,27 @@ impl PythonLayout {
     #[must_use]
     pub fn matching(&self, name: &str) -> Option<&Path> {
         self.names.get(name).map(PathBuf::as_path)
+    }
+
+    /// The longest prefix of the dotted `module` (at least two segments) that exists somewhere in
+    /// the repository as a module file or package, or the whole of it as a directory holding
+    /// Python directly: the dotted prefix and the first such path in path order.
+    #[must_use]
+    pub fn matching_module(&self, module: &[&str]) -> Option<(String, &Path)> {
+        (2..=module.len()).rev().find_map(|count| {
+            let prefix = module.get(..count)?;
+            let tail = prefix.last()?;
+            let path: PathBuf = prefix.iter().collect();
+            self.modules
+                .get(*tail)?
+                .iter()
+                .filter(|(candidate, _, file)| {
+                    (*file || count == module.len()) && candidate.ends_with(&path)
+                })
+                .map(|(_, shown, _)| shown.as_path())
+                .min()
+                .map(|shown| (prefix.join("."), shown))
+        })
     }
 }
 
@@ -195,6 +248,25 @@ mod tests {
         );
         assert_eq!(layout.matching("__init__"), None);
         assert_eq!(layout.matching("nothing"), None);
+    }
+
+    #[test]
+    fn a_dotted_path_matches_a_module_nested_below_directories_without_python() {
+        let layout = layout(&["a/c/g/m.py", "x/p/q/__init__.py"], &[]);
+        assert_eq!(
+            layout.matching_module(&["c", "g", "m"]),
+            Some(("c.g.m".to_owned(), Path::new("a/c/g/m.py")))
+        );
+        assert_eq!(
+            layout.matching_module(&["c", "g", "m", "Thing"]),
+            Some(("c.g.m".to_owned(), Path::new("a/c/g/m.py")))
+        );
+        assert_eq!(
+            layout.matching_module(&["p", "q"]),
+            Some(("p.q".to_owned(), Path::new("x/p/q")))
+        );
+        assert_eq!(layout.matching_module(&["c", "g", "z"]), None);
+        assert_eq!(layout.matching_module(&["g"]), None);
     }
 
     #[test]

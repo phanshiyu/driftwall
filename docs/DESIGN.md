@@ -545,7 +545,13 @@ An absolute module that no root resolves is decided by its first segment, the to
    `engine/dizione/scripts/`) is not a Python package and never matches. Its message names the
    first such path in path order and says that no import
    root of the importing file reaches it. This is how a script reachable only through a `Makefile`
-   `PYTHONPATH` is seen;
+   `PYTHONPATH` is seen. When the top-level name matches nothing (`controllers/` holds only a
+   subdirectory), the dotted module is matched as a whole instead: the longest prefix of it, at
+   least two segments, that is a path suffix of a module file `<p>.py` or a package
+   `<p>/__init__.py` anywhere in the repository, or the whole module when it is a path suffix of
+   a directory that holds Python directly (`from c.g.m import X` matches `a/c/g/m.py`). The first
+   such path in path order is named, with the matched dotted prefix, and the message names only
+   Python paths;
 3. else it is a third party or standard library module and is ignored.
 
 #### Dynamic imports

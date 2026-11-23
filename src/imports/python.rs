@@ -209,16 +209,21 @@ fn miss(module: &[&str], roots: &[PathBuf], importer: &Path, env: &Environment<'
             ),
         };
     }
-    env.python
-        .matching(first)
-        .map_or(Resolution::Ignored, |path| Resolution::SkippedWith {
+    // why: a module nested below directories that hold no Python (`a/c/g/m.py` for `c.g.m`) has no top-level name match.
+    let found = env.python.matching(first).map_or_else(
+        || env.python.matching_module(module),
+        |path| Some(((*first).to_owned(), path)),
+    );
+    found.map_or(Resolution::Ignored, |(name, path)| {
+        Resolution::SkippedWith {
             reason: SkipReason::UnreachableModule,
             message: format!(
-                "`{first}` matches `{}`, which no import root of `{}` reaches",
+                "`{name}` matches `{}`, which no import root of `{}` reaches",
                 path.display(),
                 importer.display()
             ),
-        })
+        }
+    })
 }
 
 /// The resolution of a hit: the target with the symbol it uses, or ignored when it is the importer
