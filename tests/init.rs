@@ -601,15 +601,58 @@ fn a_flat_typescript_src_joins_test_files_to_their_module() {
 }
 
 #[test]
-fn a_flat_python_package_names_its_init_after_the_package() {
+fn a_flat_python_package_folds_an_empty_init() {
     let dir = repo(&py_package());
     init(&dir, &[]);
     assert_eq!(arch_files(&dir), ["pkg/.arch"]);
     assert_eq!(read(&dir, "pkg/.arch"), "node: *\n");
-    assert_eq!(node_ids(&dir), ["api", "models", "pkg", "sub", "util"]);
+    assert_eq!(node_ids(&dir), ["api", "models", "sub", "util"]);
     assert_eq!(
         edge_pairs(&dir),
         ["api models", "api util", "models util", "sub api"]
+    );
+    let lint = run_on("lint", dir.path(), &["--strict"]);
+    assert_eq!(
+        (code(&lint), stdout(&lint)),
+        (0, "driftwall: clean\n".to_owned())
+    );
+}
+
+#[test]
+fn an_import_of_a_folded_init_resolves_and_makes_no_edge_or_finding() {
+    let mut files = py_package();
+    files[4] = (
+        "pkg/sub/c.py",
+        "import pkg\nfrom pkg.api import API\n\nC = [pkg, API]\n",
+    );
+    let dir = repo(&files);
+    init(&dir, &[]);
+    assert_eq!(node_ids(&dir), ["api", "models", "sub", "util"]);
+    assert_eq!(
+        edge_pairs(&dir),
+        ["api models", "api util", "models util", "sub api"]
+    );
+    let lint = run_on("lint", dir.path(), &["--strict"]);
+    assert_eq!(
+        (code(&lint), stdout(&lint)),
+        (0, "driftwall: clean\n".to_owned())
+    );
+    let again = init(&dir, &["--force"]);
+    assert_eq!(code(&again), 0, "{}", stderr(&again));
+    assert_eq!(node_ids(&dir), ["api", "models", "sub", "util"]);
+}
+
+#[test]
+fn a_flat_python_package_names_an_init_with_code_after_the_package() {
+    let mut files = py_package();
+    files[0] = ("pkg/__init__.py", "from .util import HELP\n");
+    let dir = repo(&files);
+    init(&dir, &[]);
+    assert_eq!(node_ids(&dir), ["api", "models", "pkg", "sub", "util"]);
+    let lint = run_on("lint", dir.path(), &["--strict"]);
+    assert_eq!(
+        (code(&lint), stdout(&lint)),
+        (0, "driftwall: clean\n".to_owned())
     );
 }
 
@@ -717,12 +760,11 @@ fn this_repository_baselines_clean_without_its_contract() {
         .nodes
         .keys()
         .map(|id| id.as_str().to_owned())
-        .chain(["lib".to_owned()])
         .collect();
     expected.sort();
     assert_eq!(
         node_ids(&dir),
         expected,
-        "init must rediscover every node of the hand-written contract, plus lib for src/lib.rs"
+        "init must rediscover exactly the nodes of the hand-written contract: src/lib.rs only declares modules, so it is folded"
     );
 }

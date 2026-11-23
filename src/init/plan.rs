@@ -68,6 +68,7 @@ pub fn plan(
         existing.nodes.keys().cloned().collect(),
         files.keys().cloned().collect(),
     );
+    draft.trivial.clone_from(&existing.trivial);
     if let Some(depth) = options.depth {
         draft.cut_directories(&fresh, depth);
     } else {

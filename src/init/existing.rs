@@ -1,6 +1,6 @@
 //! Rule 1 of `init`: the decisions existing `.arch` files already made.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use super::layout::{label_of, module_label};
@@ -17,6 +17,9 @@ pub struct Existing {
     /// What each existing `.arch` file says, by its directory, so that the owner of a file that is
     /// not source (an asset) can be asked of the existing and the planned tags together.
     pub tags: BTreeMap<PathBuf, DirTag>,
+    /// The source files that are entry files declaring nothing (see `ownership::trivial_files`),
+    /// which `init` folds instead of giving them a module node. Set by [`Existing::with_trivial`].
+    pub trivial: BTreeSet<PathBuf>,
 }
 
 impl Existing {
@@ -48,6 +51,14 @@ impl Existing {
             nodes,
             owners: ownership.owners.clone(),
             tags: ownership.tag_dirs.clone(),
+            trivial: BTreeSet::new(),
         }
+    }
+
+    /// These decisions, with `trivial` as the entry files that declare nothing.
+    #[must_use]
+    pub fn with_trivial(mut self, trivial: BTreeSet<PathBuf>) -> Self {
+        self.trivial = trivial;
+        self
     }
 }

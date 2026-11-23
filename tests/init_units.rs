@@ -374,24 +374,22 @@ fn outermost_python_packages_are_units_wherever_they_sit() {
     init_ok(&dir, &[]);
     assert_eq!(
         node_ids(&dir),
+        // why: an empty `__init__.py` is folded, so a package of one real module is one node.
         [
-            "libs-common-common",
-            "libs-common-util",
+            "libs-common",
             "root",
             "scripts",
-            "services-auth-auth",
-            "services-auth-login",
-            "services-billing-billing",
-            "services-billing-invoice"
+            "services-auth",
+            "services-billing"
         ]
     );
     assert_eq!(
         edge_pairs(&dir),
         [
-            "root services-auth-login",
-            "services-auth-login libs-common-util",
-            "services-billing-invoice libs-common-util",
-            "services-billing-invoice services-auth-login"
+            "root services-auth",
+            "services-auth libs-common",
+            "services-billing libs-common",
+            "services-billing services-auth"
         ]
     );
     assert_lints_clean(&dir);

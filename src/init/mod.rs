@@ -149,10 +149,18 @@ pub fn run(
         .cloned()
         .collect();
     let excluded: BTreeSet<PathBuf> = ownership.excluded.values().flatten().cloned().collect();
-    let imports =
-        imports::collect_with_assets(root, &files, &assets, &ownership.asset_unmapped, &excluded)?;
+    // why: a folded entry file is not source to plan, but an import can still name it.
+    let known_unread: BTreeSet<PathBuf> = excluded.union(&ownership.folded).cloned().collect();
+    let imports = imports::collect_with_assets(
+        root,
+        &files,
+        &assets,
+        &ownership.asset_unmapped,
+        &known_unread,
+    )?;
     let units = detect_units(root, &files);
-    let existing = Existing::of(&ownership);
+    let trivial = ownership::trivial_files(root, files.keys().map(PathBuf::as_path));
+    let existing = Existing::of(&ownership).with_trivial(trivial);
     let baseline = plan(
         &files, &assets, &excluded, &imports, options, &units, &existing,
     );

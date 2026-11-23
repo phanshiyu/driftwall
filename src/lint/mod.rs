@@ -160,7 +160,14 @@ pub fn observe(root: &Path, options: &LintOptions) -> Result<Observation, LintEr
         .chain(&ownership.asset_unmapped)
         .cloned()
         .collect();
-    let excluded: BTreeSet<PathBuf> = ownership.excluded.values().flatten().cloned().collect();
+    // why: a folded entry file is never read as owned source, but an import can still name it.
+    let excluded: BTreeSet<PathBuf> = ownership
+        .excluded
+        .values()
+        .flatten()
+        .chain(&ownership.folded)
+        .cloned()
+        .collect();
     let imports =
         imports::collect_with_assets(root, &files, &assets, &ownership.asset_unmapped, &excluded)?;
 

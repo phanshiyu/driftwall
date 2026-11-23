@@ -135,6 +135,7 @@ mod tests {
             FileKind::Unread("swift".to_owned()),
             FileKind::Excluded(driftwall::model::Exclusion::Vendored),
             FileKind::Ignored,
+            FileKind::Folded,
         ] {
             assert_eq!(Outcome::of_where(&unowned(kind)), Outcome::Clean);
         }

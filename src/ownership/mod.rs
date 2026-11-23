@@ -4,6 +4,7 @@ mod arch;
 mod census;
 mod error;
 mod exclude;
+mod folded;
 mod language;
 mod locate;
 mod lookup;
@@ -26,10 +27,11 @@ use ignore::gitignore::{Gitignore, GitignoreBuilder};
 pub use census::{SHEBANG, line_count};
 pub use error::{ArchProblem, OwnershipError};
 pub use exclude::{HEADER_LINES, announces_generated, exclusion_of};
+pub use folded::{declares_nothing, is_entry_file, trivial_files};
 pub use language::{language_in, language_of};
 pub use locate::{FileKind, Located, locate};
 pub use lookup::owner_in;
-pub use module::{is_test_file, module_name, peers_in};
+pub use module::{folds, is_test_file, module_name, peers_in};
 
 pub use crate::model::{DirTag, Scope, Tag};
 use crate::model::{Exclusion, Location, NodeId, Ownership};
@@ -42,10 +44,13 @@ const IGNORE_FILE: &str = ".driftwallignore";
 /// The answer to "who owns this path, and why".
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Explanation {
-    /// The owning node, or `None` when no `.arch` applies.
+    /// The owning node, or `None` when no `.arch` applies or the file is folded.
     pub node: Option<NodeId>,
     /// The `.arch` file that decided it, relative to the root, or `None` when unmapped.
     pub arch_file: Option<PathBuf>,
+    /// Whether the file is a folded entry file: it declares nothing and no other module of its
+    /// `node: *` directory has its name, so it has no node.
+    pub folded: bool,
 }
 
 /// One `.arch` file's decision about its directory.
@@ -126,6 +131,8 @@ pub fn scan(root: &Path) -> Result<Ownership, OwnershipError> {
         ignored,
     } = discover(root)?;
 
+    // why: an entry file that declares nothing must not name a module, so peers ignore it.
+    let trivial = trivial_files(root, sources.iter().map(PathBuf::as_path));
     let mut decisions: BTreeMap<PathBuf, Decision> = BTreeMap::new();
     let mut tags = Vec::new();
     for arch_file in arch_files {
@@ -141,7 +148,7 @@ pub fn scan(root: &Path) -> Result<Ownership, OwnershipError> {
             .parent()
             .map_or_else(PathBuf::new, Path::to_path_buf);
         let peers = match parsed.tag {
-            Tag::Modules(_) => peers_in(&dir, sources.iter().map(PathBuf::as_path)),
+            Tag::Modules(_) => peers_without(&dir, &sources, &trivial),
             Tag::Node(_) => BTreeSet::new(),
         };
         decisions.insert(
@@ -165,6 +172,13 @@ pub fn scan(root: &Path) -> Result<Ownership, OwnershipError> {
     let mut derived: BTreeSet<(Location, String)> = BTreeSet::new();
     for source in sources {
         match nearest_decision(&decisions, &source) {
+            Some((dir, decision))
+                if trivial.contains(&source)
+                    && matches!(decision.tag, Tag::Modules(_))
+                    && folds(dir, &source, &decision.peers) =>
+            {
+                ownership.folded.insert(source);
+            }
             Some((dir, decision)) => {
                 let node = decision.node_for(dir, &source)?;
                 if matches!(decision.tag, Tag::Modules(_)) {
@@ -215,6 +229,17 @@ pub fn scan(root: &Path) -> Result<Ownership, OwnershipError> {
     Ok(ownership)
 }
 
+/// The peers of `dir` among `sources`, leaving out the entry files that declare nothing.
+fn peers_without(dir: &Path, sources: &[PathBuf], trivial: &BTreeSet<PathBuf>) -> BTreeSet<String> {
+    peers_in(
+        dir,
+        sources
+            .iter()
+            .filter(|source| !trivial.contains(*source))
+            .map(PathBuf::as_path),
+    )
+}
+
 /// The decision of the nearest `.arch` at or above `file` that covers it (a `scope: here` one only
 /// covers the files directly in its directory), with the directory that holds it.
 fn nearest_decision<'a>(
@@ -251,11 +276,18 @@ pub fn explain(root: &Path, file: &Path) -> Result<Explanation, OwnershipError> 
             Ok(contents) => {
                 let parsed = arch::parse(&arch_file, &contents)?;
                 // why: only a test file needs the sibling sources, so only it pays for the walk.
+                let own = relative.parent() == Some(dir);
+                let entry = is_entry_file(&relative)
+                    && declares_nothing(
+                        &relative,
+                        &fs::read_to_string(root.join(&relative)).unwrap_or_default(),
+                    );
                 let peers = if matches!(parsed.tag, Tag::Modules(_))
-                    && relative.parent() == Some(dir)
-                    && is_test_file(&relative)
+                    && (entry || (own && is_test_file(&relative)))
                 {
-                    peers_in(dir, discover(root)?.sources.iter().map(PathBuf::as_path))
+                    let sources = discover(root)?.sources;
+                    let trivial = trivial_files(root, sources.iter().map(PathBuf::as_path));
+                    peers_without(dir, &sources, &trivial)
                 } else {
                     BTreeSet::new()
                 };
@@ -267,9 +299,18 @@ pub fn explain(root: &Path, file: &Path) -> Result<Explanation, OwnershipError> 
                     peers,
                 };
                 if decision.covers(dir, &relative) {
+                    let folded = entry
+                        && matches!(decision.tag, Tag::Modules(_))
+                        && folds(dir, &relative, &decision.peers);
+                    let node = if folded {
+                        None
+                    } else {
+                        Some(decision.node_for(dir, &relative)?)
+                    };
                     return Ok(Explanation {
-                        node: Some(decision.node_for(dir, &relative)?),
+                        node,
                         arch_file: Some(decision.arch_file),
+                        folded,
                     });
                 }
             }
@@ -285,6 +326,7 @@ pub fn explain(root: &Path, file: &Path) -> Result<Explanation, OwnershipError> 
     Ok(Explanation {
         node: None,
         arch_file: None,
+        folded: false,
     })
 }
 
@@ -780,9 +822,71 @@ mod tests {
             explanation,
             Explanation {
                 node: None,
-                arch_file: None
+                arch_file: None,
+                folded: false
             }
         );
+    }
+
+    #[test]
+    fn an_entry_file_that_declares_nothing_is_folded_unless_a_module_has_its_name() {
+        let dir = tree(&[
+            ("src/.arch", "node: *\n"),
+            ("src/a.py", "x = 1\n"),
+            ("src/b.py", "x = 1\n"),
+            ("src/__init__.py", "\"\"\"doc\"\"\"\n"),
+            ("src/lib.rs", "pub mod a;\n"),
+            ("src/sub/__init__.py", ""),
+            ("src/sub/x.py", "x = 1\n"),
+            ("src/lone/__init__.py", ""),
+            ("src/main.rs", "fn main() {}\n"),
+        ]);
+        let found = scan(dir.path()).unwrap();
+        let folded: Vec<&str> = found.folded.iter().map(|p| p.to_str().unwrap()).collect();
+        assert_eq!(
+            folded,
+            ["src/__init__.py", "src/lib.rs", "src/lone/__init__.py"]
+        );
+        assert!(!found.owners.contains_key(Path::new("src/lib.rs")));
+        assert!(!found.unmapped.contains(Path::new("src/lib.rs")));
+        let owner = |file: &str| found.owners.get(Path::new(file)).map(NodeId::as_str);
+        assert_eq!(owner("src/sub/__init__.py"), Some("sub"));
+        assert_eq!(owner("src/main.rs"), Some("main"));
+        let names: Vec<&str> = found.tags.iter().map(|(_, name)| name.as_str()).collect();
+        assert_eq!(names, ["a", "b", "main", "sub"]);
+    }
+
+    #[test]
+    fn a_folded_entry_file_is_answered_by_explain_and_a_named_module_keeps_it() {
+        let dir = tree(&[
+            ("src/.arch", "node: *\n"),
+            ("src/a.py", "x = 1\n"),
+            ("src/lib.rs", "pub mod a;\n"),
+            ("src/lib/x.rs", "pub fn f() {}\n"),
+            ("src/__init__.py", ""),
+        ]);
+        let folded = explain(dir.path(), Path::new("src/__init__.py")).unwrap();
+        assert!(folded.folded && folded.node.is_none());
+        assert_eq!(folded.arch_file, Some(PathBuf::from("src/.arch")));
+        let named = explain(dir.path(), Path::new("src/lib.rs")).unwrap();
+        assert!(!named.folded);
+        assert_eq!(named.node.as_ref().map(NodeId::as_str), Some("lib"));
+        let found = scan(dir.path()).unwrap();
+        assert_eq!(
+            found
+                .owners
+                .get(Path::new("src/lib.rs"))
+                .map(NodeId::as_str),
+            Some("lib")
+        );
+    }
+
+    #[test]
+    fn an_entry_file_under_a_plain_node_tag_is_never_folded() {
+        let dir = tree(&[("a/.arch", "node: alpha\n"), ("a/__init__.py", "")]);
+        let found = scan(dir.path()).unwrap();
+        assert!(found.folded.is_empty());
+        assert_eq!(found.owners.len(), 1);
     }
 
     #[test]
@@ -826,7 +930,8 @@ mod tests {
     /// Maps each path to its owner, as plain strings, for a tree whose root `.arch` is `node: *`.
     fn derived(paths: &[&str]) -> Vec<(String, String)> {
         let mut files: Vec<(&str, &str)> = vec![("src/.arch", "node: *\n")];
-        files.extend(paths.iter().map(|path| (*path, "")));
+        // why: an entry file with no statement is folded, which these tests do not exercise.
+        files.extend(paths.iter().map(|path| (*path, "x\n")));
         let dir = tree(&files);
         let o = scan(dir.path()).unwrap();
         assert!(o.unmapped.is_empty(), "{:?}", o.unmapped);
@@ -1059,6 +1164,7 @@ mod tests {
         let dir = tree(&[
             ("src/.arch", "node: *\n"),
             ("src/gitlab.rs", ""),
+            ("src/main.rs", "fn main() {}\n"),
             ("src/routes/a.rs", ""),
             ("src/routes/inner/.arch", "node: inner\n"),
             ("src/routes/inner/b.rs", ""),

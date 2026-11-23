@@ -225,6 +225,29 @@ directory is its own node, named by a fixed rule, with no further tagging:
 - Leading underscores are stripped from every derived name, file or directory: `_private.py` is
   `private`, `__tests__/` is `tests__`, `_x.py` and `x.py` share the node `x`. A name that is empty
   after stripping (`_.py`, `__/`, a hidden file such as `.eslintrc.js`) is invalid.
+- **A file that declares nothing never creates a node of its own (a folded entry file).** An entry
+  file is one named `__init__.py`, `lib.rs` or `main.rs`. It *declares nothing* when its text holds
+  nothing but comments and
+
+  - Python: string-literal statements (a docstring); any other statement, `pass` included, is a
+    declaration;
+  - Rust: attributes and `mod` or `pub mod` (also `pub(..) mod`) declarations without a body. A `use`
+    or `pub use` is a declaration (a re-export depends on what it re-exports), and so is any item
+    or an inline `mod x { }`.
+
+  The check is textual and any doubt means "declares something". Such a file is *folded* when no
+  other module of the directory has the name it would derive (`mybot` for `src/mybot/__init__.py`,
+  `lib` for `src/lib.rs`): the modules that decide this, the `peers`, are those of the files that do
+  not declare nothing, so an entry file never keeps itself alive. A folded file stays in the region
+  but is in no owner map: neither owned nor `unmapped-file`, no node derived from it, and it is
+  listed in `Ownership::folded`. It is still a known file, so an import of it resolves, and since
+  nothing owns it the import makes no edge and no record: it has nothing to depend on. When a module
+  has the name (`lib.rs` beside `lib/x.rs`, `__init__.py` beside a module named like its directory),
+  the file joins it as before. The rule applies to files in subdirectories too: a subdirectory
+  holding only a folded file derives no node. It applies under `node: *` only: an entry file under a
+  plain `node: <id>` tag belongs to that node. Because reading the file is needed, ownership reads
+  the entry files of the scan (`lint`, `init`, `where`, `explain`), a handful per repository; `lint`,
+  `where` and `init` use the one rule (`ownership::folds`) and agree.
 - A nested `.arch` still overrides, as everywhere else.
 - A derived id that is not a valid node id is an error at the `.arch` file, never silently renamed.
 
@@ -1108,7 +1131,9 @@ directory is cut depends on the unit:
   `a.rs` and `a/`; only files of that unit count), it is tagged `node: *`
   (see "Prefixes"), so every module and subdirectory of it is a node named by the module rule.
   When a derived id is not valid, is reserved or is already taken (see "Ids"), the source
-  directory is not decomposed. The primary JavaScript unit is also not decomposed when its source
+  directory is not decomposed. A folded entry file (see "Module nodes") counts for no module and
+  owns no node, so a package of an empty `__init__.py` and one module is one directory node, and a
+  crate whose `lib.rs` only declares modules has no `lib` node. The primary JavaScript unit is also not decomposed when its source
   directory is the repository root and any source file of the repository lies in a subdirectory
   (see "Root files").
 - **Directory nodes: every other JavaScript unit.** A JavaScript or TypeScript unit that is not the
@@ -1297,13 +1322,14 @@ it. The text is `<file>: <answer>`, one of
 | --- | --- | --- |
 | source file with an owner | `<node> (via <arch file>)` | `0` |
 | source file no tag covers | `unmapped` | `1` |
+| folded entry file (see "Module nodes") | `folded, no node (via <arch file>)` | `0` |
 | asset | `asset of node <node> (via <arch file>)`, or `asset, unmapped` | `0` |
 | unread code file (see "Blind spots") | `not read (<key>) in node <node> (via <arch file>)`, or `not read (<key>), unmapped` | `0` |
 | excluded source file | `excluded (<reason>)` | `0` |
 | source file `.driftwallignore` hides | `ignored by .driftwallignore` | `0` |
 
 A directory is answered like a source file, by the tag that covers it. The JSON has `file`, `node`,
-`arch_file` and `kind` (`source`, `asset`, `unread`, `excluded`, `ignored` or `directory`), plus
+`arch_file` and `kind` (`source`, `folded`, `asset`, `unread`, `excluded`, `ignored` or `directory`), plus
 `detail` for the unread key and the exclusion reason (absent otherwise). `node` and `arch_file` are
 `null` for an excluded or ignored file, and for anything no tag covers.
 

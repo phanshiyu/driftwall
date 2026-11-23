@@ -450,7 +450,6 @@ fn a_crate_and_a_python_package_are_still_split_per_module() {
             "engine-x",
             "engine-y",
             "tools-pkg-one",
-            "tools-pkg-pkg",
             "tools-pkg-two"
         ]
     );

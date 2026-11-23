@@ -52,6 +52,15 @@ pub fn peers_in<'a>(dir: &Path, files: impl IntoIterator<Item = &'a Path>) -> BT
         .collect()
 }
 
+/// Whether the entry file `file`, which declares nothing (see `folded`), is folded: no module that
+/// does declare something has the name it would derive in `dir`, so it makes no node of its own.
+///
+/// `peers` must be those of the files that are not such entry files (see [`peers_in`]).
+#[must_use]
+pub fn folds(dir: &Path, file: &Path, peers: &BTreeSet<String>) -> bool {
+    module_name(dir, file, peers).is_some_and(|name| !peers.contains(&name))
+}
+
 /// Whether `file` is a test file by its name.
 ///
 /// It is when it has a part `test` or `spec` between two dots after a non-empty first part

@@ -24,6 +24,8 @@ pub enum FileKind {
     Ignored,
     /// A directory.
     Directory,
+    /// An entry file that declares nothing and makes no node of its own under `node: *`.
+    Folded,
 }
 
 /// The answer of [`locate`].
@@ -69,7 +71,11 @@ pub fn locate(root: &Path, file: &Path) -> Result<Located, OwnershipError> {
             arch_file: None,
         });
     }
-    let Explanation { node, arch_file } = match explain(root, &relative) {
+    let Explanation {
+        node,
+        arch_file,
+        folded,
+    } = match explain(root, &relative) {
         // why: an asset or unread file must never fail, so a name that is no node id is unowned.
         Err(OwnershipError::InvalidModule { .. })
             if matches!(kind, FileKind::Asset | FileKind::Unread(_)) =>
@@ -77,12 +83,17 @@ pub fn locate(root: &Path, file: &Path) -> Result<Located, OwnershipError> {
             Explanation {
                 node: None,
                 arch_file: None,
+                folded: false,
             }
         }
         other => other?,
     };
     Ok(Located {
-        kind,
+        kind: if folded && kind == FileKind::Source {
+            FileKind::Folded
+        } else {
+            kind
+        },
         node,
         arch_file,
     })

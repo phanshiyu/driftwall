@@ -79,6 +79,10 @@ fn render_text(file: &str, located: &Located) -> String {
         (FileKind::Unread(key), None) => format!("not read ({key}), unmapped"),
         (FileKind::Excluded(reason), _) => format!("excluded ({})", reason.as_str()),
         (FileKind::Ignored, _) => "ignored by .driftwallignore".to_owned(),
+        (FileKind::Folded, _) => located.arch_file.as_deref().map_or_else(
+            || "folded, no node".to_owned(),
+            |arch_file| format!("folded, no node (via {})", slash_path(arch_file)),
+        ),
     };
     format!("{file}: {answer}\n")
 }
@@ -102,6 +106,7 @@ fn render_json(file: &str, located: &Located) -> Result<String> {
         FileKind::Excluded(reason) => ("excluded", Some(reason.as_str().to_owned())),
         FileKind::Ignored => ("ignored", None),
         FileKind::Directory => ("directory", None),
+        FileKind::Folded => ("folded", None),
     };
     let answer = Answer {
         file,
@@ -179,6 +184,20 @@ mod tests {
         assert_eq!(
             text(FileKind::Ignored, false),
             "f: ignored by .driftwallignore\n"
+        );
+        let folded = Located {
+            kind: FileKind::Folded,
+            node: None,
+            arch_file: Some(PathBuf::from("src/.arch")),
+        };
+        assert_eq!(
+            render_text("src/lib.rs", &folded),
+            "src/lib.rs: folded, no node (via src/.arch)\n"
+        );
+        assert!(
+            render_json("src/lib.rs", &folded)
+                .unwrap()
+                .ends_with("\"kind\": \"folded\"\n}\n")
         );
         assert_eq!(
             text(FileKind::Directory, true),

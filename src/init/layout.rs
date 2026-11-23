@@ -7,7 +7,7 @@ use std::path::{Component, Path, PathBuf};
 
 use super::ids::RESERVED;
 use crate::model::{NodeId, Prefix};
-use crate::ownership::{is_test_file, module_name, peers_in};
+use crate::ownership::{folds, is_test_file, module_name, peers_in};
 
 /// Label of the repository root directory.
 const ROOT_LABEL: &str = ".";
@@ -66,6 +66,9 @@ pub(super) struct Draft {
     /// Every source file of the repository, owned or not: the modules a `node: *` directory has
     /// are the ones the scan will see there, whoever owns them.
     pub all_files: BTreeSet<PathBuf>,
+    /// The entry files among `all_files` that declare nothing: under `node: *` they make no module
+    /// of their own unless another module has their name (see "Folded entry files").
+    pub trivial: BTreeSet<PathBuf>,
 }
 
 impl Draft {
@@ -103,8 +106,18 @@ impl Draft {
     ) -> bool {
         let mut derived: BTreeMap<PathBuf, (NodeId, String)> = BTreeMap::new();
         let mut direct: BTreeSet<&NodeId> = BTreeSet::new();
-        let peers = peers_in(fork, self.all_files.iter().map(PathBuf::as_path));
+        let peers = peers_in(
+            fork,
+            self.all_files
+                .iter()
+                .filter(|file| !self.trivial.contains(*file))
+                .map(PathBuf::as_path),
+        );
         for file in files {
+            // why: a folded entry file declares no node, so the module decision never sees it.
+            if self.trivial.contains(*file) && folds(fork, file, &peers) {
+                continue;
+            }
             let Some(name) = module_name(fork, file, &peers) else {
                 return false;
             };

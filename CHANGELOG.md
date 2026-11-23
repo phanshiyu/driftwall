@@ -111,3 +111,7 @@
 - Rust `include_str!`, `include_bytes!` and `include!` of a non-source file that a tag covers (`static/ui.css`,
   icons, fonts) are `embed` edges to its owner, as a TypeScript `?raw` import is; `embed-non-source` remains
   for a missing file, a path that leaves the repository and a file no tag covers.
+- Folded entry files: an `__init__.py` with no statement but a docstring, and a `lib.rs` or `main.rs` with only
+  comments, attributes and `mod` declarations, make no node of their own under `node: *` unless a module has
+  their name (`src-mybot-mybot`, a trivial `lib` node). They are known files, in no owner map; `where` says
+  `folded, no node`, and `init` tagless of this repository reproduces exactly the nodes of its contract.
