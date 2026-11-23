@@ -583,3 +583,51 @@ fn every_other_dynamic_import_stays_dynamic() {
         ]
     );
 }
+
+#[test]
+fn a_file_loader_with_a_literal_path_is_a_runtime_edge_to_that_file() {
+    let repo = repo(&[
+        ("device/otg.py", ""),
+        ("tests/helper.py", ""),
+        (
+            "tests/test_otg.py",
+            "import importlib.machinery\nimport importlib.util\nimportlib.machinery.SourceFileLoader('otg', '../device/otg.py')\nimportlib.util.spec_from_file_location('h', 'helper.py')\nimportlib.util.spec_from_file_location('r', 'device/otg.py')\n",
+        ),
+    ]);
+    let imports = repo.imports("tests/test_otg.py");
+    assert_eq!(
+        imports
+            .resolved
+            .iter()
+            .map(|r| (r.at.line, r.target.to_str().unwrap_or_default(), r.kind))
+            .collect::<Vec<_>>(),
+        [
+            (3, "device/otg.py", ImportKind::Runtime),
+            (4, "tests/helper.py", ImportKind::Runtime),
+            (5, "device/otg.py", ImportKind::Runtime),
+        ]
+    );
+    assert_eq!(imports.skipped, Vec::new());
+    assert_eq!(imports.unresolved, Vec::new());
+}
+
+#[test]
+fn a_file_loader_with_any_other_path_is_a_dynamic_specifier() {
+    let repo = repo(&[
+        ("device/otg.py", ""),
+        (
+            "t.py",
+            "import importlib.machinery\nimport importlib.util\np = 'x'\nimportlib.machinery.SourceFileLoader('a', p)\nimportlib.machinery.SourceFileLoader('a', 'device/*')\nimportlib.util.spec_from_file_location('a', 'device/{v}/otg')\nimportlib.util.spec_from_file_location('a', '/abs/otg')\nimportlib.util.spec_from_file_location('a', 'device/missing.py')\n",
+        ),
+    ]);
+    let imports = repo.imports("t.py");
+    assert_eq!(imports.resolved, Vec::new());
+    assert_eq!(
+        imports
+            .skipped
+            .iter()
+            .map(|s| (s.at.line, s.reason))
+            .collect::<Vec<_>>(),
+        [4, 5, 6, 7, 8].map(|line| (line, SkipReason::DynamicSpecifier))
+    );
+}

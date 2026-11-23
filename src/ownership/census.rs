@@ -16,8 +16,8 @@ pub const SHEBANG: &str = "shebang";
 const CODE_EXTENSIONS: &[&str] = &[
     "sh", "bash", "zsh", "swift", "c", "h", "cc", "cpp", "hpp", "m", "mm", "go", "java", "kt",
     "kts", "rb", "php", "cs", "lua", "dart", "scala", "ex", "exs", "erl", "hs", "ml", "clj", "vue",
-    "astro", "pl", "r", "sql", "ps1", "mc", "zig", "nim", "svelte", "html", "htm", "ts", "tsx",
-    "js", "jsx", "mjs", "cjs", "mts", "cts", "py", "rs",
+    "astro", "pl", "r", "sql", "ps1", "cmd", "bat", "mc", "zig", "nim", "svelte", "html", "htm",
+    "ts", "tsx", "js", "jsx", "mjs", "cjs", "mts", "cts", "py", "rs",
 ];
 
 /// The census key of `relative`, a walked file below `root`, or `None` when it is not unread code.

@@ -141,7 +141,7 @@ exit code. It lives on `Ownership` next to `excluded`:
 - **Not read**, `Ownership::unread`: a map from a key to the sorted set of walked files of that key.
   The key is the file extension (no dot, case-sensitive) when it is in the fixed table of common code
   extensions `sh bash zsh swift c h cc cpp hpp m mm go java kt kts rb php cs lua dart scala ex exs
-  erl hs ml clj vue astro pl r sql ps1 mc zig nim svelte html htm`, minus every extension the language
+  erl hs ml clj vue astro pl r sql ps1 cmd bat mc zig nim svelte html htm`, minus every extension the language
   table supports (so adding a language removes its extensions from `unread` by itself: `ts` is never
   here). A file with no extension at all whose first two bytes are `#!` has the key `shebang`. The
   files are the walked ones: ignored files (`.gitignore`, `.driftwallignore`) are not walked and are
@@ -165,7 +165,10 @@ is written in. Unread, excluded and ignored files never produce `unmapped-file`.
 unread file with its owner and its number of lines (newline bytes, plus one for a last line without a
 newline; a file that cannot be read has 0), each excluded and ignored file with its owner, each
 skipped reference with its reason and each unresolved import with its owner. All of it is sorted, and
-`init` builds the same value without owners and lines.
+`init` builds the same value without owners and lines, and without the `undeclared-owner` records
+only `lint` can make (they need a contract). The two notes therefore agree on a fresh baseline, because
+`init` declares every owner it gives an asset (see "Contract and writing"), and differ only by the
+`undeclared-owner` references a hand-edited contract adds.
 
 Reports: see "CLI surface". The note line that `lint` and `init` print has the form
 
@@ -485,6 +488,19 @@ Every other argument (a name, a call, an f-string, a concatenation, a bytes or e
 literal that is not a dotted name) stays `dynamic-specifier` with the source text of the argument as
 specifier.
 
+#### File loaders
+
+`importlib.machinery.SourceFileLoader(name, path)` and `importlib.util.spec_from_file_location(name,
+path)` (spelled exactly so) load a Python file by path. When `path`, the second argument, is a plain
+string literal (as above) that holds no `*`, `?`, `[`, `{`, `%` or `$`, does not start with `/` or `~`,
+and names a known source file, either relative to the importing file's directory (tried first) or to
+the repository root, the call is an import of that file, kind `runtime`, located at the start of the
+call, using no symbol. The path is normalised lexically and may not leave the repository. Every other
+path (a name, a call such as `os.path.join(..)`, a glob or format string, an absolute path, a file
+that is not known) is skipped as `dynamic-specifier`, with the source text of the argument as
+specifier; a literal that finds no file is not `unresolved-import`, because the file may be made at
+run time or live outside the repository.
+
 ### Swift resolution
 
 Files of one Swift module never import each other: the compiler sees the module as a whole. The
@@ -796,7 +812,7 @@ a location, the specifier as written and a typed reason (kebab-case in serializa
 | Reason | When |
 | --- | --- |
 | `undeclared-package` | TypeScript or JavaScript specifier that is not relative, matches no `tsconfig` or `jsconfig` `paths` alias, is not a workspace package, is not a Node builtin and is not a declared dependency; a Python absolute import that misses below a namespace directory, a top-level directory with no `__init__.py` (see "Python resolution") |
-| `dynamic-specifier` | a shell `source` or `.` whose path has no value, see "Shell resolution"; `import(expr)` or `require(expr)` whose argument is not a string literal or a template without substitutions; Python `importlib.import_module(..)` and `__import__(..)` whose first argument is not a plain string literal, or whose relative literal has no usable package (see "Python resolution") |
+| `dynamic-specifier` | a shell `source` or `.` whose path has no value, see "Shell resolution"; `import(expr)` or `require(expr)` whose argument is not a string literal or a template without substitutions; Python `importlib.import_module(..)` and `__import__(..)` whose first argument is not a plain string literal, or whose relative literal has no usable package, and a Python file loader whose path is not a literal naming a known file (see "Python resolution") |
 | `embed-non-source` | a Rust embed whose target is not a known source file |
 | `unreachable-module` | a Python absolute import that no import root resolves, whose top-level name matches a first-party module or package elsewhere in the repository (see "Python resolution") |
 | `undeclared-owner` | an import of an asset whose owner is not a declared node, recorded by `lint` rather than by import extraction (see "Asset files") |

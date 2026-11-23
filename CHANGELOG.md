@@ -71,3 +71,9 @@
 - `init` fresh-baseline invariant: an asset owned by a name that only an asset derives (`app.css`
   beside `App.svelte`, `src/index.css`, a directory of fonts) is declared as a node, so `lint` right
   after `init` has no `undeclared-owner` skipped reference.
+- Python file loaders: `importlib.machinery.SourceFileLoader(name, "<path>")` and
+  `importlib.util.spec_from_file_location(name, "<path>")` with a literal path naming a repository
+  file are runtime imports of that file; any other path is skipped as `dynamic-specifier`.
+- The not-read census also counts `cmd` and `bat` files (`ps1` already was). The `init` and `lint`
+  notes agree on a fresh baseline: the only skipped references `lint` alone could add,
+  `undeclared-owner`, no longer arise from `init`'s own tags.

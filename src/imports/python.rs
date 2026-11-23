@@ -1,11 +1,15 @@
 //! Resolution of Python module references against the known repository files.
 
 use std::collections::BTreeSet;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
+use super::extract::literal_text;
 use super::python_call::module_of;
 use super::{Environment, Reference, Resolution};
 use crate::model::{SkipReason, Symbol};
+
+/// Callees whose second argument is the path of a Python file to load.
+const FILE_LOADERS: [&str; 2] = ["SourceFileLoader", "spec_from_file_location"];
 
 /// The table entry. `reference.specifier` is the module as written (`a.b`, `.a`, `..`) and
 /// `reference.names` the names a `from` statement imports from it. See "Python resolution" in
@@ -83,11 +87,68 @@ pub fn resolve(
 /// Resolves the call around `reference`: like `import <literal>` when the call names its module
 /// with a plain literal, dynamic otherwise.
 fn call(reference: &Reference<'_>, importer: &Path, env: &Environment<'_>) -> Vec<Resolution> {
+    if loads_file(reference) {
+        return vec![load_path(reference, importer, env)];
+    }
     let Some(module) = module_of(reference) else {
         return vec![Resolution::Skipped(SkipReason::DynamicSpecifier)];
     };
     let segments: Vec<&str> = module.split('.').collect();
     absolute(&segments, &[Vec::new()], false, importer, env)
+}
+
+/// Whether the call around `reference` is a file loader (`SourceFileLoader(..)`,
+/// `spec_from_file_location(..)`) and the reference is its path argument.
+fn loads_file(reference: &Reference<'_>) -> bool {
+    reference
+        .node
+        .parent()
+        .and_then(|list| list.parent())
+        .and_then(|call| call.child_by_field_name("function"))
+        .and_then(|function| function.child_by_field_name("attribute"))
+        .and_then(|name| name.utf8_text(reference.source.as_bytes()).ok())
+        .is_some_and(|name| FILE_LOADERS.contains(&name))
+}
+
+/// The file a loader call names with a literal path: the repository file at that path, taken
+/// relative to the importer's directory first and to the repository root second. Anything else
+/// (not a plain literal, a glob or format placeholder, an absolute or `~` path, a path that leaves
+/// the repository or names no known file) is dynamic.
+fn load_path(reference: &Reference<'_>, importer: &Path, env: &Environment<'_>) -> Resolution {
+    let dynamic = Resolution::Skipped(SkipReason::DynamicSpecifier);
+    let Some(literal) = literal_text(reference.node, reference.source) else {
+        return dynamic;
+    };
+    if literal.is_empty()
+        || literal.starts_with(['/', '~'])
+        || literal.contains(['*', '?', '[', '{', '%', '$'])
+    {
+        return dynamic;
+    }
+    let beside = importer.parent().unwrap_or_else(|| Path::new(""));
+    [beside, Path::new("")]
+        .iter()
+        .filter_map(|base| normalise(&base.join(literal)))
+        .find(|path| env.known.contains(path))
+        .map_or(dynamic, |target| found((target, None), importer))
+}
+
+/// `path` without `.` segments and with `..` applied, or `None` when it leaves the repository.
+fn normalise(path: &Path) -> Option<PathBuf> {
+    let mut out = PathBuf::new();
+    for part in path.components() {
+        match part {
+            Component::Normal(name) => out.push(name),
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if !out.pop() {
+                    return None;
+                }
+            }
+            Component::RootDir | Component::Prefix(_) => return None,
+        }
+    }
+    Some(out)
 }
 
 /// Resolves the absolute `module` (dotted segments) with each of `names` under the import roots

@@ -23,7 +23,8 @@ macro_rules! ecmascript_imports {
 }
 
 /// Python: `import a.b`, `import a.b as c`, and `from a.b import c, d as e` or `import *`, plus the
-/// first argument of `importlib.import_module(..)` and `__import__(..)`, which the resolver skips.
+/// first argument of `importlib.import_module(..)` and `__import__(..)`, and the path (second
+/// argument) of `importlib.machinery.SourceFileLoader(..)` and `importlib.util.spec_from_file_location(..)`.
 ///
 /// A `from` statement is a single match carrying every imported name, so the resolver can try
 /// submodules before the module itself. `from __future__` is its own node and never matches.
@@ -49,6 +50,16 @@ pub const PYTHON: &str = r#"
   arguments: (argument_list . (_) @specifier)
   (#eq? @module "importlib")
   (#eq? @method "import_module"))
+(call
+  function: (attribute
+    object: (attribute
+      object: (identifier) @module
+      attribute: (identifier) @submodule)
+    attribute: (identifier) @method)
+  arguments: (argument_list . (_) . (_) @specifier)
+  (#eq? @module "importlib")
+  (#any-of? @submodule "machinery" "util")
+  (#any-of? @method "SourceFileLoader" "spec_from_file_location"))
 "#;
 
 /// Swift: the module path of every `import` declaration, whatever attribute or keyword it carries.

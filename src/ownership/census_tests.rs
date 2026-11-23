@@ -160,3 +160,18 @@ fn excluded_files_are_not_counted_as_ignored() {
     assert_eq!(owned.ignored, set(&["other.js"]));
     assert_eq!(owned.excluded.values().map(BTreeSet::len).sum::<usize>(), 1);
 }
+
+#[test]
+fn windows_scripts_are_unread_code() {
+    let dir = tree(&[
+        (".arch", "node: root\n"),
+        ("run.cmd", "@echo off\n"),
+        ("build.bat", "@echo off\n"),
+        ("setup.ps1", ""),
+    ]);
+    let owned = scan(dir.path()).unwrap();
+    assert_eq!(
+        owned.unread.keys().collect::<Vec<_>>(),
+        ["bat", "cmd", "ps1"]
+    );
+}
