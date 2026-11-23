@@ -1,6 +1,6 @@
 # Dogfooding driftwall on real projects
 
-driftwall was checked against eight real repositories of its author's (TypeScript, React, Svelte,
+driftwall was checked against nine real repositories, itself included (TypeScript, React, Svelte,
 Python, Rust, Swift, shell), in two phases. In both, an independent review agent judged
 driftwall's output against the code with a fixed rubric, the defects it found were fixed in
 driftwall (never hand-tuned in the project), and the loop repeated until every project passed.
@@ -12,7 +12,7 @@ the evidence; a reviewer then checks it against [accuracy-rubric.md](accuracy-ru
 granularity, edge precision and recall (every import site, both directions, by an independent
 parser), symbols, blind spots and usefulness.
 
-Five rounds took all eight projects from unsatisfactory to satisfactory. Final recall was complete
+Five rounds took all nine projects from unsatisfactory to satisfactory. Final recall was complete
 on every project (for example 592/592 cross-component import sites on one, 671 on another), with no
 false edges. Defects found and fixed on the way include: whole source trees collapsing into one
 node; Svelte, Swift and shell code passing unread and unreported; generated files reported as
