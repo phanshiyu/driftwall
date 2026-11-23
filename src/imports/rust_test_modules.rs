@@ -2,7 +2,7 @@
 //!
 //! `#[cfg(test)] mod tests;` makes the file `tests.rs` (or `tests/mod.rs`) test code, and so is
 //! every file that file declares in turn. The file is found through the module-path model of
-//! `rust_module`, relative to the declaring file. See "Import kind" in `docs/DESIGN.md`.
+//! `rust_module`, relative to the declaring file, or where `#[path]` placed it (`rust_paths`). See "Import kind" in `docs/DESIGN.md`.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -12,6 +12,7 @@ use rayon::prelude::*;
 use tree_sitter::{Node, Parser};
 
 use super::rust_module::Site;
+use super::rust_paths::PathModules;
 use super::rust_syntax::enclosing_modules;
 use super::spec::RUST_GRAMMAR;
 use super::statement::{in_cfg_test, rust_test_file};
@@ -31,6 +32,7 @@ pub fn test_files(
     root: &Path,
     files: &BTreeMap<PathBuf, Language>,
     known: &BTreeSet<PathBuf>,
+    paths: &PathModules,
 ) -> BTreeSet<PathBuf> {
     let rust: Vec<&PathBuf> = files
         .iter()
@@ -41,7 +43,7 @@ pub fn test_files(
         .par_iter()
         .filter_map(|&path| {
             let source = fs::read_to_string(root.join(path)).ok()?;
-            let found = declarations(&source, path, known);
+            let found = declarations(&source, path, known, paths);
             (!found.is_empty()).then_some((path, found))
         })
         .collect();
@@ -74,7 +76,12 @@ pub fn test_files(
 }
 
 /// The `mod name;` declarations of `source`, the text of `file`, whose module file is known.
-fn declarations(source: &str, file: &Path, known: &BTreeSet<PathBuf>) -> Vec<Declaration> {
+fn declarations(
+    source: &str,
+    file: &Path,
+    known: &BTreeSet<PathBuf>,
+    paths: &PathModules,
+) -> Vec<Declaration> {
     if !source.contains("mod ") {
         return Vec::new();
     }
@@ -90,7 +97,7 @@ fn declarations(source: &str, file: &Path, known: &BTreeSet<PathBuf>) -> Vec<Dec
     'walk: loop {
         let node = cursor.node();
         if node.kind() == "mod_item"
-            && let Some(declaration) = declaration(node, source, file, known)
+            && let Some(declaration) = declaration(node, source, file, known, paths)
         {
             found.push(declaration);
         }
@@ -112,6 +119,7 @@ fn declaration(
     source: &str,
     file: &Path,
     known: &BTreeSet<PathBuf>,
+    paths: &PathModules,
 ) -> Option<Declaration> {
     if node.child_by_field_name("body").is_some() {
         return None;
@@ -121,9 +129,9 @@ fn declaration(
         .utf8_text(source.as_bytes())
         .ok()?;
     let inline = enclosing_modules(node, source);
-    let site = Site::of(file, &inline, known)?;
+    let site = Site::of(file, &inline, known, paths)?;
     Some(Declaration {
-        file: site.declared_file(name, known)?,
+        file: site.declared_file(name, known, paths)?,
         in_test_code: in_cfg_test(node, source),
     })
 }

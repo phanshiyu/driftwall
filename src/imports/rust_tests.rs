@@ -51,6 +51,7 @@ fn rs_in(
         vite_roots: &BTreeMap::new(),
         vite_aliases: &BTreeMap::new(),
         test_files: &BTreeSet::new(),
+        rust_paths: &PathModules::default(),
     };
     extract_in(source, Language::Rust, Path::new(file), &env).expect("extract succeeds")
 }

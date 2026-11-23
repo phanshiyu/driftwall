@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Rust: `#[path = "b/impl.rs"] mod a;` places module `a` at that file (relative to the declaring
+  file, with the inline-module and non-mod-rs rules), so `crate::a::..` resolves to it instead of
+  producing a false edge to the crate root file. A `#[cfg(test)] #[path = ..] mod` makes its file
+  test code.
 - Rust: an inline module that has `use super::*;` (typically `#[cfg(test)] mod tests`) sees the
   names its parent binds, so `depgraph::build(..)` after `use crate::depgraph;` is recorded there
   (test-only inside `cfg(test)`). `use super::name;` re-imports the parent's binding.

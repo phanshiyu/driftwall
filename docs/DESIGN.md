@@ -629,7 +629,16 @@ not an edge. A path that finds no module file falls back to the crate root file.
   Limits: only a glob of exactly one `super` is followed (`use super::super::*;` is not), and a
   module in a separate file (`mod tests;` with `use super::*;` in `tests.rs`) does not inherit the
   `use` declarations of the parent file, since a file is read on its own.
-- **`#[path = ".."]`** is not followed.
+- **`#[path = ".."]`.** `#[path = "b/impl.rs"] mod a;` declares module `a` at that file. The path
+  is relative to the declaring file's directory; inside inline modules it is relative to the
+  directory of a mod-rs file (`lib.rs`, `main.rs`, `mod.rs`) extended with the inline module names,
+  and for any other file to its directory extended with the file stem and the inline names. Paths
+  `crate::a::..`, `use crate::a;` and `mod a;`-relative paths resolve to that file, and the file's
+  own `self::` and `super::` paths are relative to module `a`. Modules the file itself declares
+  with a plain `mod x;` are found in its directory, but their own `self::` and `super::` paths keep
+  the module path their file location suggests. A `#[path]` that names no known repository file
+  is not followed, so a path through it falls back to the crate root file. A `#[path]` inside
+  `#[cfg_attr(..)]` and a `#[path]` written in a file that a `#[path]` itself placed are not read.
 - **Not followed:** `extern crate` renames, names that only a glob of a non-module brings in
   (`use crate::*; gitlab::x()`), local names from an inline `mod name { }`, and macro-generated
   paths.
@@ -911,7 +920,7 @@ callers can decide what a type-only or test import is worth.
   modules, `<name>.rs` or `<name>/mod.rs`. A declaration that finds no known file, and one whose
   attribute is not exactly `cfg(test)` (see above), pulls in nothing. The modules a test file
   declares, with or without an attribute (`mod support;` in `tests.rs`), are test code in turn, to
-  any depth. `#[path = ".."]` is not followed. The declaring file is not made test code.
+  any depth. A `#[path = ".."]` declaration is followed, see "Rust resolution". The declaring file is not made test code.
 - TypeScript, JavaScript, Svelte and HTML: files named `*.test.*` or `*.spec.*` (a middle name segment
   equal to `test` or `spec`, so `a.test.ts`, `a.spec.tsx`, `a.test.svelte`), or under a `__tests__`,
   `test` or `tests` directory at any depth.

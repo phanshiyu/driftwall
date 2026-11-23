@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use tree_sitter::{Node, Parser, Query, QueryCursor, StreamingIterator};
 
+use super::rust_paths::PathModules;
 use super::spec::{Grammar, LanguageSpec, Region};
 use super::statement::Flags;
 use super::{
@@ -60,6 +61,7 @@ pub fn extract(
             vite_roots: &BTreeMap::new(),
             vite_aliases: &BTreeMap::new(),
             test_files: &BTreeSet::new(),
+            rust_paths: &PathModules::default(),
         },
     )
 }

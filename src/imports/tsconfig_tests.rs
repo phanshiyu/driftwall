@@ -60,6 +60,7 @@ fn imports(files: &BTreeMap<PathBuf, String>, importer: &str, source: &str) -> V
         vite_roots: &BTreeMap::new(),
         vite_aliases: &BTreeMap::new(),
         test_files: &BTreeSet::new(),
+        rust_paths: &PathModules::default(),
     };
     let found = extract_in(source, Language::TypeScript, Path::new(importer), &env)
         .expect("extract succeeds");

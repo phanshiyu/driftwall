@@ -5,6 +5,7 @@ use std::collections::BTreeSet;
 use std::path::{Component, Path, PathBuf};
 
 use super::Environment;
+use super::rust_paths::PathModules;
 use crate::model::Symbol;
 
 /// Files that mark a directory as a crate root.
@@ -200,12 +201,12 @@ impl<'s> WrittenPath<'s> {
         if !self.names_module
             && written.len() > module_len
             && let Some((item, parents)) = written.split_last()
-            && root.deepest_file(&written, env.known).1 == written.len()
+            && root.deepest_file(&written, env.known, env.rust_paths).1 == written.len()
         {
-            let (file, _) = root.deepest_file(parents, env.known);
+            let (file, _) = root.deepest_file(parents, env.known, env.rust_paths);
             return Some((file, Symbol::Name((*item).to_owned())));
         }
-        let (file, matched) = root.deepest_file(&written, env.known);
+        let (file, matched) = root.deepest_file(&written, env.known, env.rust_paths);
         let symbol = written
             .get(matched)
             .map_or(Symbol::All, |name| Symbol::Name((*name).to_owned()));
@@ -274,14 +275,28 @@ impl CrateRoot {
 
     /// The file of the longest prefix of `written` that is a module file, with the length of that
     /// prefix. Else the root file, with length 0.
-    fn deepest_file(&self, written: &[&str], known: &BTreeSet<PathBuf>) -> (PathBuf, usize) {
+    fn deepest_file(
+        &self,
+        written: &[&str],
+        known: &BTreeSet<PathBuf>,
+        paths: &PathModules,
+    ) -> (PathBuf, usize) {
         (1..=written.len())
             .rev()
             .find_map(|len| {
-                let base = written
-                    .iter()
-                    .take(len)
-                    .fold(self.dir.clone(), |dir, name| dir.join(name));
+                let names = written.get(..len)?;
+                // why: the longest `#[path]` module on the way decides where the rest is looked up.
+                let placed = (1..=len).rev().find_map(|at| {
+                    let file = paths.file_of(&self.file, names.get(..at)?)?;
+                    Some((at, file))
+                });
+                let (base, rest) = match placed {
+                    Some((at, file)) if at == len => return Some((file.clone(), len)),
+                    // why: a file placed by `#[path]` owns its directory, as a mod-rs file does.
+                    Some((at, file)) => (file.parent()?.to_path_buf(), names.get(at..)?),
+                    None => (self.dir.clone(), names),
+                };
+                let base = rest.iter().fold(base, |dir, name| dir.join(name));
                 [base.with_extension("rs"), base.join("mod.rs")]
                     .into_iter()
                     .find(|candidate| known.contains(candidate))
@@ -292,9 +307,20 @@ impl CrateRoot {
 }
 
 impl Site {
+    /// The crate root file and module names of this site, the key `#[path]` modules are stored under.
+    #[must_use]
+    pub fn placement(&self) -> (PathBuf, Vec<String>) {
+        (self.root.file.clone(), self.module.names.clone())
+    }
+
     /// The file of the module that `mod name;`, written at this site, declares: `<name>.rs` or
     /// `<name>/mod.rs` in the directory of the current module. `None` when no known file is it.
-    pub fn declared_file(&self, name: &str, known: &BTreeSet<PathBuf>) -> Option<PathBuf> {
+    pub fn declared_file(
+        &self,
+        name: &str,
+        known: &BTreeSet<PathBuf>,
+        paths: &PathModules,
+    ) -> Option<PathBuf> {
         let written: Vec<&str> = self
             .module
             .names
@@ -302,13 +328,33 @@ impl Site {
             .map(String::as_str)
             .chain([name])
             .collect();
-        let (file, matched) = self.root.deepest_file(&written, known);
+        let (file, matched) = self.root.deepest_file(&written, known, paths);
         (matched == written.len()).then_some(file)
     }
 
     /// The site of a path written in `file`, inside the inline `mod name { }` blocks `inline`
     /// listed outermost first. `None` when `file` belongs to no crate.
-    pub fn of(file: &Path, inline: &[&str], known: &BTreeSet<PathBuf>) -> Option<Self> {
+    pub fn of(
+        file: &Path,
+        inline: &[&str],
+        known: &BTreeSet<PathBuf>,
+        paths: &PathModules,
+    ) -> Option<Self> {
+        // why: a file `#[path]` placed is the module its declaration names, not the one its location suggests.
+        if let Some((root_file, names)) = paths.module_of(file) {
+            let mut module = ModulePath {
+                names: names.clone(),
+            };
+            module
+                .names
+                .extend(inline.iter().map(|name| (*name).to_owned()));
+            let dir = root_file.parent()?.to_path_buf();
+            let root = CrateRoot {
+                dir,
+                file: root_file.clone(),
+            };
+            return Some(Self { root, module });
+        }
         let root = CrateRoot::of_file(file, known)?;
         let is_root_file = file == root.file;
         let mut module = if is_root_file {

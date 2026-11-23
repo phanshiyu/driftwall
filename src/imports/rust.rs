@@ -22,8 +22,9 @@
 //!
 //! An inline module with `use super::*;` also sees the names its parent module block binds.
 //!
-//! Known limitations, listed in "Rust resolution" in `docs/DESIGN.md`: `#[path = "..."]` module
-//! attributes, `extern crate` renames, names that only a glob import brings in
+//! A `#[path = ".."]` module is placed at its file, see `rust_paths`.
+//!
+//! Known limitations, listed in "Rust resolution" in `docs/DESIGN.md`: `extern crate` renames, names that only a glob import brings in
 //! (`use crate::*; gitlab::x()`), the `use` items a separate-file child inherits through
 //! `use super::*;`, local names that come from an inline `mod name { }`, and macro-generated paths
 //! are not followed.
@@ -54,7 +55,7 @@ pub fn resolve(
         return Vec::new();
     }
     let inline = rust_syntax::enclosing_modules(reference.node, reference.source);
-    let site = Site::of(importer, &inline, env.known);
+    let site = Site::of(importer, &inline, env.known, env.rust_paths);
     let mut resolutions = Vec::new();
     for path in &paths {
         let path = through_bindings(path, reference, &inline, site.as_ref(), env);

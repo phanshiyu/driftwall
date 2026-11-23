@@ -19,8 +19,7 @@
 //! list of import roots: the importer's own directory when it is not a package, the roots a project
 //! configures (see `python_config`), the repository root and `src/`; see `python`. `.pyi` stubs are
 //! not supported. For Rust, see
-//! `rust`'s limitations, listed in "Rust resolution" in `docs/DESIGN.md`: `#[path]` modules,
-//! `extern crate` renames and names that only a glob import brings in are not followed. A path that
+//! `rust`'s limitations, listed in "Rust resolution" in `docs/DESIGN.md`: `extern crate` renames and names that only a glob import brings in are not followed. A path that
 //! starts with a module name the same file brought into scope with `use` or `mod name;` is
 //! followed, also in an inline module through `use super::*;`.
 //!
@@ -48,6 +47,7 @@ mod queries;
 mod resolve;
 mod rust;
 mod rust_module;
+mod rust_paths;
 mod rust_scope;
 mod rust_syntax;
 mod rust_test_modules;
@@ -97,6 +97,8 @@ mod references_tests;
 #[cfg(test)]
 mod rust_dogfood_tests;
 #[cfg(test)]
+mod rust_path_tests;
+#[cfg(test)]
 mod rust_symbols_tests;
 #[cfg(test)]
 mod rust_test_modules_tests;
@@ -135,6 +137,7 @@ pub use package::package_dependencies;
 pub use project::Project;
 pub use python_config::python_roots;
 pub use python_layout::PythonLayout;
+pub use rust_paths::PathModules;
 pub use rust_scope::Bindings;
 pub use spec::{Docs, Grammar, LanguageSpec, Load, Loads, Region, Scan, spec};
 pub use swift::SwiftModules;
@@ -201,6 +204,9 @@ pub struct Environment<'a> {
     /// Files that are test code because a `#[cfg(test)] mod x;` declaration pulls them in, see
     /// the module `rust_test_modules`. Every import written in one is `test_only`.
     pub test_files: &'a BTreeSet<PathBuf>,
+    /// The Rust modules a `#[path = ".."]` attribute placed at a file of its own choosing, see
+    /// the module `rust_paths`.
+    pub rust_paths: &'a PathModules,
 }
 
 /// One query match handed to a language resolver: the module reference as written and, for
@@ -338,7 +344,8 @@ pub fn collect_with_assets(
     let swift = SwiftModules::new(swift_targets(root, files));
     let vite = vite_roots(root, files);
     let aliases_of_vite = vite_aliases(root, files);
-    let test_files = rust_test_modules::test_files(root, files, &known);
+    let rust_paths = rust_paths::path_modules(root, files, &known);
+    let test_files = rust_test_modules::test_files(root, files, &known, &rust_paths);
     let env = Environment {
         known: &known,
         assets,
@@ -353,6 +360,7 @@ pub fn collect_with_assets(
         vite_roots: &vite,
         vite_aliases: &aliases_of_vite,
         test_files: &test_files,
+        rust_paths: &rust_paths,
     };
     let entries: Vec<(&PathBuf, &Language)> = files.iter().collect();
     // why: collected into an indexed Vec so the reported error never depends on thread scheduling.

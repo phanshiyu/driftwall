@@ -60,6 +60,7 @@ fn run(
         vite_roots: &BTreeMap::new(),
         vite_aliases: &BTreeMap::new(),
         test_files: &BTreeSet::new(),
+        rust_paths: &PathModules::default(),
     };
     extract_in(source, language, Path::new(file), &env).expect("extract succeeds")
 }
@@ -214,6 +215,7 @@ fn an_aliased_specifier_is_never_skipped_even_when_nothing_backs_it() {
         vite_roots: &BTreeMap::new(),
         vite_aliases: &BTreeMap::new(),
         test_files: &BTreeSet::new(),
+        rust_paths: &PathModules::default(),
     };
     let got = extract_in(
         "import a from '@/foo';\nimport b from '@/missing';\nimport c from 'other';",
@@ -441,6 +443,7 @@ fn rs_at(source: &str, file: &str) -> FileImports {
         vite_roots: &BTreeMap::new(),
         vite_aliases: &BTreeMap::new(),
         test_files: &BTreeSet::new(),
+        rust_paths: &PathModules::default(),
     };
     extract_in(source, Language::Rust, Path::new(file), &env).expect("extract succeeds")
 }
