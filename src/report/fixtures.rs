@@ -20,6 +20,7 @@ pub fn violation(
         }),
         message: message.to_owned(),
         hint: hint.map(str::to_owned),
+        test_only: false,
     }
 }
 

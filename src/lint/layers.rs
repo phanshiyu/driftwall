@@ -2,7 +2,7 @@
 
 use crate::model::{Contract, Edge, EdgeKind, ResolvedImport, Violation, ViolationKind};
 
-use super::rules::violation;
+use super::rules::site_violation;
 
 /// One `upward-edge` finding per import site that goes from a node in a lower listed boundary to a
 /// node in a higher one (see "Layer order" in `docs/DESIGN.md`). Nothing without a `%% order`.
@@ -32,9 +32,9 @@ pub(super) fn upward_findings(
                     .iter()
                     .any(|cover| matches!(cover.kind, EdgeKind::Test | EdgeKind::PlannedTest));
             (!exempt).then(|| {
-                violation(
+                site_violation(
                     ViolationKind::UpwardEdge,
-                    Some(import.at.clone()),
+                    import,
                     format!(
                         "`{from}` (boundary `{from_boundary}`) imports `{to}` (boundary `{to_boundary}`, {}) but the `%% order` on line {} puts `{to_boundary}` above `{from_boundary}`",
                         import.target.display(),

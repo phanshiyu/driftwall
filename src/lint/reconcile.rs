@@ -13,7 +13,7 @@ use super::isolation;
 use super::layers;
 use super::observe::crossings;
 use super::packages::package_findings;
-use super::rules::violation;
+use super::rules::{site_violation, violation};
 
 /// Reconciles the contract, ownership and import graph into a sorted, duplicate-free report.
 ///
@@ -75,9 +75,9 @@ pub fn reconcile(
     for (edge, import) in &crossings {
         let covers = contract.covers(edge);
         match covers.first() {
-            None => violations.push(violation(
+            None => violations.push(site_violation(
                 ViolationKind::UndeclaredEdge,
-                Some(import.at.clone()),
+                import,
                 format!(
                     "`{from}` imports `{to}` ({}) but {} declares no edge {from} --> {to}",
                     import.target.display(),
@@ -92,9 +92,9 @@ pub fn reconcile(
                     .iter()
                     .any(|cover| cover.kind.allows(import.kind, import.test_only)) =>
             {
-                violations.push(violation(
+                violations.push(site_violation(
                     ViolationKind::UndeclaredEdge,
-                    Some(import.at.clone()),
+                    import,
                     restricted_site_message(winner, covers.len() - 1, edge, import, contract_file),
                 ));
             }
@@ -165,6 +165,18 @@ fn restricted_site_message(
     }
 }
 
+/// What to do about a planned edge that only tests use.
+const PLANNED_TEST_ONLY_HINT: &str = "if tests alone should use it, declare `-.->|test|` or `-->|test|`; otherwise leave the edge dotted until the app uses it";
+
+/// A finding about a declared edge of `edge_kind`. A planned edge only tests use gets its own hint.
+fn edge_violation(kind: ViolationKind, edge_kind: EdgeKind, message: String) -> Violation {
+    let mut found = violation(kind, None, message);
+    if kind == ViolationKind::TestOnlyEdge && edge_kind.is_planned() {
+        found.hint = Some(PLANNED_TEST_ONLY_HINT.to_owned());
+    }
+    found
+}
+
 /// The findings about declared edges: stale, planned and realised, and solid but realised by tests
 /// only. A site an edge does not allow is not counted: it is its own `undeclared-edge`.
 fn edge_findings(contract: &Contract, crossings: &[(Edge, &ResolvedImport)]) -> Vec<Violation> {
@@ -192,8 +204,8 @@ fn edge_findings(contract: &Contract, crossings: &[(Edge, &ResolvedImport)]) -> 
             production: production.contains(edge),
         };
         let ends = (edge.from.as_str(), edge.to.as_str());
-        if let Some((kind, message)) = declared_edge_finding(*kind, ends, seen) {
-            violations.push(violation(kind, None, message));
+        if let Some((found, message)) = declared_edge_finding(*kind, ends, seen) {
+            violations.push(edge_violation(found, *kind, message));
         }
     }
     violations
@@ -234,9 +246,16 @@ fn declared_edge_finding(
             ViolationKind::StaleEdge,
             format!("edge {from} {arrow} {to} is declared but no {sites} import realises it"),
         )),
-        EdgeKind::Planned if seen.realised => Some((
+        EdgeKind::Planned if seen.production => Some((
             ViolationKind::PlannedRealized,
             format!("planned edge {from} {arrow} {to} is now realised by code"),
+        )),
+        // why: a test using the target is not the app using it, so promoting the edge would mislead.
+        EdgeKind::Planned if seen.realised => Some((
+            ViolationKind::TestOnlyEdge,
+            format!(
+                "planned edge {from} {arrow} {to} is used only by test code; the app does not use it yet; declare it {from} -.->|test| {to} or {from} -->|test| {to} if that is intended"
+            ),
         )),
         EdgeKind::PlannedTest | EdgeKind::PlannedType | EdgeKind::PlannedTypeTest
             if seen.allowed =>
@@ -278,7 +297,7 @@ fn boundary_edge_findings(
                 (declared.from.as_str(), declared.to.as_str()),
                 seen,
             )?;
-            Some(violation(kind, None, message))
+            Some(edge_violation(kind, declared.kind, message))
         })
         .collect()
 }
@@ -334,9 +353,9 @@ fn private_symbols(
             Symbol::All => true,
         })
         .map(|symbol| {
-            violation(
+            site_violation(
                 ViolationKind::PrivateSymbol,
-                Some(import.at.clone()),
+                import,
                 format!(
                     "`{from}` imports `{symbol}` from `{to}` ({}) but {} lets `{to}` export only: {}",
                     import.target.display(),

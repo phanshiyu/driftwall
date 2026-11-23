@@ -15,6 +15,14 @@
   (JSON `via`, `boundary_edges`), and `diff` reports them (`added_boundary_edges` and friends).
   `init` still writes node edges. An edge to a boundary with no node is a contract error.
 
+- Lint marks findings at test sites: the text puts `(test code)` after the kind
+  (`src/a.test.ts:3: error[undeclared-edge] (test code): ...`), JSON has `"test_only": true`, and a
+  SARIF result has `"properties": {"testOnly": true}`, each only on a finding at a site written in
+  test code (`undeclared-edge`, `private-symbol`, `upward-edge`). Other findings are unchanged.
+- A dotted edge `a -.-> b` is no longer `planned-realized` when only test code uses it. It is the
+  warning `test-only-edge` instead: the app does not use the dependency yet, and the message says to
+  declare `-.->|test|` or `-->|test|` if tests alone should use it. One production site still makes
+  it `planned-realized`; a dotted `|test|` edge realised by tests is unchanged.
 - Re-exports: an import of a name through a module that re-exports it is attributed to the file
   that defines the name, so `use crate::ui::Tone;` with `pub use tone::Tone;` in `ui/mod.rs` is a
   dependency on `ui/tone.rs`, and that file can be its own node. Rust `pub use` (also `pub(crate)`,

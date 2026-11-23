@@ -740,6 +740,9 @@ pub struct Violation {
     pub message: String,
     /// Suggested fix, phrased as an action.
     pub hint: Option<String>,
+    /// Whether the finding is at an import site written in test code. Serialized only when true.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub test_only: bool,
 }
 
 /// The complete result of a lint run.
@@ -1031,6 +1034,7 @@ mod tests {
             at: None,
             message: String::new(),
             hint: None,
+            test_only: false,
         };
         let report = LintReport {
             violations: vec![
@@ -1309,6 +1313,7 @@ mod tests {
                 at: None,
                 message: String::new(),
                 hint: None,
+                test_only: false,
             }],
         };
         assert!(!report.failed(false));

@@ -30,6 +30,8 @@ mod resolution_tests;
 #[cfg(test)]
 mod test_edge_tests;
 #[cfg(test)]
+mod test_site_tests;
+#[cfg(test)]
 mod tests;
 #[cfg(test)]
 mod type_edge_tests;

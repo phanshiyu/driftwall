@@ -3,7 +3,7 @@
 //! Every function here matches exhaustively on the kind with no wildcard arm, so adding a kind
 //! to the model fails to compile until it has a severity and a hint.
 
-use crate::model::{Location, Severity, Violation, ViolationKind};
+use crate::model::{Location, ResolvedImport, Severity, Violation, ViolationKind};
 
 /// How serious a finding of `kind` is.
 pub(super) const fn severity(kind: ViolationKind) -> Severity {
@@ -85,5 +85,18 @@ pub(super) fn violation(kind: ViolationKind, at: Option<Location>, message: Stri
         at,
         message,
         hint: Some(hint(kind).to_owned()),
+        test_only: false,
+    }
+}
+
+/// Builds a finding of `kind` at the import site `import`, marked when the site is test code.
+pub(super) fn site_violation(
+    kind: ViolationKind,
+    import: &ResolvedImport,
+    message: String,
+) -> Violation {
+    Violation {
+        test_only: import.test_only,
+        ..violation(kind, Some(import.at.clone()), message)
     }
 }

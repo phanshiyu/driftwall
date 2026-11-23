@@ -85,6 +85,14 @@ production code to do so. It uses the `test_only` flag of every import site (see
 - A dotted test edge, `a -.->|test| b`, is the planned form: tolerated while no code uses it,
   allowing test sites only. When test sites realise it, it is `planned-realized` ("promote it to
   `-->|test|`"). Production sites on it are `undeclared-edge` like above.
+- A dotted edge with no label, `a -.-> b`, is realised only by production code. A site written in
+  test code does not realise it: the app does not use the dependency, a test does. When every site
+  of the pair is test-only the finding is not `planned-realized` (which would say "make it solid")
+  but `test-only-edge`, a warning: "planned edge a -.-> b is used only by test code; the app does
+  not use it yet; declare it `-.->|test|` or `-->|test|` if that is intended". The hint says the
+  same. Test sites on the dotted edge are still allowed, as on any dotted edge, and one production
+  site makes it `planned-realized` as before. A dotted boundary edge is judged the same way over all the pairs it covers: only test sites under it is `test-only-edge`, one production site under it is `planned-realized`. A planned `|test|` edge, and a planned `|type|` edge,
+  keep their rules above and below.
 
 `brief` and `neighbors` draw a test edge `a -->|test| b` and a dotted one `a -.->|test| b`. The
 `brief` summary line counts `implemented`, `planned` and, only when there is one, `test` edges (a
@@ -1762,9 +1770,9 @@ module and no symbol and adds nothing to `uses:`.
 | `unknown-node` | error | `.arch` names a node the diagram does not declare |
 | `undeclared-edge` | error | code imports across nodes and the diagram has no such edge |
 | `stale-edge` | warning | solid edge with no import backing it |
-| `planned-realized` | warning | dotted edge now backed by code, promote it to solid (a dotted test or type edge to `-->|test|` or `-->|type|`) |
+| `planned-realized` | warning | dotted edge now backed by production code, promote it to solid (a dotted test or type edge to `-->|test|` or `-->|type|`) |
 | `redundant-edge` | warning | node edge that a boundary edge already covers with a kind at least as wide, see "Boundary edges" |
-| `test-only-edge` | warning | solid edge whose every import site is test-only, declare it `-->|test|` |
+| `test-only-edge` | warning | solid edge whose every import site is test-only, declare it `-->|test|`; also an unlabelled dotted edge whose every site is test-only, which the app does not use yet |
 | `unresolved-import` | warning | relative import resolves to nothing, whatever its extension; Python absolute import into a first-party package that holds no such module; shell `source` of a path that finds no file |
 | `private-symbol` | error | an import uses a symbol outside the target node's declared surface |
 | `over-budget` | warning | a node exceeds a `%% budget` limit (fan-out, files or lines), see "Budgets" |
@@ -2116,6 +2124,13 @@ driftwall diff --base <REF> [PATH] [--contract FILE] [--format text|json] [--exi
 
 `--format json` is the agent interface. Every violation carries `kind`, `severity`, `at`
 (`file`, `line`), `message`, `hint`.
+
+A finding at an import site written in test code (`test_only`, see "Import kind") says so: `undeclared-edge`,
+`private-symbol` and `upward-edge` carry the mark; no other kind does. The text puts `(test code)` after the kind, `src/a.test.ts:3: error[undeclared-edge]
+(test code): ...`, so `file:line:` stays the start of the line. The JSON violation has `"test_only": true`,
+the key being absent on any other finding, so existing consumers see no change. A SARIF result has
+`"properties": {"testOnly": true}`, also only then. Whether a test site is allowed is decided by the edge
+kinds as before; the mark only tells the reader that the site is test code.
 
 `where <FILE>` says what a path is and who owns it. The path must exist (inside `--root`, default
 `.`): a missing one is a tool error, exit `2`, `no such file: <path>`. `--contract` is accepted like

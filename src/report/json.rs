@@ -77,6 +77,20 @@ mod tests {
     }
 
     #[test]
+    fn test_only_is_carried_only_by_a_finding_at_a_test_site() {
+        let mut report = mixed();
+        report.violations[1].test_only = true;
+        let value = parse(&report);
+        assert_eq!(value["violations"][1]["test_only"], json!(true));
+        assert!(
+            !value["violations"][0]
+                .as_object()
+                .unwrap()
+                .contains_key("test_only")
+        );
+    }
+
+    #[test]
     fn missing_location_and_hint_serialise_as_null() {
         let value = parse(&mixed());
         let last = &value["violations"][3];

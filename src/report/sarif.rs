@@ -45,6 +45,9 @@ fn result(v: &Violation) -> Value {
         "level": severity_str(v.severity),
         "message": { "text": text },
     });
+    if let (true, Some(map)) = (v.test_only, result.as_object_mut()) {
+        map.insert("properties".to_owned(), json!({ "testOnly": true }));
+    }
     if let (Some(at), Some(map)) = (&v.at, result.as_object_mut()) {
         map.insert(
             "locations".to_owned(),
@@ -94,6 +97,16 @@ mod tests {
         let physical = &first["locations"][0]["physicalLocation"];
         assert_eq!(physical["artifactLocation"]["uri"], json!("src/a.rs"));
         assert_eq!(physical["region"]["startLine"], json!(3));
+    }
+
+    #[test]
+    fn a_test_site_result_carries_a_property_bag_and_others_do_not() {
+        let mut report = mixed();
+        report.violations[1].test_only = true;
+        let value = parse(&report);
+        let results = &value["runs"][0]["results"];
+        assert_eq!(results[1]["properties"], json!({ "testOnly": true }));
+        assert!(results[0].get("properties").is_none());
     }
 
     #[test]

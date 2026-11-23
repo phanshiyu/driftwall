@@ -73,6 +73,7 @@ mod tests {
                     at: None,
                     message: String::new(),
                     hint: None,
+                    test_only: false,
                 })
                 .collect(),
         }

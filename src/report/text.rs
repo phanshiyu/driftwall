@@ -15,9 +15,10 @@ pub fn render_text(report: &LintReport) -> String {
         if let Some(at) = &v.at {
             let _ = write!(out, "{}:{}: ", slash_path(&at.file), at.line);
         }
+        let mark = if v.test_only { " (test code)" } else { "" };
         let _ = writeln!(
             out,
-            "{}[{}]: {}",
+            "{}[{}]{mark}: {}",
             severity_str(v.severity),
             kind_str(v.kind),
             v.message
@@ -61,6 +62,26 @@ warning[stale-edge]: edge init --> model has no import
 driftwall: 2 errors, 2 warnings
 ";
         assert_eq!(render_text(&mixed()), expected);
+    }
+
+    #[test]
+    fn a_finding_at_a_test_site_says_so_after_its_kind() {
+        let mut found = violation(
+            ViolationKind::UndeclaredEdge,
+            Severity::Error,
+            Some(("src/a.test.ts", 3)),
+            "a imports b",
+            None,
+        );
+        found.test_only = true;
+        let report = LintReport {
+            violations: vec![found],
+        };
+        let expected = "\
+src/a.test.ts:3: error[undeclared-edge] (test code): a imports b
+driftwall: 1 error, 0 warnings
+";
+        assert_eq!(render_text(&report), expected);
     }
 
     #[test]
