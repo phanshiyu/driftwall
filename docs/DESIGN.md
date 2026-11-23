@@ -909,6 +909,12 @@ a location, the specifier as written and a typed reason (kebab-case in serializa
 | `undeclared-owner` | an import of an asset or an excluded file whose owner is not a declared node, recorded by `lint` rather than by import extraction (see "Asset files" and "Excluded files") |
 | `unresolved-root-path` | a root-absolute `src`, `href` or import specifier of an HTML file that finds no file below its Vite root (see "Svelte and HTML") |
 
+A Vite virtual module is ignored, not skipped: a specifier that starts with `virtual:` or with the
+character U+0000 (Rollup's prefix for modules a plugin generates, `virtual:pwa-register`) has no
+repository file and no package to declare, so it is neither `undeclared-package` nor any other
+skipped reason, and no census count. It is checked last, so an alias, a workspace package or a
+`paths` pattern with that name still resolves first.
+
 For `undeclared-package`, a specifier that a `paths` pattern matches is an alias and never skipped,
 even when no file backs it (that stays silent, as before). `baseUrl` alone is not an alias: a bare
 specifier it cannot resolve falls through to the package check. A builtin is a `node:` specifier or

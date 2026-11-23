@@ -229,6 +229,14 @@ fn non_relative_specifiers_are_never_unresolved_and_without_a_package_json_are_s
 }
 
 #[test]
+fn virtual_modules_are_ignored_not_undeclared() {
+    let source = "import a from 'virtual:pwa-register';\nimport c from 'virtualx';\n";
+    let got = ts(source, &[]);
+    assert_eq!(got.resolved, Vec::new());
+    assert_eq!(skips(&got), [(2, "virtualx", UNDECLARED)]);
+}
+
+#[test]
 fn exact_file_wins_over_probing() {
     let got = ts("import './a';", &["src/a", "src/a.ts"]);
     assert_eq!(targets(&got), ["src/a"]);

@@ -93,5 +93,7 @@
   relative to the config directory, and `process.cwd()` is the config directory, so
   `alias: { w: path.resolve('wasm/pkg/w.js') }` is `alias-target-missing` instead of
   `undeclared-package`.
+- Vite virtual modules (`virtual:pwa-register`, a `\0` prefix) are ignored instead of being skipped
+  as `undeclared-package`.
 - TypeScript types: `let x: import("./a").T`, a field typed `import("./a").T` and `typeof import("./a")`
   are `type-only` imports using `T` (the first member) or `*`, not runtime `*`.

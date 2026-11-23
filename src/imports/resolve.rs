@@ -148,7 +148,8 @@ fn locate(base: &Path, directory_only: bool, env: &Environment<'_>) -> Option<Fo
 /// for a `#` specifier the `imports` of the nearest `package.json`, gets its turn: it resolves, or
 /// ignores the specifier when it finds no file. A specifier that a `paths` pattern matches is an
 /// alias and is ignored when no file backs it. Anything else is a package: ignored when it is a
-/// Node builtin or declared by a `package.json` at or above the importer, skipped otherwise.
+/// Node builtin, a virtual module or declared by a `package.json` at or above the importer, skipped
+/// otherwise.
 fn resolve_bare(specifier: &str, importer: &Path, env: &Environment<'_>) -> Resolution {
     let config = governing(env, importer);
     if let Some(found) = config.and_then(|config| first_found(&config.candidates(specifier), env)) {
@@ -175,11 +176,17 @@ fn resolve_bare(specifier: &str, importer: &Path, env: &Environment<'_>) -> Reso
                 .is_some_and(|names| names.contains(package_name(specifier)))
         })
     });
-    if is_builtin(specifier) || declared {
+    if is_builtin(specifier) || declared || is_virtual(specifier) {
         Resolution::Ignored
     } else {
         Resolution::Skipped(SkipReason::UndeclaredPackage)
     }
+}
+
+/// Whether `specifier` names a Vite virtual module, one a build plugin generates: `virtual:` and
+/// the `\0` prefix of Rollup. No repository file or package is behind it.
+fn is_virtual(specifier: &str) -> bool {
+    specifier.starts_with("virtual:") || specifier.starts_with('\0')
 }
 
 /// What the Vite `resolve.alias` entries say about `specifier` written in `importer`, or `None`
