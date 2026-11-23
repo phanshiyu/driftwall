@@ -57,6 +57,7 @@ pub fn extract(
             python: &python,
             swift: &SwiftModules::default(),
             vite_roots: &BTreeMap::new(),
+            vite_aliases: &BTreeMap::new(),
             test_files: &BTreeSet::new(),
         },
     )
@@ -229,9 +230,22 @@ impl Found {
                 let merge = (at.clone(), target, ImportKind::Asset, flags.test_only);
                 self.resolved.entry(merge).or_default();
             }
-            Resolution::Skipped(reason) => self.skip(at, specifier, reason, None),
+            Resolution::Skipped(reason) => self.skip(at, specifier, reason, None, None),
             Resolution::SkippedWith { reason, message } => {
-                self.skip(at, specifier, reason, Some(message));
+                self.skip(at, specifier, reason, Some(message), None);
+            }
+            Resolution::AliasTargetMissing { alias, target } => {
+                let message = format!(
+                    "alias `{alias}` points to `{}`, which has no file in the repository",
+                    target.display()
+                );
+                self.skip(
+                    at,
+                    specifier,
+                    SkipReason::AliasTargetMissing,
+                    Some(message),
+                    Some(target),
+                );
             }
             Resolution::Ignored => {}
         }
@@ -243,12 +257,14 @@ impl Found {
         specifier: &str,
         reason: SkipReason,
         message: Option<String>,
+        target: Option<PathBuf>,
     ) {
         self.skipped.insert(Skipped {
             at: at.clone(),
             specifier: specifier.to_owned(),
             reason,
             message,
+            target,
         });
     }
 }

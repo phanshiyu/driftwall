@@ -75,6 +75,7 @@ fn a_binary_reaches_lint_through_the_library_name_read_from_cargo_toml() {
         python: &PythonLayout::default(),
         swift: &SwiftModules::default(),
         vite_roots: &BTreeMap::new(),
+        vite_aliases: &BTreeMap::new(),
         test_files: &BTreeSet::new(),
     };
     // why: src/cli/main.rs is a stub today, so the source it will have is supplied here.

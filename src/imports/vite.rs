@@ -17,7 +17,7 @@ use super::tsconfig::directories;
 use crate::model::Language;
 
 /// Vite config file names in the order Vite itself looks for them in one directory.
-const CONFIG_FILES: [&str; 6] = [
+pub(super) const CONFIG_FILES: [&str; 6] = [
     "vite.config.js",
     "vite.config.mjs",
     "vite.config.ts",
@@ -27,7 +27,7 @@ const CONFIG_FILES: [&str; 6] = [
 ];
 
 /// The most `const` names followed from `export default name` to the object it holds.
-const MAX_ALIASES: usize = 8;
+pub(super) const MAX_ALIASES: usize = 8;
 
 /// Maps each directory that holds a Vite config to the root that config gives, reading from under
 /// `root`. Both are repository-relative, with the repository root as the empty path.
@@ -55,10 +55,9 @@ pub fn vite_roots(root: &Path, files: &BTreeMap<PathBuf, Language>) -> BTreeMap<
         .collect()
 }
 
-/// The directory the `root` option of the config `text`, the file `config` in the directory `dir`,
-/// names, or `None` when there is no option or it is not of a recognised form.
-#[must_use]
-pub fn configured_root(text: &str, config: &Path, dir: &Path) -> Option<PathBuf> {
+/// The syntax tree of the config `text`, the file `config`, parsed with the grammar its extension
+/// names. `None` when the grammar cannot be loaded or the parse fails.
+pub(super) fn parse(text: &str, config: &Path) -> Option<tree_sitter::Tree> {
     let typescript = config
         .extension()
         .is_some_and(|extension| matches!(extension.to_str(), Some("ts" | "mts" | "cts")));
@@ -69,7 +68,14 @@ pub fn configured_root(text: &str, config: &Path, dir: &Path) -> Option<PathBuf>
     };
     let mut parser = Parser::new();
     parser.set_language(&(grammar.language)()).ok()?;
-    let tree = parser.parse(text, None)?;
+    parser.parse(text, None)
+}
+
+/// The directory the `root` option of the config `text`, the file `config` in the directory `dir`,
+/// names, or `None` when there is no option or it is not of a recognised form.
+#[must_use]
+pub fn configured_root(text: &str, config: &Path, dir: &Path) -> Option<PathBuf> {
+    let tree = parse(text, config)?;
     let program = tree.root_node();
     let object = config_object(program, text)?;
     let value = option_value(object, "root", text)?;
@@ -81,7 +87,7 @@ pub fn configured_root(text: &str, config: &Path, dir: &Path) -> Option<PathBuf>
 }
 
 /// What an expression of a config evaluates to.
-enum Value {
+pub(super) enum Value {
     /// A string literal, joined onto the config directory when it is a path.
     Text(PathBuf),
     /// A directory, repository-relative.
@@ -93,9 +99,11 @@ enum Value {
 }
 
 /// Evaluates the few expressions that name a directory relative to the config file.
-struct Reader<'a> {
-    source: &'a str,
-    dir: &'a Path,
+pub(super) struct Reader<'a> {
+    /// The text of the config.
+    pub source: &'a str,
+    /// The repository-relative directory of the config.
+    pub dir: &'a Path,
 }
 
 impl Reader<'_> {
@@ -104,7 +112,7 @@ impl Reader<'_> {
     }
 
     /// The value of `node`, or `None` when it is not one of the recognised forms.
-    fn value(&self, node: Node<'_>) -> Option<Value> {
+    pub(super) fn value(&self, node: Node<'_>) -> Option<Value> {
         match node.kind() {
             "parenthesized_expression"
             | "as_expression"
@@ -191,7 +199,7 @@ impl Reader<'_> {
 
 /// The object that holds the options of the config: what `export default` or `module.exports =`
 /// gives, looking through the wrappers the module documentation lists.
-fn config_object<'t>(program: Node<'t>, source: &str) -> Option<Node<'t>> {
+pub(super) fn config_object<'t>(program: Node<'t>, source: &str) -> Option<Node<'t>> {
     let mut cursor = program.walk();
     let exported =
         program
@@ -213,7 +221,7 @@ fn config_object<'t>(program: Node<'t>, source: &str) -> Option<Node<'t>> {
 
 /// The object `node` stands for: itself, what a wrapper holds, the first object or function
 /// argument of a call, what a function returns, or the initializer of a top level `const`.
-fn object_of<'t>(
+pub(super) fn object_of<'t>(
     node: Node<'t>,
     program: Node<'t>,
     source: &str,
@@ -255,7 +263,7 @@ fn object_of<'t>(
 }
 
 /// The initializer of the top level `const`, `let` or `var` named `name`.
-fn declared<'t>(program: Node<'t>, name: &str, source: &str) -> Option<Node<'t>> {
+pub(super) fn declared<'t>(program: Node<'t>, name: &str, source: &str) -> Option<Node<'t>> {
     let mut cursor = program.walk();
     program
         .named_children(&mut cursor)
@@ -280,7 +288,7 @@ fn declared<'t>(program: Node<'t>, name: &str, source: &str) -> Option<Node<'t>>
 }
 
 /// The value of the key `key` written directly in `object`.
-fn option_value<'t>(object: Node<'t>, key: &str, source: &str) -> Option<Node<'t>> {
+pub(super) fn option_value<'t>(object: Node<'t>, key: &str, source: &str) -> Option<Node<'t>> {
     let mut cursor = object.walk();
     object.named_children(&mut cursor).find_map(|pair| {
         if pair.kind() != "pair" {

@@ -57,6 +57,7 @@ fn imports(files: &BTreeMap<PathBuf, String>, importer: &str, source: &str) -> V
         python: &PythonLayout::default(),
         swift: &SwiftModules::default(),
         vite_roots: &BTreeMap::new(),
+        vite_aliases: &BTreeMap::new(),
         test_files: &BTreeSet::new(),
     };
     let found = extract_in(source, Language::TypeScript, Path::new(importer), &env)

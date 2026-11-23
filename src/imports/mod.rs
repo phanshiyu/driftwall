@@ -58,6 +58,7 @@ mod swift;
 mod swift_package;
 mod tsconfig;
 mod vite;
+mod vite_alias;
 mod workspace;
 
 #[cfg(test)]
@@ -111,6 +112,8 @@ mod tests;
 #[cfg(test)]
 mod tsconfig_tests;
 #[cfg(test)]
+mod vite_alias_tests;
+#[cfg(test)]
 mod vite_tests;
 #[cfg(test)]
 mod workspace_tests;
@@ -137,6 +140,7 @@ pub use swift::SwiftModules;
 pub use swift_package::{SwiftTarget, swift_targets};
 pub use tsconfig::{alias_configs, project_configs};
 pub use vite::vite_roots;
+pub use vite_alias::{ViteAlias, vite_aliases};
 pub use workspace::{Workspaces, discover as workspaces};
 
 /// The imports found in one file. Every list is sorted and free of duplicates.
@@ -186,6 +190,10 @@ pub struct Environment<'a> {
     /// Repository-relative directory holding a `vite.config.*` file to the Vite root that config
     /// gives, see [`vite_roots`]. Only the resolution of root-absolute paths in HTML reads it.
     pub vite_roots: &'a BTreeMap<PathBuf, PathBuf>,
+    /// Repository-relative directory holding a `vite.config.*` file to the `resolve.alias` entries
+    /// that config gives, in the order written, see [`vite_aliases`]. A file is governed by every
+    /// config at or above it. Only TypeScript and JavaScript resolution reads it.
+    pub vite_aliases: &'a BTreeMap<PathBuf, Vec<ViteAlias>>,
     /// Files that are test code because a `#[cfg(test)] mod x;` declaration pulls them in, see
     /// the module `rust_test_modules`. Every import written in one is `test_only`.
     pub test_files: &'a BTreeSet<PathBuf>,
@@ -235,6 +243,14 @@ pub enum Resolution {
     Ignored,
     /// A reference that could not be followed, and is reported as such.
     Skipped(SkipReason),
+    /// A specifier that a Vite `resolve.alias` entry matches whose target has no file in the
+    /// repository: skipped as [`SkipReason::AliasTargetMissing`], naming the alias and the target.
+    AliasTargetMissing {
+        /// The alias key as written in the config.
+        alias: String,
+        /// The repository-relative path the alias points at.
+        target: PathBuf,
+    },
     /// A reference that could not be followed, and is reported as such with an explanation: a
     /// Python module that no import root reaches ([`SkipReason::UnreachableModule`]) or a
     /// root-absolute path of an HTML file that finds no file ([`SkipReason::UnresolvedRootPath`]).
@@ -310,6 +326,7 @@ pub fn collect_with_assets(
     let python = PythonLayout::new(&known, python_roots(root, files));
     let swift = SwiftModules::new(swift_targets(root, files));
     let vite = vite_roots(root, files);
+    let aliases_of_vite = vite_aliases(root, files);
     let test_files = rust_test_modules::test_files(root, files, &known);
     let env = Environment {
         known: &known,
@@ -322,6 +339,7 @@ pub fn collect_with_assets(
         python: &python,
         swift: &swift,
         vite_roots: &vite,
+        vite_aliases: &aliases_of_vite,
         test_files: &test_files,
     };
     let entries: Vec<(&PathBuf, &Language)> = files.iter().collect();

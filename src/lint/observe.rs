@@ -73,6 +73,7 @@ pub(super) fn undeclared_owners(
                 at: import.at.clone(),
                 specifier: asset.to_string(),
                 reason: SkipReason::UndeclaredOwner,
+                target: None,
                 message: Some(format!(
                     "{kind} `{asset}` is owned by `{owner}`, which the contract does not declare"
                 )),

@@ -152,6 +152,21 @@ impl BlindSummary {
     }
 }
 
+/// The message of a skipped reference, with the node that owns the path it looked for named at the
+/// end when that is known: an alias target inside a directory a tag covers.
+fn named_owner(reference: &Skipped, owner: &impl Fn(&Path) -> Option<NodeId>) -> Option<String> {
+    let message = reference.message.as_ref()?;
+    let node = reference
+        .target
+        .as_deref()
+        .filter(|_| reference.reason == SkipReason::AliasTargetMissing)
+        .and_then(owner);
+    Some(node.map_or_else(
+        || message.clone(),
+        |node| format!("{message}; the target lies in the directory of node `{node}`"),
+    ))
+}
+
 impl BlindSpots {
     /// Collects the blind spots of a scan.
     ///
@@ -194,7 +209,7 @@ impl BlindSpots {
                     at: reference.at.clone(),
                     specifier: reference.specifier.clone(),
                     node: owner(&reference.at.file),
-                    message: reference.message.clone(),
+                    message: named_owner(reference, &owner),
                 });
         }
         for reference in unresolved {
@@ -364,12 +379,14 @@ mod tests {
                 specifier: "left-pad".to_owned(),
                 reason: SkipReason::UndeclaredPackage,
                 message: None,
+                target: None,
             },
             Skipped {
                 at: at("c/n.py", 1),
                 specifier: "tool".to_owned(),
                 reason: SkipReason::UnreachableModule,
                 message: Some("matches x/tool.py".to_owned()),
+                target: None,
             },
         ];
         let unresolved = [UnresolvedImport {

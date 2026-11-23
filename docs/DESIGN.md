@@ -274,15 +274,16 @@ A specifier is resolved in this order, the first step that applies deciding.
    probed, see "Probing". A relative specifier that probing does not satisfy is an
    `unresolved-import`, whatever its extension.
 3. **Aliases.** The `paths` and `baseUrl` of the governing config (see "Governing config") yield
-   candidate paths that are probed like a relative path.
+   candidate paths that are probed like a relative path. Then the `resolve.alias` entries of the Vite
+   config that governs the file (see "Vite aliases") are tried.
 4. **Workspace packages**, see below.
 5. **Package `imports`**, for a specifier that starts with `#`, see below.
 6. **Package check.** A Node builtin or a declared dependency is ignored, anything else is skipped as
    `undeclared-package`.
 
 The first of steps 3 to 5 that finds a file wins. A `paths` pattern that matches the specifier and
-finds no file is an alias: it ends the resolution silently unless a workspace package or `imports` key
-resolves the specifier.
+finds no file is an alias: it ends the resolution silently unless a Vite alias, a workspace package
+or an `imports` key resolves the specifier.
 
 #### Probing
 
@@ -343,6 +344,46 @@ or `?` names a directory and everything below it, so `src` includes `src/a/b.ts`
 names files, so `src/*` includes `src/b.ts` and not `src/a/b.ts`. A leading `./` is ignored and a
 pattern that leaves its directory matches nothing. `exclude` does not apply to `files`. `compilerOptions` such as `rootDir` and the file
 extensions TypeScript would compile do not decide inclusion.
+
+#### Vite aliases
+
+A Vite config (`vite.config.js`, `.mjs`, `.ts`, `.cjs`, `.mts` or `.cts`, the first in that order when a
+directory holds several, and only a config that is a known file) governs the files at or below its
+directory. Its `resolve.alias` is read like the `root` option (see "Vite root"): the config is never run,
+and the object is found by the same rules, only a `resolve` key directly in it counts and an
+`alias` key directly in that. The alias is read when it is
+
+- an object, `{ 'mrc-wasm': <path>, other: <path> }`, each key a plain string literal or a plain
+  identifier, in the order written;
+- an array of objects, `[{ find: 'x', replacement: <path> }]`, in the order written, `find` a plain
+  string literal and `replacement` a path.
+
+An entry whose key or `find` is anything else (a regular expression, a computed key, a spread) or
+whose path is not recognised is ignored. A `<path>` is read with the forms the Vite root reader
+understands: a plain string literal, relative to the config directory (`'./src'`), `__dirname` and
+the other forms of the config directory, `path.resolve(__dirname, 'a', 'b')` and `path.join(..)`,
+`fileURLToPath(new URL('./a', import.meta.url))`, also written `new URL(..).pathname`. A path that is
+absolute or leaves the repository is not recognised.
+
+A specifier matches an entry when it is the key or starts with the key and `/`. The first entry that
+matches, nearest config first (a config in a directory nearer to the file than another one is tried
+before it), decides; the rest of the specifier after the key is appended to the path. That target is
+probed like a relative path (see "Probing"), so an alias to a directory finds its `index` file, and
+the import resolves like any other: a source file, an excluded file or an asset. When it finds no
+file:
+
+- the alias target exists in the repository when some known file (source, asset or excluded) is at
+  or below it. Then the specifier is an alias with no file behind it and ends the resolution
+  silently, as a `paths` pattern does;
+- otherwise the target does not exist (typically a build output that git ignores: `engine/wasm/pkg`
+  for `'mrc-wasm'`) and the import is skipped as `alias-target-missing`, never as `undeclared-package`
+  and never silently: its message names the alias and the target, ``alias `mrc-wasm` points to
+  `engine/wasm/pkg`, which has no file in the repository``. In a report that knows the owners
+  (`lint`, `brief`, `neighbors`) the message ends with ``; the target lies in the directory of node
+  `engine-wasm` `` when a tag covers the directory the target is in (the nearest `.arch` above it).
+
+The Vite aliases apply after `paths`, so a `tsconfig` alias that finds a file wins, and before the
+workspace packages, the package `imports` and the package check.
 
 #### Workspace packages
 
@@ -859,6 +900,7 @@ a location, the specifier as written and a typed reason (kebab-case in serializa
 | `dynamic-specifier` | a shell `source` or `.` whose path has no value, see "Shell resolution"; `import(expr)` or `require(expr)` whose argument is not a string literal or a template without substitutions; Python `importlib.import_module(..)` and `__import__(..)` whose first argument is not a plain string literal, or whose relative literal has no usable package, and a Python file loader whose path is not a literal naming a known file (see "Python resolution") |
 | `embed-non-source` | a Rust embed whose target is not a known source file |
 | `unreachable-module` | a Python absolute import that no import root resolves, whose top-level name matches a first-party module or package elsewhere in the repository (see "Python resolution") |
+| `alias-target-missing` | a TypeScript or JavaScript specifier that a Vite `resolve.alias` entry matches whose target path has no file in the repository (see "Vite aliases") |
 | `undeclared-owner` | an import of an asset or an excluded file whose owner is not a declared node, recorded by `lint` rather than by import extraction (see "Asset files" and "Excluded files") |
 | `unresolved-root-path` | a root-absolute `src`, `href` or import specifier of an HTML file that finds no file below its Vite root (see "Svelte and HTML") |
 
@@ -876,7 +918,8 @@ For a skipped Python call the specifier is the text of its first argument.
 
 A skipped reference may carry a `message`, a sentence of explanation. `unreachable-module` has one:
 it names the repository path the top-level name matches. So has `unresolved-root-path`: it names
-the Vite root that was searched. And `undeclared-owner`: it names the asset or excluded file and its owner. `message` is absent from the
+the Vite root that was searched. So has `alias-target-missing`: it names the alias and its target, and
+the node whose directory holds the target when the report knows the owners. And `undeclared-owner`: it names the asset or excluded file and its owner. `message` is absent from the
 serialized form when there is none.
 
 ## Symbols and public surfaces

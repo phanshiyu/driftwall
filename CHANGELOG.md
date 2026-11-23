@@ -77,3 +77,15 @@
 - The not-read census also counts `cmd` and `bat` files (`ps1` already was). The `init` and `lint`
   notes agree on a fresh baseline: the only skipped references `lint` alone could add,
   `undeclared-owner`, no longer arise from `init`'s own tags.
+- Excluded files (vendored, minified, generated) are import targets: an import of one resolves to
+  it, is a runtime import with symbols and an edge to the node that owns it (`Ownership::excluded_owners`),
+  and is no longer a false `unresolved-import`. They are still never parsed or unmapped. `init`
+  declares the same edges.
+- Vite `resolve.alias` (object and array forms, literal paths) is applied after `tsconfig` `paths`.
+  An alias whose target has no file in the repository (a build output) is skipped as the new
+  `alias-target-missing`, naming the alias, the target and the node whose directory holds it, instead
+  of `undeclared-package`.
+- Rust: a file pulled in by `#[cfg(test)] mod x;` (and the modules it declares) and any `tests.rs`
+  are test code. A destructured `require` or `await import` records the names it takes. JSDoc
+  `import('x').T` types in `/**` comments are type-only imports. `unreachable-module` only names
+  Python modules and packages.

@@ -439,9 +439,12 @@ pub enum SkipReason {
     /// A root-absolute `src`, `href` or import specifier of an HTML file that finds no file below
     /// the Vite root of the page.
     UnresolvedRootPath,
-    /// An import of an asset whose owner is not a node the contract declares, so it can be no
-    /// edge. Recorded by the linter, not by import extraction.
+    /// An import of an asset or excluded file whose owner is not a node the contract declares, so
+    /// it can be no edge. Recorded by the linter, not by import extraction.
     UndeclaredOwner,
+    /// A specifier that a Vite `resolve.alias` entry matches whose target path has no file in the
+    /// repository, typically a build output.
+    AliasTargetMissing,
 }
 
 /// A reference driftwall saw and could not follow, kept so it is never silently dropped.
@@ -455,10 +458,16 @@ pub struct Skipped {
     pub reason: SkipReason,
     /// A sentence of explanation, set for [`SkipReason::UnreachableModule`] (the repository path
     /// the top-level name matches) and [`SkipReason::UnresolvedRootPath`] (the Vite root that was
-    /// searched) and [`SkipReason::UndeclaredOwner`] (the asset and its owner). Not serialized when
+    /// searched), [`SkipReason::AliasTargetMissing`] (the alias and its target) and
+    /// [`SkipReason::UndeclaredOwner`] (the asset or excluded file and its owner). Not serialized when
     /// absent.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
+    /// The repository path that was looked for and not found, set for
+    /// [`SkipReason::AliasTargetMissing`] (the alias target), so that a report that knows the
+    /// owners can name the node whose directory holds it. Not serialized.
+    #[serde(skip)]
+    pub target: Option<PathBuf>,
 }
 
 /// Kinds of finding the linter can report.
@@ -894,6 +903,7 @@ mod tests {
                 specifier: "x".to_owned(),
                 reason,
                 message: None,
+                target: None,
             })
             .unwrap()
         };
@@ -920,6 +930,7 @@ mod tests {
             specifier: "x".to_owned(),
             reason: SkipReason::UnreachableModule,
             message: Some("matches s/x.py".to_owned()),
+            target: None,
         })
         .unwrap();
         assert!(json.ends_with(r#""reason":"unreachable-module","message":"matches s/x.py"}"#));

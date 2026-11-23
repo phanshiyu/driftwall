@@ -316,7 +316,8 @@ fn a_script_reachable_only_through_a_makefile_pythonpath_is_unreachable() {
                 "`tuner` matches `scripts/tuner.py`, which no import root of `vendorkit/bt/parity.py` reaches"
                     .to_owned(),
             ),
-        });
+        target: None,
+});
         expected
     });
 }

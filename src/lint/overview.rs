@@ -511,6 +511,7 @@ mod tests {
             specifier: "left-pad".to_owned(),
             reason: SkipReason::UndeclaredPackage,
             message: None,
+            target: None,
         }];
         BlindSpots::build(
             &ownership,

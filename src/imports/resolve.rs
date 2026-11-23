@@ -154,6 +154,9 @@ fn resolve_bare(specifier: &str, importer: &Path, env: &Environment<'_>) -> Reso
     if let Some(found) = config.and_then(|config| first_found(&config.candidates(specifier), env)) {
         return found.resolution();
     }
+    if let Some(resolution) = vite_alias(specifier, importer, env) {
+        return resolution;
+    }
     let linked = if specifier.starts_with('#') {
         env.workspaces.imports_candidates(specifier, importer)
     } else {
@@ -177,6 +180,43 @@ fn resolve_bare(specifier: &str, importer: &Path, env: &Environment<'_>) -> Reso
     } else {
         Resolution::Skipped(SkipReason::UndeclaredPackage)
     }
+}
+
+/// What the Vite `resolve.alias` entries say about `specifier` written in `importer`, or `None`
+/// when no entry matches. The configs at or above the importer are tried nearest first and the
+/// first entry that matches decides: its target, with the rest of the specifier, resolves like a
+/// relative path; when it finds no file the target either exists in the repository (an alias with
+/// no file behind it, ignored) or does not (skipped, see [`Resolution::AliasTargetMissing`]).
+fn vite_alias(specifier: &str, importer: &Path, env: &Environment<'_>) -> Option<Resolution> {
+    let (alias, rest) = importer.parent()?.ancestors().find_map(|dir| {
+        env.vite_aliases
+            .get(dir)?
+            .iter()
+            .find_map(|alias| Some((alias, alias.rest(specifier)?)))
+    })?;
+    let relative = rest.trim_start_matches('/');
+    let Some(base) = join_normalised(Some(&alias.target), relative) else {
+        return Some(Resolution::Ignored);
+    };
+    let found = locate(&base, rest.ends_with('/') && !relative.is_empty(), env);
+    Some(match found {
+        Some(found) => found.resolution(),
+        None if has_file_at_or_below(&alias.target, env) => Resolution::Ignored,
+        None => Resolution::AliasTargetMissing {
+            alias: alias.key.clone(),
+            target: alias.target.clone(),
+        },
+    })
+}
+
+/// Whether a known file, source, excluded or asset, is `path` or lies below it.
+fn has_file_at_or_below(path: &Path, env: &Environment<'_>) -> bool {
+    [env.known, env.assets].iter().any(|files| {
+        files
+            .range(path.to_path_buf()..)
+            .next()
+            .is_some_and(|first| first.starts_with(path))
+    })
 }
 
 /// The alias configuration that governs `importer`: walking up from its directory, the first
