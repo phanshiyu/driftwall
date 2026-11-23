@@ -180,3 +180,62 @@ fn a_declared_cycle_fails_lint_with_exit_two_and_the_cycle() {
         "{text}"
     );
 }
+
+#[test]
+fn an_over_budget_node_is_a_warning_at_the_budget_line_naming_the_numbers() {
+    // why: `app` owns 1 file of 2 lines and depends on 1 node, so lines 1 and fan-out 0 are over.
+    let dir = layered("  %% budget app: fan-out 0, files 1, lines 1\n", false);
+    let output = driftwall(&dir, &["lint", "--format", "json"]);
+    assert_eq!(code(&output), 0);
+    let value = json(&output);
+    assert_eq!(kinds(&value), ["over-budget", "over-budget"]);
+    let first = &value["violations"][0];
+    assert_eq!(first["severity"], "warning");
+    assert_eq!(first["at"]["file"], "architecture.mmd");
+    assert_eq!(first["at"]["line"], 9);
+    let messages: Vec<&str> = value["violations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|v| v["message"].as_str())
+        .collect();
+    assert_eq!(
+        messages,
+        [
+            "node `app` is over its budget: fan-out 1 exceeds the limit 0",
+            "node `app` is over its budget: lines 2 exceeds the limit 1",
+        ]
+    );
+    assert_eq!(code(&driftwall(&dir, &["lint", "--strict"])), 1);
+}
+
+#[test]
+fn a_node_within_its_budget_is_clean() {
+    let dir = layered("  %% budget app: fan-out 1, files 1, lines 2\n", false);
+    assert_eq!(code(&driftwall(&dir, &["lint"])), 0);
+}
+
+#[test]
+fn brief_and_neighbors_show_the_budget_with_its_current_values() {
+    let dir = layered("  %% budget app: fan-out 0, files 1, lines 9\n", false);
+    let brief = stdout(&driftwall(&dir, &["brief"]));
+    assert!(
+        brief.contains("app: app (1 file) budget: fan-out 1/0 over, files 1/1, lines 2/9\n"),
+        "{brief}"
+    );
+    let neighbors = stdout(&driftwall(&dir, &["neighbors", "app"]));
+    assert!(
+        neighbors.contains("budget: fan-out 1/0 over, files 1/1, lines 2/9\n"),
+        "{neighbors}"
+    );
+    let value = json(&driftwall(&dir, &["brief", "--format", "json"]));
+    assert_eq!(
+        value["nodes"][0]["budget"],
+        serde_json::json!({
+            "fan_out": {"limit": 0, "actual": 1},
+            "files": {"limit": 1, "actual": 1},
+            "lines": {"limit": 9, "actual": 2},
+        })
+    );
+    assert!(value["nodes"][1].get("budget").is_none(), "{value}");
+}

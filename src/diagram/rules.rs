@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use super::cycles::find_cycle;
 use super::error::DiagramError;
-use crate::model::{Edge, EdgeKind, LayerOrder, NodeId, NodeInfo, Rules};
+use crate::model::{Budget, Edge, EdgeKind, LayerOrder, NodeId, NodeInfo, Rules};
 
 /// A rule directive found on a comment line, with the text after its keyword.
 pub(super) enum Directive<'a> {
@@ -12,6 +12,8 @@ pub(super) enum Directive<'a> {
     Order(&'a str),
     /// `%% no-cycles` or `%% no-cycles: boundaries`: the text after the keyword.
     NoCycles(&'a str),
+    /// `%% budget <node>: fan-out <n>, ...`: the text after the keyword.
+    Budget(&'a str),
 }
 
 /// The rule directive a comment line is, or `None` for anything else.
@@ -22,6 +24,11 @@ pub(super) fn directive(text: &str) -> Option<Directive<'_>> {
     let body = text.strip_prefix("%%")?.trim_start();
     if let Some(rest) = body.strip_prefix("order:") {
         return Some(Directive::Order(rest.trim()));
+    }
+    if let Some(rest) = body.strip_prefix("budget")
+        && (rest.is_empty() || rest.starts_with(char::is_whitespace))
+    {
+        return Some(Directive::Budget(rest.trim()));
     }
     let rest = body.strip_prefix("no-cycles")?;
     (rest.is_empty() || rest.starts_with(|c: char| c == ':' || c.is_whitespace()))
@@ -40,6 +47,17 @@ pub(super) fn render(rules: &Rules) -> Vec<String> {
     if rules.no_cycles_boundaries.is_some() {
         lines.push("  %% no-cycles: boundaries".to_owned());
     }
+    for (node, budget) in &rules.budgets {
+        let limits: Vec<String> = [
+            ("fan-out", budget.fan_out),
+            ("files", budget.files),
+            ("lines", budget.lines),
+        ]
+        .into_iter()
+        .filter_map(|(name, limit)| Some(format!("{name} {}", limit?)))
+        .collect();
+        lines.push(format!("  %% budget {node}: {}", limits.join(", ")));
+    }
     lines
 }
 
@@ -49,6 +67,7 @@ pub(super) struct RuleParser {
     order: Option<LayerOrder>,
     no_cycles: Option<u32>,
     no_cycles_boundaries: Option<u32>,
+    budgets: BTreeMap<NodeId, Budget>,
 }
 
 impl RuleParser {
@@ -57,7 +76,61 @@ impl RuleParser {
         match *found {
             Directive::Order(rest) => self.order(rest, line),
             Directive::NoCycles(rest) => self.no_cycles(rest, line),
+            Directive::Budget(rest) => self.budget(rest, line),
         }
+    }
+
+    fn budget(&mut self, rest: &str, line: u32) -> Result<(), DiagramError> {
+        let malformed = |reason: String| DiagramError::MalformedRule {
+            line,
+            rule: "budget".to_owned(),
+            reason,
+        };
+        let (raw_node, list) = rest.split_once(':').ok_or_else(|| {
+            malformed("expected `<node>: fan-out <n>, files <n>, lines <n>`".to_owned())
+        })?;
+        let node = NodeId::new(raw_node.trim())
+            .map_err(|source| DiagramError::InvalidId { line, source })?;
+        let mut budget = Budget {
+            line,
+            ..Budget::default()
+        };
+        for item in list.split(',') {
+            let mut words = item.split_whitespace();
+            let (Some(measure), Some(raw), None) = (words.next(), words.next(), words.next())
+            else {
+                return Err(malformed(format!(
+                    "`{}` is not `<measure> <n>` with the measure `fan-out`, `files` or `lines`",
+                    item.trim()
+                )));
+            };
+            let slot = match measure {
+                "fan-out" => &mut budget.fan_out,
+                "files" => &mut budget.files,
+                "lines" => &mut budget.lines,
+                other => {
+                    return Err(malformed(format!(
+                        "`{other}` is not a measure: use `fan-out`, `files` or `lines`"
+                    )));
+                }
+            };
+            if slot.is_some() {
+                return Err(malformed(format!("`{measure}` is given twice")));
+            }
+            let limit = raw
+                .parse::<usize>()
+                .map_err(|_| malformed(format!("`{raw}` is not a whole number")))?;
+            *slot = Some(limit);
+        }
+        if let Some(first) = self.budgets.get(&node) {
+            return Err(DiagramError::DuplicateRule {
+                line,
+                rule: format!("budget {node}"),
+                first_line: first.line,
+            });
+        }
+        self.budgets.insert(node, budget);
+        Ok(())
     }
 
     fn no_cycles(&mut self, rest: &str, line: u32) -> Result<(), DiagramError> {
@@ -128,6 +201,15 @@ impl RuleParser {
         if let Some(order) = &self.order {
             check_order(order, nodes, boundaries, edges, edge_lines)?;
         }
+        for (node, budget) in &self.budgets {
+            if !nodes.contains_key(node) {
+                return Err(DiagramError::MalformedRule {
+                    line: budget.line,
+                    rule: "budget".to_owned(),
+                    reason: format!("`{node}` is not a declared node"),
+                });
+            }
+        }
         if let Some(line) = self.no_cycles {
             check_node_cycles(line, nodes, edges, edge_lines)?;
         }
@@ -138,6 +220,7 @@ impl RuleParser {
             order: self.order,
             no_cycles: self.no_cycles,
             no_cycles_boundaries: self.no_cycles_boundaries,
+            budgets: self.budgets,
         })
     }
 }

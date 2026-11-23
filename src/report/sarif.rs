@@ -175,6 +175,7 @@ mod tests {
             ids,
             [
                 "ignored-tag-files",
+                "over-budget",
                 "planned-realized",
                 "private-symbol",
                 "stale-edge",
@@ -187,7 +188,7 @@ mod tests {
                 "upward-edge",
             ]
         );
-        assert_eq!(value["runs"][0]["results"].as_array().unwrap().len(), 11);
+        assert_eq!(value["runs"][0]["results"].as_array().unwrap().len(), 12);
     }
 
     #[test]

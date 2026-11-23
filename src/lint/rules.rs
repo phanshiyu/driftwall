@@ -18,7 +18,8 @@ pub(super) const fn severity(kind: ViolationKind) -> Severity {
         | ViolationKind::TestOnlyEdge
         | ViolationKind::UnresolvedImport
         | ViolationKind::StaleMap
-        | ViolationKind::IgnoredTagFiles => Severity::Warning,
+        | ViolationKind::IgnoredTagFiles
+        | ViolationKind::OverBudget => Severity::Warning,
     }
 }
 
@@ -47,6 +48,9 @@ pub(super) const fn hint(kind: ViolationKind) -> &'static str {
         }
         ViolationKind::IgnoredTagFiles => {
             "delete the `.arch` files: the contract's `%% map` lines decide ownership"
+        }
+        ViolationKind::OverBudget => {
+            "reduce the node, or ask the user to raise its `%% budget` line in the contract"
         }
         ViolationKind::UpwardEdge => {
             "remove the import or move the code to a node in the same or a lower layer; the `%% order` line is the user's to change"

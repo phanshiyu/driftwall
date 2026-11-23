@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use crate::model::{
     BlindSpots, Contract, DirTag, Edge, EdgeKind, EdgeSummary, ImportKind, LintReport, MapTarget,
-    NodeId, NodeSummary, NodeView, Overview, Ownership, Scope, Site, Symbol, Tag,
+    NodeBudget, NodeId, NodeSummary, NodeView, Overview, Ownership, Scope, Site, Symbol, Tag,
 };
 
 /// Combines the contract, ownership, observed edges, the symbols they use and the lint report
@@ -84,6 +84,7 @@ pub fn overview(
                 exports: contract.surfaces.get(id).cloned(),
                 blind_spots: blind.tally(Some(id)),
                 layer: contract.rules.layer(info.boundary.as_deref()),
+                budget: None,
             }
         })
         .collect();
@@ -119,6 +120,13 @@ pub fn overview(
         unmapped_items: blind.of_unowned(),
         skipped_references: blind.skipped.clone(),
         rules: contract.rules.summary(),
+    }
+}
+
+/// Gives every node of `overview` that has a `%% budget` its limits and current values.
+pub fn attach_budgets(overview: &mut Overview, budgets: &BTreeMap<NodeId, NodeBudget>) {
+    for node in &mut overview.nodes {
+        node.budget = budgets.get(&node.id).copied();
     }
 }
 

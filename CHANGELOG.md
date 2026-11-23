@@ -5,6 +5,11 @@
 - Release: the npm package is published through npm trusted publishing (an OIDC id-token from
   `.github/workflows/publish-npm.yml`), so no `NPM_TOKEN` secret is needed. `tests/release.rs` pins
   it, and the hand fix for dist 0.34's `uses: $/` path in the generated `release.yml`.
+- Budgets: `%% budget <node>: fan-out <n>, files <n>, lines <n>` (any subset) limits a node, and
+  exceeding a limit is the new warning `over-budget`, at the budget line, naming the measure, the
+  limit and the actual value. Fan-out counts the distinct nodes the node depends on in production
+  code, files and lines are the source files the node owns. `brief` and `neighbors` show
+  `budget: fan-out 3/5, files 21/20 over` per node (JSON `budget`).
 - No cycles: `%% no-cycles` makes the declared edges, test edges excluded, a DAG over nodes, and
   `%% no-cycles: boundaries` does the same for the boundary graph. A declared cycle is a contract
   error at the directive's line that lists the cycle with its edge lines. `brief` shows both lines

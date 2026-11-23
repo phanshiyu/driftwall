@@ -8,7 +8,7 @@ use serde::Serialize;
 
 use crate::model::{
     BlindRef, BlindSpots, BlindSummary, BlindTally, EdgeKind, EdgeSummary, ImportKind, Layer,
-    MAX_SITES, NodeSummary, NodeView, Overview, RulesSummary, Site, SkipReason, Symbol,
+    MAX_SITES, NodeBudget, NodeSummary, NodeView, Overview, RulesSummary, Site, SkipReason, Symbol,
 };
 
 use super::ReportError;
@@ -64,6 +64,15 @@ pub fn render_overview_text(overview: &Overview) -> String {
             .layer
             .as_ref()
             .map_or_else(String::new, |layer| format!(" layer: {}", layer_str(layer)));
+        let layer = format!(
+            "{layer}{}",
+            node.budget
+                .as_ref()
+                .map_or_else(String::new, |budget| format!(
+                    " budget: {}",
+                    budget_str(budget)
+                ))
+        );
         let _ = writeln!(
             out,
             "  {}: {} ({}){exports}{layer}{}",
@@ -136,6 +145,9 @@ pub fn render_node_view_text(view: &NodeView, options: NodeViewOptions) -> Strin
     let _ = writeln!(out, "dirs: {}", dirs_str(&node.dirs));
     if let Some(layer) = &node.layer {
         let _ = writeln!(out, "layer: {}", layer_str(layer));
+    }
+    if let Some(budget) = &node.budget {
+        let _ = writeln!(out, "budget: {}", budget_str(budget));
     }
     let _ = writeln!(out, "files: {}", node.files);
     if options.files {
@@ -273,6 +285,20 @@ fn to_json(document: &impl Serialize) -> Result<String, ReportError> {
 /// The word an edge shows for a use of the target module itself, see "Symbols" in the design.
 const MODULE_USE: &str = "module";
 
+/// `fan-out 3/5, files 21/20 over`: `actual/limit` per limited measure, `over` after one that
+/// exceeds its limit.
+fn budget_str(budget: &NodeBudget) -> String {
+    budget
+        .measures()
+        .iter()
+        .map(|(name, measure)| {
+            let over = if measure.over() { " over" } else { "" };
+            format!("{name} {}/{}{over}", measure.actual, measure.limit)
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 /// `engine (2 of 4)`: the boundary and its place in the order, counted from the top.
 fn layer_str(layer: &Layer) -> String {
     format!("{} ({} of {})", layer.boundary, layer.rank + 1, layer.of)
@@ -405,6 +431,7 @@ mod tests {
             exports: None,
             blind_spots: BlindTally::default(),
             layer: None,
+            budget: None,
         }
     }
 

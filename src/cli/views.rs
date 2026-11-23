@@ -67,7 +67,7 @@ fn scan(path: &std::path::Path, contract: Option<&PathBuf>) -> Result<(Overview,
     require_directory(path)?;
     let options: LintOptions = lint_options(contract);
     let observation = lint::observe(path, &options)?;
-    let overview = lint::overview(
+    let mut overview = lint::overview(
         &observation.contract,
         &observation.ownership,
         &observation.observed,
@@ -75,6 +75,7 @@ fn scan(path: &std::path::Path, contract: Option<&PathBuf>) -> Result<(Overview,
         &observation.report,
         &observation.blind_spots,
     );
+    lint::attach_budgets(&mut overview, &observation.budgets);
     Ok((overview, observation))
 }
 
@@ -111,6 +112,7 @@ mod tests {
                     exports: None,
                     blind_spots: BlindTally::default(),
                     layer: None,
+                    budget: None,
                 })
                 .collect(),
             ..Overview::default()

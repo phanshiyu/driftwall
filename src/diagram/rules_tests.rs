@@ -299,3 +299,90 @@ fn the_no_cycles_lines_survive_a_render_round_trip() {
     let again = parse(&rendered).unwrap();
     assert!(again.rules.no_cycles.is_some() && again.rules.no_cycles_boundaries.is_some());
 }
+
+#[test]
+fn a_budget_line_names_a_node_and_any_subset_of_the_three_measures() {
+    let src = format!(
+        "{GRAPH}  %% budget a: fan-out 3, lines 2000\n  %% budget c: files 0\n  %%   budget d: lines 5, files 6, fan-out 7\n"
+    );
+    let budgets = parse(&src).unwrap().rules.budgets;
+    let a = &budgets[&NodeId::new("a").unwrap()];
+    assert_eq!(
+        (a.line, a.fan_out, a.files, a.lines),
+        (10, Some(3), None, Some(2000))
+    );
+    let c = &budgets[&NodeId::new("c").unwrap()];
+    assert_eq!((c.fan_out, c.files, c.lines), (None, Some(0), None));
+    let d = &budgets[&NodeId::new("d").unwrap()];
+    assert_eq!((d.fan_out, d.files, d.lines), (Some(7), Some(6), Some(5)));
+}
+
+#[test]
+fn a_malformed_budget_is_a_contract_error_at_its_line() {
+    for bad in [
+        "%% budget a\n",
+        "%% budget a:\n",
+        "%% budget a: fan-out\n",
+        "%% budget a: fan-out x\n",
+        "%% budget a: fan-out -1\n",
+        "%% budget a: fan-out 1.5\n",
+        "%% budget a: speed 3\n",
+        "%% budget a: files 3 4\n",
+        "%% budget a: files 3,\n",
+        "%% budget a: files 3, files 4\n",
+        "%% budget ghost: files 3\n",
+        "%% budget 9a: files 3\n",
+    ] {
+        let err = error(&format!("{GRAPH}{bad}"));
+        assert!(
+            matches!(
+                err,
+                DiagramError::MalformedRule { .. } | DiagramError::InvalidId { .. }
+            ),
+            "{bad}: {err:?}"
+        );
+        assert_eq!(err.line(), Some(10), "{bad}");
+    }
+}
+
+#[test]
+fn a_second_budget_for_one_node_is_an_error_but_two_nodes_are_fine() {
+    let err = error(&format!(
+        "{GRAPH}%% budget a: files 3\n%% budget a: lines 9\n"
+    ));
+    assert!(
+        matches!(&err, DiagramError::DuplicateRule { line: 11, first_line: 10, rule } if rule == "budget a"),
+        "{err:?}"
+    );
+    assert!(
+        parse(&format!(
+            "{GRAPH}%% budget a: files 3\n%% budget b: files 3\n"
+        ))
+        .is_ok()
+    );
+}
+
+#[test]
+fn a_comment_that_only_starts_with_budget_stays_plain() {
+    assert!(
+        parse(&format!(
+            "{GRAPH}%% budgets are per node\n%% budgeting\n%% budget: files 3\n"
+        ))
+        .unwrap()
+        .rules
+        .is_empty()
+    );
+}
+
+#[test]
+fn budgets_survive_a_render_round_trip() {
+    let src = format!("{GRAPH}  %% budget b: files 4\n  %% budget a: fan-out 3, lines 2000\n");
+    let rendered = render(&parse(&src).unwrap());
+    assert!(
+        rendered.contains("  %% budget a: fan-out 3, lines 2000\n  %% budget b: files 4\n"),
+        "{rendered}"
+    );
+    let again = parse(&rendered).unwrap().rules.budgets;
+    assert_eq!(again.len(), 2);
+    assert_eq!(again[&NodeId::new("a").unwrap()].fan_out, Some(3));
+}

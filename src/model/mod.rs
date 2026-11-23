@@ -15,7 +15,7 @@ mod map;
 mod rules;
 
 pub use map::{GlobError, MapGlob, MapRule, MapSite, MapTarget, Specificity};
-pub use rules::{Layer, LayerOrder, Rules, RulesSummary};
+pub use rules::{Budget, Layer, LayerOrder, Measure, NodeBudget, Rules, RulesSummary};
 
 pub use blind::{
     BlindFile, BlindRef, BlindSpots, BlindSummary, BlindTally, UnreadGroup, UnreadTotal,
@@ -643,6 +643,8 @@ pub enum ViolationKind {
     IgnoredTagFiles,
     /// Code in a lower boundary imports a node in a higher one, against `%% order`.
     UpwardEdge,
+    /// A node exceeds a limit of its `%% budget`.
+    OverBudget,
 }
 
 /// How serious a violation is.
@@ -781,6 +783,10 @@ pub struct NodeSummary {
     /// JSON when `None`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub layer: Option<Layer>,
+    /// The node's `%% budget` with its current values, or `None` without one. Omitted from JSON
+    /// when `None`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub budget: Option<NodeBudget>,
 }
 
 /// One edge as the overview presents it: declared, observed in code, or both.

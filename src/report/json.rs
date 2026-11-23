@@ -149,6 +149,7 @@ mod tests {
                 "stale-map",
                 "ignored-tag-files",
                 "upward-edge",
+                "over-budget",
             ]
         );
     }

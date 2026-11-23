@@ -192,6 +192,32 @@ already `undeclared-edge`, so a cycle in code can only come from a declared one.
 - A cycle inside a node (`marks` and `camera` modules of one node) is invisible by construction:
   a node is the unit, and imports within it are no edges.
 
+#### Budgets
+
+`%% budget <node>: fan-out <n>, files <n>, lines <n>` limits a node's size and reach. Any non-empty
+subset of the three measures, in any order, each at most once, each with a whole number from 0; one
+line per node, which must be declared. Anything else is a contract error.
+
+- `fan-out`: the number of distinct nodes the node depends on in production code: the observed
+  edges (see "Import kind") from the node to another node that have at least one site that is not
+  test-only. What code does counts, declared or not: an undeclared pair is also an
+  `undeclared-edge`. Type-only, embed and asset sites count, like any dependency. An edge realised
+  only by test code does not, nor does an import within the node.
+- `files`: the number of source files the node owns, the count `brief` prints as `N files`. Test
+  files the node owns count (a node that owns its tests budgets them too); assets and excluded
+  files are not source and do not.
+- `lines`: the sum of the line counts (newline bytes, plus one when the last line has none) of those
+  same source files, the count `brief` already prints for unread files.
+- Exceeding a limit is the warning `over-budget`, one per measure, at the budget line of the
+  contract, with a message naming the node, the measure, the limit and the actual value:
+  "node `lint` is over its budget: fan-out 7 exceeds the limit 5". Equal to the limit is within it.
+  `--strict` fails on it like on any warning. It is a warning because a budget is a guideline that
+  a contract may accept while a refactor is planned; the contract is where a limit is raised.
+- `brief` and `neighbors` show the budget of a node with its current values, `budget: fan-out 3/5,
+  files 21/20 over`, one `actual/limit` per measure, `over` after one that exceeds. In JSON the node
+  has `budget` with, per measure that has a limit, `{"limit": n, "actual": n}` (a node without a
+  budget line has no `budget` key).
+
 ## Ownership
 
 A `.arch` file contains `node: <id>` and, optionally, `scope: here` (comments start with `#`; each
@@ -1382,6 +1408,7 @@ module and no symbol and adds nothing to `uses:`.
 | `test-only-edge` | warning | solid edge whose every import site is test-only, declare it `-->|test|` |
 | `unresolved-import` | warning | relative import resolves to nothing, whatever its extension; Python absolute import into a first-party package that holds no such module; shell `source` of a path that finds no file |
 | `private-symbol` | error | an import uses a symbol outside the target node's declared surface |
+| `over-budget` | warning | a node exceeds a `%% budget` limit (fan-out, files or lines), see "Budgets" |
 | `upward-edge` | error | an import goes from a node in a lower `%% order` boundary to one in a higher boundary, see "Layer order" |
 | `stale-map` | warning | a `%% map` glob matches no file, see "Contract map" |
 | `ignored-tag-files` | warning | the contract has `%% map` lines and `.arch` files exist, which are not read |
@@ -1816,11 +1843,12 @@ and carry the owner of an excluded or ignored file that a tag covers.
 - A contract with rule directives (see "Contract rules") adds to `brief`: a `rules:` block after the
   edges, one line per directive (`  order: entry > engine > shared`, `  no-cycles`,
   `  no-cycles: boundaries`), and for a node in a listed
-  boundary ` layer: engine (2 of 3)` at the end of its line, before the blind spots. In JSON the
+  boundary ` layer: engine (2 of 3)` and for a node with a budget ` budget: fan-out 3/5, files 21/20
+  over` at the end of its line, before the blind spots. In JSON the
   document has `rules` (`order`, the boundaries top first; `no_cycles` and `no_cycles_boundaries`,
   `true` when the line is there) and the node has `layer` (`boundary`,
   `rank` from 0 at the top, `of`); both are absent when the contract has no such rule, so a contract
-  without rule directives reads as before. `neighbors` prints the same `layer:` line after `dirs:`.
+  without rule directives reads as before. `neighbors` prints the same `layer:` and `budget:` lines after `dirs:`.
 - `neighbors <NODE>` prints one node's incoming and outgoing edges with up to 3 `file:line`
   example sites each (`--all-sites` prints every site; JSON always has every site, with no cap
   anywhere). `--files` lists the node's source files under its `files:` line, two spaces indented
@@ -1896,4 +1924,4 @@ with `why:`. The golden rule is to leave an agent as little room to err as possi
     - layer order: a node may use only nodes in lower boundaries, so arrows need not be drawn
       (done: `%% order:`, see "Layer order");
     - no cycles between named nodes or boundaries (done: `%% no-cycles`, see "No cycles");
-    - budgets: maximum fan-out or size per node.
+    - budgets: maximum fan-out or size per node (done: `%% budget`, see "Budgets").

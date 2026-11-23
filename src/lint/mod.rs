@@ -5,6 +5,7 @@
 //! is its sibling that also hands back what it read, for commands that present the architecture
 //! ([`overview`], [`node_view`]) or compare contracts ([`contract_diff`]).
 
+mod budget;
 mod diff;
 mod layers;
 mod observe;
@@ -37,13 +38,14 @@ use thiserror::Error;
 use crate::diagram::{self, DiagramError};
 use crate::imports::{self, ImportsError};
 use crate::model::{
-    BlindSpots, Contract, DEFAULT_CONTRACT, Edge, Language, LintReport, Ownership, Site, Symbol,
+    BlindSpots, Contract, DEFAULT_CONTRACT, Edge, Language, LintReport, NodeBudget, NodeId,
+    Ownership, Site, Symbol,
 };
 use crate::ownership::{self, OwnershipError};
 
 pub use diff::{EMPTY_CONTRACT, contract_diff};
 pub use observe::{observed_edges, observed_symbols};
-pub use overview::{node_view, overview};
+pub use overview::{attach_budgets, node_view, overview};
 pub use reconcile::reconcile;
 
 /// Settings for [`run`].
@@ -111,6 +113,8 @@ pub struct Observation {
     pub ownership: Ownership,
     /// Edges code realises with their import sites, declared or not.
     pub observed: BTreeMap<Edge, Vec<Site>>,
+    /// Every node with a `%% budget` line, with its limits and what it has now.
+    pub budgets: BTreeMap<NodeId, NodeBudget>,
     /// The symbols the imports behind each observed edge use.
     pub symbols: BTreeMap<Edge, BTreeSet<Symbol>>,
     /// The lint result for the same scan.
@@ -198,8 +202,17 @@ pub fn observe(root: &Path, options: &LintOptions) -> Result<Observation, LintEr
     // why: that also owns those target paths; the ownership reported stays the scanned one.
     let edge_ownership =
         observe::alias_to_build_outputs(&contract, &ownership, &mut imports, owner_of);
-    let report = reconcile(&contract, &edge_ownership, &imports, &options.contract);
+    let mut report = reconcile(&contract, &edge_ownership, &imports, &options.contract);
     let observed = observed_edges(&contract, &edge_ownership, &imports);
+    // why: budgets read line counts, which the pure core cannot, so their findings join its report here.
+    let budgets = budget::measure(&contract, &ownership, &observed, |path| {
+        ownership::line_count(root, path)
+    });
+    report
+        .violations
+        .extend(budget::findings(&budgets, &options.contract));
+    report.violations.sort();
+    report.violations.dedup();
     let symbols = observed_symbols(&contract, &edge_ownership, &imports);
     let undeclared = observe::undeclared_owners(&contract, &ownership, &imports);
     let blind_spots = BlindSpots::build(
@@ -216,6 +229,7 @@ pub fn observe(root: &Path, options: &LintOptions) -> Result<Observation, LintEr
         contract,
         ownership,
         observed,
+        budgets,
         symbols,
         report,
         blind_spots,
