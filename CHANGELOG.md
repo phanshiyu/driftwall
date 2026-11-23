@@ -104,3 +104,7 @@
 - Python `unreachable-module` also matches a dotted module nested below directories that hold no Python
   (`from controllers.generic.carry_ctl import X` with `vendorkit/controllers/generic/carry_ctl.py`): it is
   no longer a silent drop.
+- `brief` lists the skipped references the `note:` line points to, grouped by reason with file:line, specifier
+  and message (text capped at 20 with `+N more, see --format json`; JSON `blind_spots.skipped_references` is
+  complete). A node that owns only assets or excluded files shows them (`app: src/app.css (0 source files,
+  1 asset)`); `NodeSummary` JSON gains `assets`, `neighbors` gains an `assets:` line and JSON `asset_files`.

@@ -117,6 +117,10 @@ blind spots:
   excluded: vendored 1, minified 1
   ignored by .driftwallignore: 1
   skipped references: undeclared-package 1, dynamic-specifier 1
+    undeclared-package:
+      a/main.ts:2 left-pad
+    dynamic-specifier:
+      a/main.ts:4 modName
   unresolved imports: 1
   unmapped: 2
     not read: loose/tool.pl (pl, 1 line)
@@ -159,6 +163,14 @@ fn brief_json_has_the_summary_the_unmapped_tally_and_a_tally_per_node() {
             "ignored": 1,
             "skipped": {"undeclared-package": 1, "dynamic-specifier": 1},
             "unresolved": 1,
+            "skipped_references": {
+                "undeclared-package": [
+                    {"file": "a/main.ts", "line": 2, "specifier": "left-pad", "node": "a"},
+                ],
+                "dynamic-specifier": [
+                    {"file": "a/main.ts", "line": 4, "specifier": "modName", "node": "a"},
+                ],
+            },
             "unmapped": {"unread": 1, "excluded": 1, "ignored": 0, "skipped": 0, "unresolved": 0},
             "unmapped_items": {
                 "unread": {
@@ -193,6 +205,7 @@ fn brief_json_of_a_clean_repo_has_empty_blind_spots() {
         value["blind_spots"],
         json!({
             "unread": {}, "excluded": {}, "ignored": 0, "skipped": {}, "unresolved": 0,
+            "skipped_references": {},
             "unmapped": {"unread": 0, "excluded": 0, "ignored": 0, "skipped": 0, "unresolved": 0},
             "unmapped_items": {
                 "unread": {}, "excluded": {}, "ignored": [], "skipped": {}, "unresolved": [],
@@ -290,6 +303,7 @@ node: a
 label: a
 dirs: a
 files: 1
+assets: 4
 outgoing:
   a --> b (1 import) uses: b
     a/main.ts:1
@@ -303,7 +317,12 @@ incoming:
     assert_eq!(code(&with_files), 0);
     assert_eq!(
         stdout(&with_files),
-        expected.replace("files: 1\n", "files: 1\n  a/main.ts\n")
+        expected
+            .replace("files: 1\n", "files: 1\n  a/main.ts\n")
+            .replace(
+                "assets: 4\n",
+                "assets: 4\n  a/App.go\n  a/View.go\n  a/run.pl\n  a/vendor/lib.js\n"
+            )
     );
 }
 

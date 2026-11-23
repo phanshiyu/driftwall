@@ -34,6 +34,14 @@ pub fn overview(
             modules.entry(owner).or_default().insert(path);
         }
     }
+    let mut assets: BTreeMap<&NodeId, BTreeSet<PathBuf>> = BTreeMap::new();
+    for (file, owner) in ownership
+        .asset_owners
+        .iter()
+        .chain(&ownership.excluded_owners)
+    {
+        assets.entry(owner).or_default().insert(file.clone());
+    }
     let nodes = contract
         .nodes
         .iter()
@@ -45,6 +53,16 @@ pub fn overview(
                 .map(|(at, _)| tagged_dir(&at.file))
                 .collect();
             dirs.extend(modules.remove(id).into_iter().flatten());
+            let owned = assets.get(id);
+            // why: a node that owns only assets (`app.css`) must still say where it lives.
+            if dirs.is_empty() {
+                dirs.extend(
+                    owned
+                        .into_iter()
+                        .flatten()
+                        .filter_map(|file| module_path(&ownership.tag_dirs, file)),
+                );
+            }
             NodeSummary {
                 id: id.clone(),
                 label: info.label.clone(),
@@ -54,6 +72,7 @@ pub fn overview(
                     .values()
                     .filter(|owner| *owner == id)
                     .count(),
+                assets: owned.map_or(0, BTreeSet::len),
                 exports: contract.surfaces.get(id).cloned(),
                 blind_spots: blind.tally(Some(id)),
             }
@@ -86,6 +105,7 @@ pub fn overview(
         blind_spots: blind.summary(),
         unmapped: blind.tally(None),
         unmapped_items: blind.of_unowned(),
+        skipped_references: blind.skipped.clone(),
     }
 }
 
@@ -116,6 +136,15 @@ pub fn node_view(
             .iter()
             .filter(|(_, owner)| owner.as_str() == id)
             .map(|(file, _)| file.clone())
+            .collect(),
+        asset_files: ownership
+            .asset_owners
+            .iter()
+            .chain(&ownership.excluded_owners)
+            .filter(|(_, owner)| owner.as_str() == id)
+            .map(|(file, _)| file.clone())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
             .collect(),
         blind_spots: blind.of_node(&node.id),
     })
@@ -269,6 +298,49 @@ mod tests {
         assert_eq!(path("main.rs"), Some(PathBuf::from("main.rs")));
         assert_eq!(path("src/ui/own/x.ts"), None);
         assert_eq!(path("elsewhere/x.ts"), None);
+    }
+
+    #[test]
+    fn a_node_that_owns_only_assets_shows_them() {
+        let c = contract(&["app", "ui"], &[]);
+        let mut own = ownership(&[("src/ui.ts", "ui")], &[("src/.arch", 1, "app")]);
+        own.asset_owners
+            .insert(PathBuf::from("src/app.css"), node("app"));
+        own.excluded_owners
+            .insert(PathBuf::from("src/app.min.js"), node("app"));
+        own.tag_dirs = module_tags(&[(
+            "src",
+            Tag::Modules(crate::model::Prefix::default()),
+            Scope::Subtree,
+        )]);
+        let view = overview(
+            &c,
+            &own,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &LintReport::default(),
+            &BlindSpots::default(),
+        );
+        let app = &view.nodes[0];
+        assert_eq!(app.files, 0);
+        assert_eq!(app.assets, 2);
+        assert_eq!(
+            app.dirs,
+            [
+                PathBuf::from("src/app.css"),
+                PathBuf::from("src/app.min.js")
+            ]
+        );
+        let ui = &view.nodes[1];
+        assert_eq!((ui.assets, ui.dirs.len()), (0, 1));
+        let listed = node_view(&view, &own, &BlindSpots::default(), "app").unwrap();
+        assert_eq!(
+            listed.asset_files,
+            [
+                PathBuf::from("src/app.css"),
+                PathBuf::from("src/app.min.js")
+            ]
+        );
     }
 
     #[test]

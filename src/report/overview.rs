@@ -1,13 +1,14 @@
 //! Renders the architecture overview and the single-node view, as text and as JSON.
 
+use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::path::PathBuf;
 
 use serde::Serialize;
 
 use crate::model::{
-    BlindSpots, BlindSummary, BlindTally, EdgeKind, EdgeSummary, ImportKind, MAX_SITES,
-    NodeSummary, NodeView, Overview, Site, Symbol,
+    BlindRef, BlindSpots, BlindSummary, BlindTally, EdgeKind, EdgeSummary, ImportKind, MAX_SITES,
+    NodeSummary, NodeView, Overview, Site, SkipReason, Symbol,
 };
 
 use super::ReportError;
@@ -52,7 +53,7 @@ pub fn render_overview_text(overview: &Overview) -> String {
             "  {}: {} ({}){exports}{}",
             node.id,
             dirs_str(&node.dirs),
-            plural(node.files, "file"),
+            file_counts(node),
             blind::node_suffix(&node.blind_spots),
         );
     }
@@ -67,6 +68,7 @@ pub fn render_overview_text(overview: &Overview) -> String {
         &overview.blind_spots,
         &overview.unmapped,
         &overview.unmapped_items,
+        &overview.skipped_references,
     ));
     out
 }
@@ -94,6 +96,7 @@ pub fn render_node_view_text(view: &NodeView, options: NodeViewOptions) -> Strin
         outgoing,
         incoming,
         files,
+        asset_files,
         blind_spots,
     } = view;
     let mut out = format!("node: {}\n", node.id);
@@ -105,6 +108,14 @@ pub fn render_node_view_text(view: &NodeView, options: NodeViewOptions) -> Strin
     let _ = writeln!(out, "files: {}", node.files);
     if options.files {
         for file in files {
+            let _ = writeln!(out, "  {}", slash_path(file));
+        }
+    }
+    if node.assets > 0 {
+        let _ = writeln!(out, "assets: {}", node.assets);
+    }
+    if options.files {
+        for file in asset_files {
             let _ = writeln!(out, "  {}", slash_path(file));
         }
     }
@@ -157,6 +168,7 @@ pub fn render_overview_json(overview: &Overview) -> Result<String, ReportError> 
         summary: &'a BlindSummary,
         unmapped: &'a BlindTally,
         unmapped_items: &'a BlindSpots,
+        skipped_references: &'a BTreeMap<SkipReason, Vec<BlindRef>>,
     }
     to_json(&Document {
         version: SCHEMA_VERSION,
@@ -170,6 +182,7 @@ pub fn render_overview_json(overview: &Overview) -> Result<String, ReportError> 
             summary: &overview.blind_spots,
             unmapped: &overview.unmapped,
             unmapped_items: &overview.unmapped_items,
+            skipped_references: &overview.skipped_references,
         },
     })
 }
@@ -186,6 +199,7 @@ pub fn render_node_view_json(view: &NodeView) -> Result<String, ReportError> {
         outgoing: &'a [EdgeSummary],
         incoming: &'a [EdgeSummary],
         files: &'a [PathBuf],
+        asset_files: &'a [PathBuf],
         blind_spots: &'a BlindSpots,
     }
     to_json(&Document {
@@ -194,6 +208,7 @@ pub fn render_node_view_json(view: &NodeView) -> Result<String, ReportError> {
         outgoing: &view.outgoing,
         incoming: &view.incoming,
         files: &view.files,
+        asset_files: &view.asset_files,
         blind_spots: &view.blind_spots,
     })
 }
@@ -279,6 +294,15 @@ fn usage(edge: &EdgeSummary) -> String {
 }
 
 /// The directories joined by `, `, or `-` for a node no `.arch` file names.
+/// `3 files`, or `0 source files, 1 asset` for a node with no source file that owns assets or
+/// excluded files.
+fn file_counts(node: &NodeSummary) -> String {
+    if node.files > 0 || node.assets == 0 {
+        return plural(node.files, "file");
+    }
+    format!("0 source files, {}", plural(node.assets, "asset"))
+}
+
 fn dirs_str(dirs: &[PathBuf]) -> String {
     if dirs.is_empty() {
         return "-".to_owned();
@@ -313,6 +337,7 @@ mod tests {
             label: Some(format!("{raw}: label")),
             dirs: dirs.iter().map(PathBuf::from).collect(),
             files,
+            assets: 0,
             exports: None,
             blind_spots: BlindTally::default(),
         }
@@ -351,6 +376,7 @@ mod tests {
             blind_spots: BlindSummary::default(),
             unmapped: BlindTally::default(),
             unmapped_items: BlindSpots::default(),
+            skipped_references: BTreeMap::new(),
             nodes: vec![
                 node("cli", &["src"], 3),
                 node("lint", &["src/lint", "src/lint2"], 1),
@@ -400,6 +426,7 @@ blind spots: none
     fn node_view_text_is_exact() {
         let view = NodeView {
             files: Vec::new(),
+            asset_files: Vec::new(),
             blind_spots: BlindSpots::default(),
             node: node("lint", &["src/lint"], 5),
             outgoing: vec![
@@ -437,6 +464,7 @@ blind spots: none
         summary.label = None;
         let view = NodeView {
             files: Vec::new(),
+            asset_files: Vec::new(),
             blind_spots: BlindSpots::default(),
             node: summary,
             outgoing: vec![],
@@ -464,6 +492,7 @@ blind spots: none
             blind_spots: BlindSummary::default(),
             unmapped: BlindTally::default(),
             unmapped_items: BlindSpots::default(),
+            skipped_references: BTreeMap::new(),
             nodes: vec![],
             edges: vec![
                 using(
@@ -540,6 +569,7 @@ nodes:
     fn neighbors_lists_the_whole_surface_and_the_edge_symbols() {
         let view = NodeView {
             files: Vec::new(),
+            asset_files: Vec::new(),
             blind_spots: BlindSpots::default(),
             node: exporting(
                 node("b", &["src/b"], 2),
@@ -576,6 +606,7 @@ blind spots: none
             blind_spots: BlindSummary::default(),
             unmapped: BlindTally::default(),
             unmapped_items: BlindSpots::default(),
+            skipped_references: BTreeMap::new(),
             nodes: vec![
                 exporting(node("a", &[], 0), &["Client", "fetch"]),
                 node("b", &[], 0),
@@ -601,6 +632,7 @@ blind spots: none
 
         let view = NodeView {
             files: Vec::new(),
+            asset_files: Vec::new(),
             blind_spots: BlindSpots::default(),
             node: overview.nodes[0].clone(),
             outgoing: overview.edges.clone(),
@@ -711,6 +743,7 @@ blind spots: none
     fn all_sites_lists_every_site_and_the_default_stops_at_three() {
         let view = NodeView {
             files: Vec::new(),
+            asset_files: Vec::new(),
             blind_spots: BlindSpots::default(),
             node: node("a", &[], 0),
             outgoing: vec![marked(5, &[])],
@@ -732,6 +765,105 @@ blind spots: none
         assert!(!every.contains("more"), "{every}");
     }
 
+    #[test]
+    fn a_node_with_assets_counts_them_beside_its_source_files() {
+        let mut app = node("app", &["src/app.css"], 0);
+        app.assets = 1;
+        let mut ui = node("ui", &["src/ui"], 3);
+        ui.assets = 2;
+        let overview = Overview {
+            nodes: vec![app.clone(), ui],
+            ..Overview::default()
+        };
+        let text = render_overview_text(&overview);
+        assert!(
+            text.contains("  app: src/app.css (0 source files, 1 asset)\n"),
+            "{text}"
+        );
+        assert!(text.contains("  ui: src/ui (3 files)\n"), "{text}");
+        let view = NodeView {
+            files: Vec::new(),
+            asset_files: vec![PathBuf::from("src/app.css")],
+            blind_spots: BlindSpots::default(),
+            node: app,
+            outgoing: vec![],
+            incoming: vec![],
+        };
+        let listed = render_node_view_text(
+            &view,
+            NodeViewOptions {
+                files: true,
+                ..NodeViewOptions::default()
+            },
+        );
+        assert!(
+            listed.contains("files: 0\nassets: 1\n  src/app.css\n"),
+            "{listed}"
+        );
+        let json = parse(&render_node_view_json(&view).unwrap());
+        assert_eq!(json["asset_files"], json!(["src/app.css"]));
+        assert_eq!(json["node"]["assets"], json!(1));
+    }
+
+    fn skipped_overview(count: usize) -> Overview {
+        let reference = |n: usize, reason: &str| BlindRef {
+            at: Location {
+                file: PathBuf::from("src/a.ts"),
+                line: u32::try_from(n).unwrap(),
+            },
+            specifier: format!("pkg{n}"),
+            node: None,
+            message: (reason == "dynamic").then(|| "why".to_owned()),
+        };
+        let mut overview = Overview::default();
+        overview.blind_spots.skipped = [
+            (SkipReason::UndeclaredPackage, count),
+            (SkipReason::DynamicSpecifier, 1),
+        ]
+        .into();
+        overview.skipped_references = [
+            (
+                SkipReason::UndeclaredPackage,
+                (1..=count).map(|n| reference(n, "undeclared")).collect(),
+            ),
+            (SkipReason::DynamicSpecifier, vec![reference(99, "dynamic")]),
+        ]
+        .into();
+        overview
+    }
+
+    #[test]
+    fn brief_lists_skipped_references_grouped_by_reason() {
+        let text = render_overview_text(&skipped_overview(2));
+        assert!(
+            text.contains(
+                "  skipped references: undeclared-package 2, dynamic-specifier 1
+    undeclared-package:
+      src/a.ts:1 pkg1
+      src/a.ts:2 pkg2
+    dynamic-specifier:
+      src/a.ts:99 pkg99 - why
+"
+            ),
+            "{text}"
+        );
+        assert!(!text.contains("more, see"), "{text}");
+    }
+
+    #[test]
+    fn brief_caps_the_skipped_list_and_json_keeps_all_of_it() {
+        let overview = skipped_overview(30);
+        let text = render_overview_text(&overview);
+        assert!(text.contains("      src/a.ts:20 pkg20\n"), "{text}");
+        assert!(!text.contains("pkg21"), "{text}");
+        assert!(!text.contains("pkg99"), "{text}");
+        assert!(text.contains("    +11 more, see --format json\n"), "{text}");
+        let json = parse(&render_overview_json(&overview).unwrap());
+        let all = &json["blind_spots"]["skipped_references"];
+        assert_eq!(all["undeclared-package"].as_array().unwrap().len(), 30);
+        assert_eq!(all["dynamic-specifier"][0]["specifier"], json!("pkg99"));
+    }
+
     fn parse(text: &str) -> Value {
         serde_json::from_str(text).unwrap()
     }
@@ -748,6 +880,7 @@ blind spots: none
                 "label": "lint: label",
                 "dirs": ["src/lint", "src/lint2"],
                 "files": 1,
+                "assets": 0,
                 "blind_spots": { "unread": 0, "excluded": 0, "ignored": 0, "skipped": 0, "unresolved": 0 },
             })
         );
@@ -776,6 +909,7 @@ blind spots: none
     fn node_view_json_has_the_documented_shape() {
         let view = NodeView {
             files: Vec::new(),
+            asset_files: Vec::new(),
             blind_spots: BlindSpots::default(),
             node: node("lint", &["src/lint"], 5),
             outgoing: vec![edge("lint", "model", Some(EdgeKind::Implemented), &[3])],

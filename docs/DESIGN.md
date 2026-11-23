@@ -1303,7 +1303,10 @@ A directory is answered like a source file, by the tag that covers it. The JSON 
 
 `brief`, `neighbors` and `diff` are read-only maps for agents and reviewers:
 
-- `brief` prints every node (directories, file count, see "Node directories" below) and every edge, declared or observed, with
+- `brief` prints every node (directories, file count, see "Node directories" below; a node with no
+  source file that owns assets or excluded files prints `0 source files, N assets` in place of
+  `0 files`; every node's JSON has `assets`, the number of asset and excluded files it owns, which
+  are not in `files`) and every edge, declared or observed, with
   the number of import sites that realise it and how they are used (kinds, symbols, see "Import
   kind" and "Symbols and public surfaces"). An edge code uses and the contract lacks is marked
   `UNDECLARED`. It is informational: exit `0` unless the tool fails (`2`).
@@ -1316,6 +1319,10 @@ A directory is answered like a source file, by the tag that covers it. The JSON 
     excluded: vendored 3, generated 2
     ignored by .driftwallignore: 4
     skipped references: undeclared-package 5, dynamic-specifier 1
+      undeclared-package:
+        a/main.ts:2 left-pad
+      dynamic-specifier:
+        a/main.ts:4 modName
     unresolved imports: 2
     unmapped: 2
       not read: loose/tool.pl (pl, 1 line)
@@ -1326,14 +1333,19 @@ A directory is answered like a source file, by the tag that covers it. The JSON 
   node, over all categories). The `unmapped` line is followed by those items, one per line and four
   spaces indented, in the forms and the order of the `blind spots:` block of `neighbors` below (not
   read, excluded, ignored, skipped, unresolved), so every one is named by its path. At most 20 are
-  listed, then one line `    +N more` for the rest. Unread extensions are ordered by file count, then name. Excluded
+  listed, then one line `    +N more` for the rest. The `skipped references` line is followed by the
+  references themselves, grouped by reason (in the order of this document) with the reason as a
+  header line, each as `file:line specifier` (and ` - <message>` when it has one), so `brief` lists
+  what the `note:` line points to. At most 20 are listed, then one line `  +N more, see --format
+  json`. Unread extensions are ordered by file count, then name. Excluded
   reasons and skip reasons are in the order of this document. When every count is zero the block is
   the single line `blind spots: none`. In JSON, `blind_spots` has `unread` (key to `{count, lines}`),
   `excluded` (reason to count), `ignored`, `skipped` (reason to count), `unresolved`, `unmapped`
   (a tally with the same five counts) and `unmapped_items` (every item no node owns, uncapped, in the
   shape of the `blind_spots` of `neighbors` JSON: `unread` per key with `count`, `lines` and `files`,
   `excluded` per reason, `ignored`, `skipped` per reason, `unresolved`, each item with its file and
-  `node: null`), and every node has `blind_spots`, a tally with `unread`, `excluded`,
+  `node: null`), `skipped_references` (every skipped reference, uncapped, by reason, each with
+  `file`, `line`, `specifier`, `node` and `message` when it has one), and every node has `blind_spots`, a tally with `unread`, `excluded`,
   `ignored`, `skipped` and `unresolved` file or reference counts.
 - **Node directories.** The `dirs` of a node, in `brief`, `neighbors` and the JSON `dirs`, are where
   its code lives, not where its `.arch` file lies. They are the union, sorted and without
@@ -1346,14 +1358,19 @@ A directory is answered like a source file, by the tag that covers it. The JSON 
     subdirectory is the directory module `src/ui/**`, shown as `src/ui`; a file directly in the
     tagged directory is a file module, shown as the file itself (`src/gitlab.rs`; `a.ts` and
     `a.test.ts`, which share the node `a`, are two entries). The tagged directory itself is never
-    shown for such a node, and a node whose files are all assets has no entry of this kind.
+    shown for such a node.
+
+  A node with no entry of either kind, because it owns no source file (`app` owning only
+  `src/app.css`), shows instead the module paths, by the same rule, of the asset files and excluded
+  files it owns (`src/app.css`), so it never reads as empty.
 
   A `scope: here` group is a plain tag: its directory. The rule reads only the source files the
   node owns and the tags, so it is the same in `brief`, `neighbors` and JSON, and for every run.
 - `neighbors <NODE>` prints one node's incoming and outgoing edges with up to 3 `file:line`
   example sites each (`--all-sites` prints every site; JSON always has every site, with no cap
   anywhere). `--files` lists the node's source files under its `files:` line, two spaces indented
-  (JSON always has `files`, the sorted list). It also lists, always, everything the node is blind to
+  (JSON always has `files`, the sorted list). A node that owns assets or excluded files has an
+  `assets: <n>` line after them, and `--files` lists those the same way (JSON `asset_files`). It also lists, always, everything the node is blind to
   in a `blind spots:` block, one item per line (`blind spots: none` when it has none):
   `  not read: <file> (<key>, <n> lines)`, `  excluded: <file> (<reason>)`,
   `  ignored: <file>`, `  skipped: <file>:<line> <specifier> (<reason>)` (followed by ` - <message>`

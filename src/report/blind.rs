@@ -2,9 +2,10 @@
 //!
 //! See "Blind spots" in `docs/DESIGN.md` for the exact forms.
 
+use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
-use crate::model::{BlindRef, BlindSpots, BlindSummary, BlindTally};
+use crate::model::{BlindRef, BlindSpots, BlindSummary, BlindTally, SkipReason};
 
 use super::common::{capped, plural, site_str, skip_reason_str, slash_path};
 
@@ -65,6 +66,9 @@ fn unread_by_count(summary: &BlindSummary) -> Vec<(&String, &crate::model::Unrea
     entries
 }
 
+/// How many skipped references the `brief` text lists before it says `+N more`.
+const MAX_SKIPPED_LISTED: usize = 20;
+
 /// How many unmapped items the `brief` text names before it says `+N more`.
 const MAX_UNMAPPED_LISTED: usize = 20;
 
@@ -76,6 +80,7 @@ pub(super) fn summary_block(
     summary: &BlindSummary,
     unmapped: &BlindTally,
     unowned: &BlindSpots,
+    skipped: &BTreeMap<SkipReason, Vec<BlindRef>>,
 ) -> String {
     if summary.is_empty() {
         return "blind spots: none\n".to_owned();
@@ -112,6 +117,24 @@ pub(super) fn summary_block(
             .map(|(reason, count)| format!("{} {count}", skip_reason_str(*reason)))
             .collect();
         lines.push(format!("skipped references: {}", listed.join(", ")));
+        let mut left = MAX_SKIPPED_LISTED;
+        for (reason, refs) in skipped.iter().filter(|(_, refs)| !refs.is_empty()) {
+            if left == 0 {
+                break;
+            }
+            lines.push(format!("  {}:", skip_reason_str(*reason)));
+            for reference in refs.iter().take(left) {
+                lines.push(format!("    {}", skipped_entry(reference)));
+            }
+            left = left.saturating_sub(refs.len());
+        }
+        let total: usize = skipped.values().map(Vec::len).sum();
+        if total > MAX_SKIPPED_LISTED {
+            lines.push(format!(
+                "  +{} more, see --format json",
+                total - MAX_SKIPPED_LISTED
+            ));
+        }
     }
     if summary.unresolved > 0 {
         lines.push(format!("unresolved imports: {}", summary.unresolved));
@@ -212,16 +235,29 @@ fn block(lines: &[String]) -> String {
 }
 
 fn skipped_line(reference: &BlindRef, reason: &str) -> String {
-    let mut line = format!(
-        "skipped: {} {} ({reason})",
+    format!(
+        "skipped: {} {} ({reason}){}",
         site_str(&reference.at),
-        reference.specifier
-    );
-    if let Some(message) = &reference.message {
-        // why: fmt::Write into a String is infallible, so the discarded Result carries no error.
-        let _ = write!(line, " - {message}");
-    }
-    line
+        reference.specifier,
+        message_suffix(reference)
+    )
+}
+
+/// `file:line specifier - message`, a skipped reference without its reason.
+fn skipped_entry(reference: &BlindRef) -> String {
+    format!(
+        "{} {}{}",
+        site_str(&reference.at),
+        reference.specifier,
+        message_suffix(reference)
+    )
+}
+
+fn message_suffix(reference: &BlindRef) -> String {
+    reference
+        .message
+        .as_ref()
+        .map_or_else(String::new, |message| format!(" - {message}"))
 }
 
 #[cfg(test)]
@@ -310,7 +346,7 @@ mod tests {
             ..BlindTally::default()
         };
         assert_eq!(
-            summary_block(&found, &unmapped, &BlindSpots::default()),
+            summary_block(&found, &unmapped, &BlindSpots::default(), &BTreeMap::new()),
             "\
 blind spots:
   not read: swift 40 files (1200 lines), sh 1 file (1 line)
@@ -326,7 +362,8 @@ blind spots:
             summary_block(
                 &BlindSummary::default(),
                 &BlindTally::default(),
-                &BlindSpots::default()
+                &BlindSpots::default(),
+                &BTreeMap::new()
             ),
             "blind spots: none\n"
         );

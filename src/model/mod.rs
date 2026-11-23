@@ -605,6 +605,9 @@ pub struct NodeSummary {
     pub dirs: Vec<PathBuf>,
     /// Source files this node owns.
     pub files: usize,
+    /// Asset files and excluded files this node owns (see "Asset files" and "Excluded files" in
+    /// `docs/DESIGN.md`); they are no source files and are not in `files`.
+    pub assets: usize,
     /// The node's declared public surface, or `None` when it declares none and is unrestricted.
     /// Omitted from JSON when `None`.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -652,6 +655,8 @@ pub struct Overview {
     pub unmapped: BlindTally,
     /// The blind spots no node owns, each one by name.
     pub unmapped_items: BlindSpots,
+    /// Every skipped reference, by reason, sorted: what `brief` lists.
+    pub skipped_references: BTreeMap<SkipReason, Vec<BlindRef>>,
 }
 
 /// One node with the edges that touch it.
@@ -665,6 +670,8 @@ pub struct NodeView {
     pub incoming: Vec<EdgeSummary>,
     /// The source files the node owns, sorted.
     pub files: Vec<PathBuf>,
+    /// The asset and excluded files the node owns, sorted.
+    pub asset_files: Vec<PathBuf>,
     /// Every item the node is blind to.
     pub blind_spots: BlindSpots,
 }
