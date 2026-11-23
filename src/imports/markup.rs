@@ -18,6 +18,16 @@ use crate::model::SkipReason;
 /// The values of a script's `type` that make it JavaScript, besides no `type` at all.
 const SCRIPT_TYPES: [&str; 3] = ["module", "text/javascript", "application/javascript"];
 
+/// The `rel` tokens of a `<link>` whose `href` is a resource the page uses, see "Svelte and HTML".
+const ASSET_RELS: &[&str] = &[
+    "stylesheet",
+    "preload",
+    "prefetch",
+    "icon",
+    "apple-touch-icon",
+    "manifest",
+];
+
 /// The scan of a `.svelte` file: every `<script>` element, parsed as TypeScript when its `lang` is
 /// `ts` or `typescript` and as JavaScript otherwise.
 pub fn svelte(source: &str, _file: &Path) -> Scan {
@@ -39,15 +49,17 @@ pub fn html(source: &str, _file: &Path) -> Scan {
         loads: Vec::new(),
     };
     for tag in markup::scan(source, false, &["script", "link"]) {
-        let path = match tag.name.as_str() {
-            "script" if is_javascript(&tag) => tag.attribute("src"),
-            "link" if is_module_preload(&tag) => tag.attribute("href"),
-            _ => None,
+        let (path, asset) = match tag.name.as_str() {
+            "script" if is_javascript(&tag) => (tag.attribute("src"), false),
+            "link" if has_rel(&tag, &["modulepreload"]) => (tag.attribute("href"), false),
+            "link" if has_rel(&tag, ASSET_RELS) => (tag.attribute("href"), true),
+            _ => (None, false),
         };
         if let Some(path) = path {
             scan.loads.push(Load {
                 specifier: path.trim().to_owned(),
                 line: tag.line,
+                asset,
             });
         } else if tag.name == "script" && is_javascript(&tag) {
             scan.regions.extend(region(&tag, &JAVASCRIPT_GRAMMAR));
@@ -79,11 +91,11 @@ fn is_javascript(tag: &Tag) -> bool {
     })
 }
 
-/// Whether the `rel` list of the `<link>` `tag` holds `modulepreload`.
-fn is_module_preload(tag: &Tag) -> bool {
+/// Whether the `rel` list of the `<link>` `tag` holds one of `wanted`.
+fn has_rel(tag: &Tag, wanted: &[&str]) -> bool {
     tag.attribute("rel").is_some_and(|rel| {
         rel.split_ascii_whitespace()
-            .any(|token| token.eq_ignore_ascii_case("modulepreload"))
+            .any(|token| wanted.iter().any(|name| token.eq_ignore_ascii_case(name)))
     })
 }
 

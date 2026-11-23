@@ -131,6 +131,7 @@ fn a_script_src_and_a_module_preload_import_the_whole_file() {
     assert_eq!(
         kinds(&got),
         [
+            edge(3, "pages/style.css", ImportKind::Asset),
             edge(4, "src/pre.ts", ImportKind::Runtime),
             edge(5, "pages/main.js", ImportKind::Runtime),
             edge(6, "pages/sub/deep.js", ImportKind::Runtime),
@@ -234,4 +235,47 @@ fn a_page_in_a_test_directory_is_test_code() {
         ("a.js", ""),
     ]);
     assert!(r.imports("tests/page.html").resolved[0].test_only);
+}
+
+#[test]
+fn a_link_to_a_resource_is_an_asset_reference() {
+    let page = "<html>
+<link rel=\"stylesheet\" href=\"/src/app.css?v=1\">
+<link rel=\"preload\" href=\"/src/ui/font.woff2\" as=\"font\">
+<link rel=\"prefetch\" href=\"next.js\">
+<link rel=\"icon\" href=\"/icon.svg\">
+<link rel=\"apple-touch-icon\" href=\"/public/touch.png\">
+<link rel=\"manifest\" href=\"/manifest.webmanifest\">
+<link rel=\"stylesheet\" href=\"https://fonts.example.com/a.css\">
+<link rel=\"stylesheet\" href=\"//fonts.example.com/b.css\">
+<link rel=\"canonical\" href=\"/nothing\">
+<link rel=\"stylesheet\" href=\"./gone.css\">
+<link rel=\"stylesheet\" href=\"/gone2.css\">
+<link rel=\"stylesheet\">
+<script>1</script>
+</html>";
+    let r = repo(&[
+        ("package.json", "{}"),
+        ("index.html", page),
+        ("src/app.css", ""),
+        ("src/ui/font.woff2", ""),
+        ("next.js", ""),
+        ("icon.svg", ""),
+        ("public/touch.png", ""),
+        ("manifest.webmanifest", ""),
+    ]);
+    let got = r.imports("index.html");
+    assert_eq!(
+        kinds(&got),
+        [
+            edge(2, "src/app.css", ImportKind::Asset),
+            edge(3, "src/ui/font.woff2", ImportKind::Asset),
+            edge(4, "next.js", ImportKind::Asset),
+            edge(5, "icon.svg", ImportKind::Asset),
+            edge(6, "public/touch.png", ImportKind::Asset),
+            edge(7, "manifest.webmanifest", ImportKind::Asset),
+        ]
+    );
+    assert_eq!(r.unresolved("index.html"), pairs(&[(11, "./gone.css")]));
+    assert_eq!(r.skipped("index.html"), pairs(&[(12, "/gone2.css")]));
 }

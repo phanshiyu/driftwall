@@ -44,6 +44,9 @@ pub struct Load {
     pub specifier: String,
     /// The line the tag starts on.
     pub line: u32,
+    /// Whether the file is a resource the page references (a stylesheet, a font, an icon) rather
+    /// than code it runs: a source file it finds is then an asset, not a runtime import.
+    pub asset: bool,
 }
 
 /// How a language resolves the files its markup loads, see [`Scan::loads`].

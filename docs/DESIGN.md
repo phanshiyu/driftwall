@@ -708,14 +708,20 @@ begins:
   imports and are ignored.
 - A script with a `src` and one of those types: an import of that path, see below.
 - `<link rel="modulepreload" href="...">`, `rel` being a whitespace separated list of tokens
-  (ASCII case-insensitive): an import of the `href`. Other `<link>` elements (stylesheets, icons) are
-  not read.
+  (ASCII case-insensitive): an import of the `href`.
+- `<link rel="..." href="...">` whose `rel` list holds `stylesheet`, `preload`, `prefetch`, `icon`,
+  `apple-touch-icon` or `manifest` (and no `modulepreload`): an asset reference to the `href`. It is
+  of kind `asset` and uses no symbol, whatever file it finds, so a dependency on the node that owns
+  that file as for an asset import (see "Asset files"). Other `<link>` elements (`canonical`,
+  `alternate`, ..) are not read.
 
-An import of a path (`src`, `href`) is of kind `runtime` and uses no symbol: it loads the whole file.
+An import of a path (`src`, `href`) is of kind `runtime` (`asset` for a resource link) and uses no
+symbol: it loads the whole file.
 Its value is trimmed and resolved as a document-relative URL: `main.js` means `./main.js`, `../x.js`
 and `./x.js` are relative to the directory of the HTML file, and a query or fragment is dropped as
 for any specifier. The file is probed like every relative path (see "Probing"), and a path that
-finds nothing is an `unresolved-import`.
+finds nothing is an `unresolved-import`, or `unresolved-root-path` when root-absolute, for a
+resource link as for a script. A remote `href` and an empty one are ignored.
 
 **Vite root.** A root-absolute specifier is one that starts with a single `/`. In an HTML file, in a
 `src` or `href` and in an `import`, `export ... from`, `import()` or `require()` of its inline
