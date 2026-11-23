@@ -76,6 +76,7 @@ mod witness {
         DuplicateEdge,
         SelfEdge,
         DuplicateBoundary,
+        IdClash,
         NestedSubgraph,
         UnclosedSubgraph,
         StrayEnd,
@@ -226,6 +227,12 @@ mod witness {
                     line: 10,
                     id: "x".to_owned(),
                     first_line: 2,
+                },
+                Self::IdClash {
+                    line: 10,
+                    id: "x".to_owned(),
+                    first_line: 2,
+                    first_is_boundary: true,
                 },
                 Self::NestedSubgraph {
                     line: 11,

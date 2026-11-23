@@ -380,6 +380,7 @@ mod tests {
                 reason: SkipReason::UndeclaredPackage,
                 message: None,
                 target: None,
+                test_only: false,
             },
             Skipped {
                 at: at("c/n.py", 1),
@@ -387,6 +388,7 @@ mod tests {
                 reason: SkipReason::UnreachableModule,
                 message: Some("matches x/tool.py".to_owned()),
                 target: None,
+                test_only: false,
             },
         ];
         let unresolved = [UnresolvedImport {

@@ -39,8 +39,9 @@ pub struct MapGlob {
     subtree: bool,
 }
 
-/// How specific a glob is: leading literal segments, then literal prefix length. Bigger wins.
-pub type Specificity = (usize, usize);
+/// How specific a glob is: leading literal segments, then whether it matches files by pattern
+/// rather than as a subtree, then literal prefix length, then literal suffix length. Bigger wins.
+pub type Specificity = (usize, bool, usize, usize);
 
 impl MapGlob {
     /// Parses one glob.
@@ -124,7 +125,17 @@ impl MapGlob {
             .get(literal)
             .and_then(|segment| segment.split(['*', '?']).next())
             .map_or(0, str::len);
-        (literal, prefix + partial)
+        // why: a glob that picks files by pattern is a deliberate carve-out of its directory.
+        let suffix = if self.subtree {
+            0
+        } else {
+            self.segments
+                .last()
+                .filter(|segment| has_wildcard(segment))
+                .and_then(|segment| segment.rsplit(['*', '?']).next())
+                .map_or(0, str::len)
+        };
+        (literal, !self.subtree, prefix + partial, suffix)
     }
 
     /// Whether the glob matches the repository-relative file `path`.
@@ -303,14 +314,29 @@ mod tests {
 
     #[test]
     fn specificity_counts_literal_segments_then_prefix_length() {
-        assert_eq!(glob("src/ui/").specificity(), (2, 7));
-        assert_eq!(glob("src/ui/*.ts").specificity(), (2, 7));
-        assert_eq!(glob("src/ui/a*.ts").specificity(), (2, 8));
-        assert_eq!(glob("src/*.ts").specificity(), (1, 4));
-        assert_eq!(glob("**/x.ts").specificity(), (0, 0));
-        assert_eq!(glob("./").specificity(), (0, 0));
-        assert_eq!(glob("src/a.ts").specificity(), (2, 9));
+        assert_eq!(glob("src/ui/").specificity(), (2, false, 7, 0));
+        assert_eq!(glob("src/ui/*.ts").specificity(), (2, true, 7, 3));
+        assert_eq!(glob("src/ui/a*.ts").specificity(), (2, true, 8, 3));
+        assert_eq!(glob("src/*.ts").specificity(), (1, true, 4, 3));
+        assert_eq!(glob("**/x.ts").specificity(), (0, true, 0, 0));
+        assert_eq!(glob("./").specificity(), (0, false, 0, 0));
+        assert_eq!(glob("src/a.ts").specificity(), (2, true, 9, 0));
         assert!(glob("src/ui/").specificity() > glob("src/").specificity());
+    }
+
+    #[test]
+    fn a_file_glob_beats_the_subtree_of_its_directory() {
+        let ui = glob("ui/src/components/").specificity();
+        assert!(glob("ui/src/components/*.test.tsx").specificity() > ui);
+        assert!(glob("src/*.ts").specificity() > glob("src/").specificity());
+        assert!(glob("src/a*.ts").specificity() > glob("src/*.ts").specificity());
+        assert!(glob("src/*.test.ts").specificity() > glob("src/*.ts").specificity());
+        // why: depth still comes first, so a deeper subtree beats a shallower file glob.
+        assert!(glob("src/ui/").specificity() > glob("src/*.ts").specificity());
+        assert_eq!(
+            glob("src/*.ts").specificity(),
+            glob("src/*.ts").specificity()
+        );
     }
 
     #[test]

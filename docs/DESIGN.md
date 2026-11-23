@@ -28,6 +28,11 @@ flowchart LR
 ```
 
 - Node ids match `[A-Za-z][A-Za-z0-9_-]*`. Labels are display only.
+- Ids are one namespace, as in Mermaid, where a node and a subgraph with one id are the same
+  thing. A node id and a boundary (subgraph) id must therefore differ, whichever is declared
+  first, and two subgraphs cannot share an id either (as two nodes cannot). Each is a contract
+  error at the line of the second declaration, naming the first: `line 3: `shared` is already
+  declared as a boundary on line 2` (or `as a node`).
 - Edge endpoints must be declared nodes. Chained edges (`a --> b --> c`) and `&` fan-out are errors.
 - `-->` is `EdgeKind::Implemented`. `-.->` is `EdgeKind::Planned`. With the label `test`
   (`-->|test|`, `-.->|test|`) they are `EdgeKind::Test` and `EdgeKind::PlannedTest`, see "Test edges".
@@ -135,10 +140,16 @@ specificity of a glob is, compared in this order,
 
 1. the number of leading segments that are literal (hold no `*` or `?`): `src/ui/` is 2, `src/*.ts`
    is 1, `**/x.ts` is 0;
-2. the length of the literal prefix: the literal segments, each followed by the `/`, then the
+2. whether the glob matches files by pattern (it does not end in `/`) rather than as a whole
+   subtree: at the same depth `src/*.ts` beats `src/`, and `ui/src/components/*.test.tsx` beats
+   `ui/src/components/`. An exact file glob also counts as a file glob;
+3. the length of the literal prefix: the literal segments, each followed by the `/`, then the
    literal characters of the first wildcard segment before its first wildcard (`src/ui/a*.ts` is
-   `src/ui/a`, 8; `src/ui/` is 7).
+   `src/ui/a`, 8; `src/ui/` is 7);
+4. the length of the literal suffix: for a file glob whose last segment has a wildcard, the literal
+   characters after its last wildcard (`*.test.tsx` has `.test.tsx`, 9; `src/*.ts` has `.ts`, 3).
 
+So `src/a*.ts` beats `src/*.ts` (step 3), and `src/*.test.ts` beats `src/*.ts` (step 4).
 A deeper directory glob therefore beats its parent, as the nearest `.arch` does. Two globs of the
 same node, or of the same module target, never conflict. A tie between the most specific globs of
 different targets for one source file is a contract error (exit `2`): `<contract>:<line> and
@@ -527,6 +538,20 @@ file:
   `engine/wasm/pkg`, which has no file in the repository``. In a report that knows the owners
   (`lint`, `brief`, `neighbors`) the message ends with ``; the target lies in the directory of node
   `engine-wasm` `` when a tag covers the directory the target is in (the nearest `.arch` above it).
+
+When the owner of the missing target is known (`lint`, which has the ownership), the import is also
+a dependency on that node, an alias to a build output: the directory holding the target is owned by
+a node through a `.arch` tag or a `%% map` glob (the target path is judged like a file directly in
+that directory tree, so a subtree glob covers it). The import then counts as an import site of the
+edge from the importing file's node to that node, of kind `runtime`, not test code unless the file
+is test code, using no symbol (the build output's exports are unknown, so `private-symbol` never
+fires on it). A solid edge is realised by it, a planned edge is `planned-realized`, and with no
+declared edge it is `undeclared-edge`, so a build output is as checked as a source file. The site
+carries `via: "alias-to-build-output"` (JSON `sites[].via`, absent for a plain import) and `brief`
+and `neighbors` count it as the property `alias-to-build-output` (see "Import kind"). A target in a directory no node
+owns, or inside the importing file's own node, makes no edge. The import stays listed among the skipped
+references as `alias-target-missing`, so the blind spot stays visible: the edge exists, but the
+symbols and the file are not checked.
 
 The Vite aliases apply after `paths`, so a `tsconfig` alias that finds a file wins, and before the
 workspace packages, the package `imports` and the package check.
@@ -1079,10 +1104,11 @@ callers can decide what a type-only or test import is worth.
 
 `brief` and `neighbors` show the kinds. An edge whose sites are all `type-only`, `embed` or `asset`, or
 all `test_only`, is annotated after its import count, `a --> b (3 imports) (type-only)`, one
-annotation per such property (order `type-only`, `embed`, `asset`, `test-only`). When a property
+annotation per such property (order `type-only`, `embed`, `asset`, `test-only`, `alias-to-build-output`). When a property
 holds for some sites only, the count is followed by one count per property that occurs, in the same
 order: `a --> b (12 imports, 3 type-only, 2 test-only)`. An edge whose sites are all plain runtime
 imports shows only `(N imports)`. In JSON every site carries `kind` and `test_only`.
+A site that is an alias to a build output (see "Vite aliases") also carries `via`.
 
 Duplicates merge on (location, target) only when their kind and `test_only` agree. Imports that
 reach the same file from the same location with different kinds (`import type { A } from './a';

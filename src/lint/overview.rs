@@ -631,6 +631,7 @@ mod tests {
             reason: SkipReason::UndeclaredPackage,
             message: None,
             target: None,
+            test_only: false,
         }];
         BlindSpots::build(
             &ownership,

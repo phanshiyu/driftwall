@@ -345,10 +345,37 @@ mod tests {
     }
 
     #[test]
+    fn a_file_glob_beats_the_subtree_glob_of_its_directory() {
+        let dir = repo(&[
+            ("ui/src/components/Cards.tsx", ""),
+            ("ui/src/components/Cards.test.tsx", ""),
+            ("src/a.ts", ""),
+            ("src/b.ts", ""),
+            ("src/deep/c.ts", ""),
+        ]);
+        let contract = format!(
+            "{HEAD}%% map ui: ui/src/components/\n%% map store: ui/src/components/*.test.tsx\n\
+             %% map api: src/\n%% map ui: src/*.ts\n%% map store: src/a*.ts\n"
+        );
+        let own = scan(&dir, &contract).unwrap();
+        assert_eq!(
+            owner(&own, "ui/src/components/Cards.tsx").as_deref(),
+            Some("ui")
+        );
+        assert_eq!(
+            owner(&own, "ui/src/components/Cards.test.tsx").as_deref(),
+            Some("store")
+        );
+        assert_eq!(owner(&own, "src/a.ts").as_deref(), Some("store"));
+        assert_eq!(owner(&own, "src/b.ts").as_deref(), Some("ui"));
+        assert_eq!(owner(&own, "src/deep/c.ts").as_deref(), Some("api"));
+    }
+
+    #[test]
     fn a_tie_between_different_nodes_names_both_lines_and_a_file() {
         let dir = repo(&[("src/ui/a.ts", ""), ("src/ui/a.test.ts", "")]);
-        let contract = format!("{HEAD}%% map api: src/ui/*.test.*\n%% map store: src/ui/*.*.ts\n");
-        // why: a.ts matches neither glob; a.test.ts matches both with specificity (2, 7).
+        let contract = format!("{HEAD}%% map api: src/ui/*.test.*\n%% map store: src/ui/*.*.*\n");
+        // why: a.ts matches neither glob; a.test.ts matches both with equal specificity.
         let error = scan(&dir, &contract).unwrap_err();
         let message = error.to_string();
         assert!(
@@ -363,7 +390,7 @@ mod tests {
     fn globs_of_one_node_never_tie_and_assets_never_fail() {
         let dir = repo(&[("src/a.ts", ""), ("src/x.json", "")]);
         let contract = format!(
-            "{HEAD}%% map ui: src/*.ts, src/a.t*\n%% map api: src/*.json\n%% map store: src/*.js*\n"
+            "{HEAD}%% map ui: src/*.ts, src/a.t*\n%% map api: src/*.*\n%% map store: src/*.j*\n"
         );
         let own = scan(&dir, &contract).unwrap();
         assert_eq!(owner(&own, "src/a.ts").as_deref(), Some("ui"));

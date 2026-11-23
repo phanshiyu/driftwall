@@ -108,6 +108,7 @@ pub fn extract_in(
             symbols,
             kind,
             test_only,
+            via: None,
         })
         .collect();
     // why: the map is ordered by its merge key; the documented order puts symbols before kind.
@@ -233,9 +234,9 @@ impl Found {
                 let merge = (at.clone(), target, ImportKind::Asset, flags.test_only);
                 self.resolved.entry(merge).or_default();
             }
-            Resolution::Skipped(reason) => self.skip(at, specifier, reason, None, None),
+            Resolution::Skipped(reason) => self.skip(at, specifier, reason, None, None, flags),
             Resolution::SkippedWith { reason, message } => {
-                self.skip(at, specifier, reason, Some(message), None);
+                self.skip(at, specifier, reason, Some(message), None, flags);
             }
             Resolution::AliasTargetMissing { alias, target } => {
                 let message = format!(
@@ -248,6 +249,7 @@ impl Found {
                     SkipReason::AliasTargetMissing,
                     Some(message),
                     Some(target),
+                    flags,
                 );
             }
             Resolution::Ignored => {}
@@ -261,6 +263,7 @@ impl Found {
         reason: SkipReason,
         message: Option<String>,
         target: Option<PathBuf>,
+        flags: Flags,
     ) {
         self.skipped.insert(Skipped {
             at: at.clone(),
@@ -268,6 +271,7 @@ impl Found {
             reason,
             message,
             target,
+            test_only: flags.test_only,
         });
     }
 }

@@ -181,22 +181,27 @@ pub fn observe(root: &Path, options: &LintOptions) -> Result<Observation, LintEr
         .chain(&ownership.folded)
         .cloned()
         .collect();
-    let imports =
+    let mut imports =
         imports::collect_with_assets(root, &files, &assets, &ownership.asset_unmapped, &excluded)?;
+    let owner_of = |path: &Path| {
+        if uses_maps {
+            mapper.owner(path, &ownership.tag_dirs)
+        } else {
+            ownership::owner_in(&ownership.tag_dirs, path)
+        }
+    };
 
-    let report = reconcile(&contract, &ownership, &imports, &options.contract);
-    let observed = observed_edges(&contract, &ownership, &imports);
-    let symbols = observed_symbols(&contract, &ownership, &imports);
+    // why: an alias to a build output has no file, so the edges are computed against an ownership
+    // why: that also owns those target paths; the ownership reported stays the scanned one.
+    let edge_ownership =
+        observe::alias_to_build_outputs(&contract, &ownership, &mut imports, owner_of);
+    let report = reconcile(&contract, &edge_ownership, &imports, &options.contract);
+    let observed = observed_edges(&contract, &edge_ownership, &imports);
+    let symbols = observed_symbols(&contract, &edge_ownership, &imports);
     let undeclared = observe::undeclared_owners(&contract, &ownership, &imports);
     let blind_spots = BlindSpots::build(
         &ownership,
-        |path| {
-            if uses_maps {
-                mapper.owner(path, &ownership.tag_dirs)
-            } else {
-                ownership::owner_in(&ownership.tag_dirs, path)
-            }
-        },
+        owner_of,
         |path| Some(ownership::line_count(root, path)),
         imports
             .values()

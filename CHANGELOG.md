@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Contract map specificity: a glob that matches files by pattern now beats the subtree glob of
+  its directory (`ui/src/components/*.test.tsx` over `ui/src/components/`, `src/*.ts` over `src/`),
+  then a longer literal prefix wins (`src/a*.ts` over `src/*.ts`), then a longer literal suffix
+  (`src/*.test.ts` over `src/*.ts`). Depth still comes first, and true ties stay contract errors.
+- Ids are one namespace: a node and a `subgraph` with the same id is a contract error at the line of
+  the second declaration (it was accepted silently). Two subgraphs with one id already were.
+- A Vite alias to a build output (`mrc-wasm` to `engine/wasm/pkg`, no file in the repository) inside
+  a directory a node owns now counts as a dependency on that node: an edge site of kind runtime with
+  `via: "alias-to-build-output"` in JSON, so a solid edge is realised, a planned edge is
+  `planned-realized`, and an undeclared one is `undeclared-edge`. It also stays listed as the
+  skipped `alias-target-missing` reference. `brief` and `neighbors` count it as `alias-to-build-output`.
 - Test edges: `a -->|test| b` (and the planned `a -.->|test| b`) allow the dependency from
   test-only import sites and nothing else. A production import on a pair with only a test edge is
   an `undeclared-edge` error that says only test imports are allowed; a test edge no test import

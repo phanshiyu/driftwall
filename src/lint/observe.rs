@@ -6,7 +6,8 @@ use std::path::{Path, PathBuf};
 
 use crate::imports::FileImports;
 use crate::model::{
-    Contract, Edge, NodeId, Ownership, ResolvedImport, Site, SkipReason, Skipped, Symbol,
+    Contract, Edge, ImportKind, NodeId, Ownership, ResolvedImport, Site, SkipReason, Skipped,
+    Symbol, Via,
 };
 
 /// Every resolved import that crosses from one declared owner to another, with its edge.
@@ -37,6 +38,49 @@ pub(super) fn crossings<'a>(
             })
         })
         .collect()
+}
+
+/// Makes every Vite alias whose target is a build output inside a node's directory a dependency on
+/// that node (see "Vite aliases" in `docs/DESIGN.md`).
+///
+/// For each [`SkipReason::AliasTargetMissing`] reference whose target `owner` places in a node the
+/// contract declares, a [`ResolvedImport`] with [`Via::AliasToBuildOutput`] is added to the file's
+/// imports. The reference stays in `skipped`. Returns `ownership` with those target paths owned by
+/// their node, which is what [`crossings`] needs to see the import; the scanned ownership is left
+/// alone.
+pub(super) fn alias_to_build_outputs(
+    contract: &Contract,
+    ownership: &Ownership,
+    imports: &mut BTreeMap<PathBuf, FileImports>,
+    owner: impl Fn(&Path) -> Option<NodeId>,
+) -> Ownership {
+    let mut reach = ownership.clone();
+    for found in imports.values_mut() {
+        let added: Vec<ResolvedImport> = found
+            .skipped
+            .iter()
+            .filter(|reference| reference.reason == SkipReason::AliasTargetMissing)
+            .filter_map(|reference| {
+                let target = reference.target.as_ref()?;
+                let node = owner(target).filter(|node| contract.nodes.contains_key(node))?;
+                reach.owners.insert(target.clone(), node);
+                Some(ResolvedImport {
+                    at: reference.at.clone(),
+                    target: target.clone(),
+                    symbols: BTreeSet::new(),
+                    kind: ImportKind::Runtime,
+                    test_only: reference.test_only,
+                    via: Some(Via::AliasToBuildOutput),
+                })
+            })
+            .collect();
+        if !added.is_empty() {
+            found.resolved.extend(added);
+            found.resolved.sort();
+            found.resolved.dedup();
+        }
+    }
+    reach
 }
 
 /// The imports of an asset or an excluded file whose owner is not a node the contract declares, as
@@ -74,6 +118,7 @@ pub(super) fn undeclared_owners(
                 specifier: asset.to_string(),
                 reason: SkipReason::UndeclaredOwner,
                 target: None,
+                test_only: false,
                 message: Some(format!(
                     "{kind} `{asset}` is owned by `{owner}`, which the contract does not declare"
                 )),

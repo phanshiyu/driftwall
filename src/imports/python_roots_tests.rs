@@ -317,6 +317,7 @@ fn a_script_reachable_only_through_a_makefile_pythonpath_is_unreachable() {
                     .to_owned(),
             ),
         target: None,
+        test_only: false,
 });
         expected
     });

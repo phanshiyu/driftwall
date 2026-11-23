@@ -276,13 +276,14 @@ fn edge_line(edge: &EdgeSummary) -> String {
 }
 
 /// How many sites of `edge` hold each property worth showing, in display order.
-fn properties(edge: &EdgeSummary) -> [(&'static str, usize); 4] {
+fn properties(edge: &EdgeSummary) -> [(&'static str, usize); 5] {
     let count = |holds: fn(&Site) -> bool| edge.sites.iter().filter(|site| holds(site)).count();
     [
         ("type-only", count(|s| s.kind == ImportKind::TypeOnly)),
         ("embed", count(|s| s.kind == ImportKind::Embed)),
         ("asset", count(|s| s.kind == ImportKind::Asset)),
         ("test-only", count(|s| s.test_only)),
+        ("alias-to-build-output", count(|s| s.via.is_some())),
     ]
 }
 
@@ -744,6 +745,23 @@ blind spots: none
         assert_eq!(
             line_of(&some),
             "a --> b (2 imports, 2 type-only, 1 test-only)"
+        );
+    }
+
+    #[test]
+    fn an_alias_to_a_build_output_is_a_property_of_the_edge() {
+        let mut aliased = marked(2, &[]);
+        for site in &mut aliased.sites {
+            site.via = Some(crate::model::Via::AliasToBuildOutput);
+        }
+        assert_eq!(
+            line_of(&aliased),
+            "a --> b (2 imports) (alias-to-build-output)"
+        );
+        aliased.sites[0].via = None;
+        assert_eq!(
+            line_of(&aliased),
+            "a --> b (2 imports, 1 alias-to-build-output)"
         );
     }
 

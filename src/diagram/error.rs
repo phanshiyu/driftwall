@@ -100,6 +100,21 @@ pub enum DiagramError {
         /// Line of the first `subgraph`.
         first_line: u32,
     },
+    /// A node and a boundary share an id (one namespace, as in Mermaid).
+    #[error(
+        "line {line}: `{id}` is already declared as a {} on line {first_line}",
+        if *first_is_boundary { "boundary" } else { "node" }
+    )]
+    IdClash {
+        /// Line of the second declaration.
+        line: u32,
+        /// The shared id.
+        id: String,
+        /// Line of the first declaration.
+        first_line: u32,
+        /// Whether the first declaration was the `subgraph` (else the node).
+        first_is_boundary: bool,
+    },
     /// A `subgraph` opened while another was still open.
     #[error(
         "line {line}: nested subgraph (boundary `{open}` opened on line {open_line} is still open)"
@@ -196,6 +211,7 @@ impl DiagramError {
             | Self::DuplicateEdge { line, .. }
             | Self::SelfEdge { line, .. }
             | Self::DuplicateBoundary { line, .. }
+            | Self::IdClash { line, .. }
             | Self::NestedSubgraph { line, .. }
             | Self::UnclosedSubgraph { line, .. }
             | Self::StrayEnd { line }

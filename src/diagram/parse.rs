@@ -124,6 +124,14 @@ impl Parser {
                 first_line: *first_line,
             });
         }
+        if let Some(first_line) = self.node_lines.get(&id) {
+            return Err(DiagramError::IdClash {
+                line,
+                id: id.to_string(),
+                first_line: *first_line,
+                first_is_boundary: false,
+            });
+        }
         self.boundaries.insert(id.to_string(), line);
         self.open = Some((id.to_string(), line));
         Ok(())
@@ -286,6 +294,14 @@ impl Parser {
                 line,
                 id,
                 first_line: *first_line,
+            });
+        }
+        if let Some(first_line) = self.boundaries.get(id.as_str()) {
+            return Err(DiagramError::IdClash {
+                line,
+                id: id.to_string(),
+                first_line: *first_line,
+                first_is_boundary: true,
             });
         }
         self.node_lines.insert(id.clone(), line);
@@ -850,6 +866,34 @@ mod tests {
             }
         );
         assert_eq!(line, Some(5));
+    }
+
+    #[test]
+    fn node_and_boundary_cannot_share_an_id() {
+        let (err, line) =
+            err_line("flowchart LR\n  subgraph shared[\"S\"]\n    shared[\"shared: x\"]\n  end\n");
+        assert_eq!(
+            err,
+            DiagramError::IdClash {
+                line: 3,
+                id: "shared".to_owned(),
+                first_line: 2,
+                first_is_boundary: true
+            }
+        );
+        assert_eq!(line, Some(3));
+        let (err, line) = err_line("flowchart LR\nx\n\nsubgraph x\nend\n");
+        assert_eq!(
+            err,
+            DiagramError::IdClash {
+                line: 4,
+                id: "x".to_owned(),
+                first_line: 2,
+                first_is_boundary: false
+            }
+        );
+        assert_eq!(line, Some(4));
+        assert!(err.to_string().contains("already declared as a node"));
     }
 
     #[test]

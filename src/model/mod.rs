@@ -405,6 +405,15 @@ pub enum ImportKind {
     Asset,
 }
 
+/// How an import came to depend on a node without resolving to a file (see "Vite aliases" in
+/// `docs/DESIGN.md`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Via {
+    /// A Vite alias whose target is a build output no file exists for, inside a node's directory.
+    AliasToBuildOutput,
+}
+
 /// One import statement resolved to a repository file.
 ///
 /// Imports reaching the same file from the same location collapse into one `ResolvedImport`
@@ -423,6 +432,10 @@ pub struct ResolvedImport {
     pub kind: ImportKind,
     /// Whether the import is written in test code: a test file, or Rust code under `#[cfg(test)]`.
     pub test_only: bool,
+    /// Set when `target` is not a file: the import depends on the node that owns it by another
+    /// route. Not set by import extraction; `lint` adds such imports.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub via: Option<Via>,
 }
 
 impl ResolvedImport {
@@ -436,6 +449,7 @@ impl ResolvedImport {
             symbols: BTreeSet::new(),
             kind: ImportKind::Runtime,
             test_only: false,
+            via: None,
         }
     }
 
@@ -519,6 +533,10 @@ pub struct Skipped {
     /// owners can name the node whose directory holds it. Not serialized.
     #[serde(skip)]
     pub target: Option<PathBuf>,
+    /// Whether the reference is written in test code. Only read for
+    /// [`SkipReason::AliasTargetMissing`], to flag the edge it makes. Not serialized.
+    #[serde(skip)]
+    pub test_only: bool,
 }
 
 /// Kinds of finding the linter can report.
@@ -617,6 +635,9 @@ pub struct Site {
     pub kind: ImportKind,
     /// Whether the import is written in test code.
     pub test_only: bool,
+    /// Set for an import that depends on a node without a file behind it, see [`Via`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub via: Option<Via>,
     /// Whether the import uses the target module itself: it uses no symbol and is neither an embed
     /// nor an asset. Not serialized: the edge says whether any of its sites does.
     #[serde(skip)]
@@ -631,6 +652,7 @@ impl Site {
             at,
             kind: ImportKind::Runtime,
             test_only: false,
+            via: None,
             module: false,
         }
     }
@@ -643,6 +665,7 @@ impl Site {
             at: import.at.clone(),
             kind: import.kind,
             test_only: import.test_only,
+            via: import.via,
             module: names_nothing
                 && matches!(import.kind, ImportKind::Runtime | ImportKind::TypeOnly),
         }
@@ -972,6 +995,7 @@ mod tests {
                 reason,
                 message: None,
                 target: None,
+                test_only: false,
             })
             .unwrap()
         };
@@ -999,6 +1023,7 @@ mod tests {
             reason: SkipReason::UnreachableModule,
             message: Some("matches s/x.py".to_owned()),
             target: None,
+            test_only: false,
         })
         .unwrap();
         assert!(json.ends_with(r#""reason":"unreachable-module","message":"matches s/x.py"}"#));
