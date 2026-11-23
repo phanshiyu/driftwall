@@ -13,14 +13,16 @@ pub(super) const fn severity(kind: ViolationKind) -> Severity {
         | ViolationKind::UndeclaredEdge
         | ViolationKind::PrivateSymbol
         | ViolationKind::UpwardEdge
-        | ViolationKind::ProductionImportsTest => Severity::Error,
+        | ViolationKind::ProductionImportsTest
+        | ViolationKind::ForbiddenPackage => Severity::Error,
         ViolationKind::StaleEdge
         | ViolationKind::PlannedRealized
         | ViolationKind::TestOnlyEdge
         | ViolationKind::UnresolvedImport
         | ViolationKind::StaleMap
         | ViolationKind::IgnoredTagFiles
-        | ViolationKind::OverBudget => Severity::Warning,
+        | ViolationKind::OverBudget
+        | ViolationKind::StalePackage => Severity::Warning,
     }
 }
 
@@ -58,6 +60,12 @@ pub(super) const fn hint(kind: ViolationKind) -> &'static str {
         }
         ViolationKind::UpwardEdge => {
             "remove the import or move the code to a node in the same or a lower layer; the `%% order` line is the user's to change"
+        }
+        ViolationKind::ForbiddenPackage => {
+            "remove the import, or ask the user to approve changing the node's `%% packages` or `%% forbid-packages` line in the contract"
+        }
+        ViolationKind::StalePackage => {
+            "remove the entry from the `%% packages` line, or restore the use in code"
         }
         ViolationKind::PrivateSymbol => {
             "import a name the node exports, or ask the user to approve extending its `%% exports` line in the contract"

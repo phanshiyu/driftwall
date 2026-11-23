@@ -91,6 +91,8 @@ mod witness {
         MalformedMap,
         DuplicateMapGlob,
         UndeclaredMapNode,
+        MalformedPackages,
+        UndeclaredPackagesNode,
     );
     witness!(
         OwnershipError: Io,
@@ -296,7 +298,26 @@ mod witness {
                 },
                 Self::UndeclaredMapNode { line: 19, id: id() },
             ]
+            .into_iter()
+            .chain(package_errors())
+            .collect()
         }
+    }
+
+    /// The variants of the package directives, apart so `build` stays short.
+    fn package_errors() -> Vec<DiagramError> {
+        vec![
+            DiagramError::MalformedPackages {
+                line: 20,
+                directive: "packages",
+                reason: "x".to_owned(),
+            },
+            DiagramError::UndeclaredPackagesNode {
+                line: 21,
+                directive: "forbid-packages",
+                id: id(),
+            },
+        ]
     }
 
     impl Build for OwnershipError {

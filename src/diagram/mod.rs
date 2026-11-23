@@ -18,6 +18,9 @@ pub use parse::parse;
 pub use render::render;
 
 #[cfg(test)]
+mod package_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::model::{Contract, NodeId};

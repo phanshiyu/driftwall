@@ -11,6 +11,7 @@ mod isolation;
 mod layers;
 mod observe;
 mod overview;
+mod packages;
 mod reconcile;
 mod rules;
 
@@ -20,6 +21,8 @@ mod alias_tests;
 mod excluded_tests;
 #[cfg(test)]
 mod fixtures;
+#[cfg(test)]
+mod package_tests;
 #[cfg(test)]
 mod resolution_tests;
 #[cfg(test)]

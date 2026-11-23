@@ -12,9 +12,11 @@ use thiserror::Error;
 
 mod blind;
 mod map;
+mod package_rule;
 mod rules;
 
 pub use map::{GlobError, MapGlob, MapRule, MapSite, MapTarget, Specificity};
+pub use package_rule::{PackagePattern, PackageRule, PackageRuleKind};
 pub use rules::{Budget, Layer, LayerOrder, Measure, NodeBudget, Rules, RulesSummary};
 
 pub use blind::{
@@ -261,6 +263,9 @@ pub struct Contract {
     /// The rule directives: layer order and the others of "Contract rules".
     #[serde(skip)]
     pub rules: Rules,
+    /// The `%% packages` and `%% forbid-packages` lines in file order.
+    #[serde(skip)]
+    pub package_rules: Vec<PackageRule>,
 }
 
 /// Languages driftwall can extract imports from.
@@ -684,6 +689,11 @@ pub enum ViolationKind {
     OverBudget,
     /// Production code imports a test file, with `%% tests: isolated`.
     ProductionImportsTest,
+    /// A package use that a `%% forbid-packages` line names, or a third-party one that the
+    /// `%% packages` allow-list of its node does not list.
+    ForbiddenPackage,
+    /// An entry of a `%% packages` line that no package use of its node matches.
+    StalePackage,
 }
 
 /// How serious a violation is.

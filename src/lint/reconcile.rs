@@ -12,6 +12,7 @@ use crate::model::{
 use super::isolation;
 use super::layers;
 use super::observe::crossings;
+use super::packages::package_findings;
 use super::rules::violation;
 
 /// Reconciles the contract, ownership and import graph into a sorted, duplicate-free report.
@@ -108,6 +109,12 @@ pub fn reconcile(
     violations.extend(edge_findings(contract, &crossings));
     violations.extend(layers::upward_findings(contract, &crossings));
     violations.extend(isolation::findings(contract, imports));
+    violations.extend(package_findings(
+        contract,
+        ownership,
+        imports,
+        contract_file,
+    ));
 
     violations.sort();
     violations.dedup();

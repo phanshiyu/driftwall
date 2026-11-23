@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::model::{Contract, MapGlob, NodeId, NodeInfo};
+use crate::model::{Contract, MapGlob, NodeId, NodeInfo, PackagePattern};
 
 const PREAMBLE: [&str; 4] = [
     "%% driftwall architecture contract.",
@@ -79,6 +79,20 @@ pub fn render(contract: &Contract) -> String {
     if !rules.is_empty() {
         lines.push(String::new());
         lines.extend(rules);
+    }
+
+    if !contract.package_rules.is_empty() {
+        lines.push(String::new());
+        for rule in &contract.package_rules {
+            let names: Vec<&str> = rule.names.iter().map(PackagePattern::as_str).collect();
+            let line = format!(
+                "  %% {} {}: {}",
+                rule.kind.directive(),
+                rule.node,
+                names.join(", ")
+            );
+            lines.push(line.trim_end().to_owned());
+        }
     }
 
     if !contract.maps.is_empty() {

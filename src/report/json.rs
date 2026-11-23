@@ -151,6 +151,8 @@ mod tests {
                 "upward-edge",
                 "over-budget",
                 "production-imports-test",
+                "forbidden-package",
+                "stale-package",
             ]
         );
     }

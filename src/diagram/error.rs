@@ -224,6 +224,26 @@ pub enum DiagramError {
         /// Line of the `%% order` directive.
         order_line: u32,
     },
+    /// A `%% packages` or `%% forbid-packages` line that is not `%% packages <node>: <name>, <name>`.
+    #[error("line {line}: malformed `%% {directive}` line: {reason}")]
+    MalformedPackages {
+        /// Line of the directive.
+        line: u32,
+        /// The directive keyword, `packages` or `forbid-packages`.
+        directive: &'static str,
+        /// What is wrong with it.
+        reason: String,
+    },
+    /// A `%% packages` or `%% forbid-packages` line names a node that no statement declares.
+    #[error("line {line}: `%% {directive}` names `{id}`, which is not a declared node")]
+    UndeclaredPackagesNode {
+        /// Line of the directive.
+        line: u32,
+        /// The directive keyword, `packages` or `forbid-packages`.
+        directive: &'static str,
+        /// The undeclared node.
+        id: NodeId,
+    },
     /// A `%% map` line that is not `%% map <target>: <glob>, <glob>`.
     #[error("line {line}: malformed `%% map` line: {reason}")]
     MalformedMap {
@@ -275,6 +295,8 @@ impl DiagramError {
             | Self::MalformedExports { line, .. }
             | Self::DuplicateExports { line, .. }
             | Self::UndeclaredExportsNode { line, .. }
+            | Self::MalformedPackages { line, .. }
+            | Self::UndeclaredPackagesNode { line, .. }
             | Self::MalformedMap { line, .. }
             | Self::DuplicateMapGlob { line, .. }
             | Self::RepeatedLabelWord { line, .. }

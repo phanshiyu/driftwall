@@ -172,7 +172,7 @@ pub fn observed_symbols(
 
 /// The owner of `file`, a source file, an asset or an excluded file, only when that owner is a node
 /// the contract declares.
-fn declared_owner<'a>(
+pub(super) fn declared_owner<'a>(
     contract: &Contract,
     ownership: &'a Ownership,
     file: &Path,

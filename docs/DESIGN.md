@@ -57,7 +57,8 @@ flowchart LR
   The comments whose first word is `order:` (see "Layer order"), `no-cycles` or `no-cycles:` (see
   "No cycles"), `budget` (see "Budgets") or `tests:` (see "Test isolation") are the rule directives
   of "Contract rules". The colon must follow the word directly, so a comment such as `%% tests -->
-  ...` stays plain. Every other comment is plain.
+  ...` stays plain. The comments whose first word is `packages` or `forbid-packages` are package rules (see
+  "Package rules"). Every other comment is plain.
 
 ### Test edges
 
@@ -243,6 +244,74 @@ is the only value; the line is given at most once.
   `%% tests: isolated` on line 12 keeps test code out of production". One per site. The hint says to
   move the shared code out of the test file or mark the importer as test code. The check is the
   per-helper form of the per-edge `-->|test|` check ("Test edges").
+### Package rules
+
+Edges say which nodes may depend on each other. Package rules say which code outside the repository
+a node may use: "only `db` imports `sqlx`", "the pure model must not import `lit` or `three`",
+"`domain` may not use `node:child_process`". They check the package uses of "Package uses".
+
+```
+%% packages db: sqlx, tokio*
+%% packages config:
+%% forbid-packages domain: node:child_process, subprocess, lit
+```
+
+**Syntax.** A comment line whose first word after `%%` is `packages` or `forbid-packages` (any
+whitespace around the words, any position in the file, like `exports`). It is
+`%% packages <node>: <name>[, <name>...]` or the same with `forbid-packages`. A comment that starts
+with one of the two words and does not have this form is a contract error with its line number,
+never a plain comment (`%% packages are listed below` is an error). `packages-tests` and other
+words are plain comments.
+
+- The node must be a node the contract declares, checked once the whole file is read, so the order
+  does not matter: an unknown id is a contract error at the line of the rule, like `exports` and
+  `map`.
+- A name is the package as "Package uses" names it, written as the code writes it: `lit`,
+  `@lit/reactive-element`, `node:child_process`, `subprocess` (the Python import name), `serde_json`
+  (a Rust crate with `_`), `Alamofire`. A name has no whitespace and no `,`. It matches the package
+  use exactly.
+- A name that ends in `*` is a prefix: `@scope/*` matches every package of the scope, `serde*`
+  matches `serde`, `serde_json` and `serde_derive`, `node:*` every Node builtin. The `*` is only
+  valid last. The same holds for crates and Python and Swift modules: the prefix is applied to the
+  name as recorded, and `-` and `_` are not folded, so `serde-*` matches no Rust crate (use `serde_*`).
+- Several lines may name one node and one kind: their names add up. The same name twice for one
+  node and kind, across lines too, is a contract error at the second line, naming the first. A name
+  in both a `packages` and a `forbid-packages` line of one node is a contract error as well (the
+  contract would contradict itself); a pattern that merely overlaps another (`packages web: lit*`
+  and `forbid-packages web: lit-ssr`) is fine and the next paragraph decides it.
+- `forbid-packages` needs at least one name. `packages` may have none: `%% packages config:` is an
+  allow-list with no entry, the node uses no third party package at all.
+
+**Meaning.** For each package use written in a file owned by node `n`:
+
+1. A use that matches a name of any `forbid-packages` line of `n` is `forbidden-package`, whatever
+   its kind: the deny-list applies to the standard library too (`node:child_process`).
+2. Else a `third-party` use is `forbidden-package` when `n` has at least one `packages` line and
+   the use matches none of its names. A node with no `packages` line is unrestricted.
+3. Else it is allowed.
+
+So a deny-list wins over an allow-list, and an allow-list restricts third party packages only:
+`stdlib` uses are not restricted by it. A stdlib name listed in `packages` is accepted and changes
+nothing (it only keeps itself from being stale while used). To restrict the standard library, deny
+the names. Files with no owner and files owned by an undeclared node produce no finding, as for
+edges.
+
+**Tests.** A use written in test code (`test_only`, see "Import kind") is exempt from both kinds
+of rule, and there is no rule for tests: a test imports its framework, fixtures and helpers freely.
+Test files also do not count as users of an allow-list entry (see staleness).
+
+**Findings.** One `forbidden-package` error per use, at the file and line of the import, naming the
+node, the package, its kind and the rule line: "`db` imports `lit` (third-party) but
+architecture.mmd:12 `%% packages db` does not list it", or "... but architecture.mmd:13
+`%% forbid-packages db` forbids it". Message and hint (remove the import, or ask to approve the
+change of the rule) follow "Rules (violation kinds)".
+
+**Staleness.** An entry of a `packages` line that no non-test package use of a file of the node
+matches is the warning `stale-package` at the line of the rule, naming the entry and the node, like
+`stale-map`. `forbid-packages` entries are never stale: a deny-list that nothing violates is its
+purpose. A node that owns no file at all has every entry stale.
+
+`brief`, `neighbors` and `where` show the package uses (see "CLI surface").
 
 ## Ownership
 
@@ -1531,7 +1600,9 @@ module and no symbol and adds nothing to `uses:`.
 | `over-budget` | warning | a node exceeds a `%% budget` limit (fan-out, files or lines), see "Budgets" |
 | `production-imports-test` | error | a production import site whose target is a test file, with `%% tests: isolated`, see "Test isolation" |
 | `upward-edge` | error | an import goes from a node in a lower `%% order` boundary to one in a higher boundary, see "Layer order" |
+| `forbidden-package` | error | a non-test package use that a `%% forbid-packages` line names, or a third-party one a `%% packages` allow-list of its node lacks, see "Package rules" |
 | `stale-map` | warning | a `%% map` glob matches no file, see "Contract map" |
+| `stale-package` | warning | an entry of a `%% packages` line that no non-test package use of the node matches |
 | `ignored-tag-files` | warning | the contract has `%% map` lines and `.arch` files exist, which are not read |
 
 A dotted edge permits the import. `--strict` turns every warning into a failure. A test edge permits
@@ -2037,7 +2108,9 @@ with `why:`. The golden rule is to leave an agent as little room to err as possi
     drafts read as a design (boundaries, labels from the code, layer order, cycles), and the
     dogfood projects carry a hand-designed contract whose violations are their real debt.
 11. M11 component rules, each one `%%` line per node, checked from the AST like edges:
-    - packages: which third-party packages a node may import (only `db` imports `sqlx`);
+    - packages: which third-party packages a node may import (only `db` imports `sqlx`), and
+      which packages, the standard library included, it may not (done: `%% packages`,
+      `%% forbid-packages`, see "Package rules");
     - type-only edges: a node may use another's types but not its runtime code (done: `-->|type|`,
       see "Type edges");
     - test-only edges: production code may not import test helpers (done: `-->|test|`, see

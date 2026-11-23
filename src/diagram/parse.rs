@@ -6,7 +6,8 @@ use super::error::DiagramError;
 use super::label;
 use super::rules::{self, RuleParser};
 use crate::model::{
-    Contract, Edge, EdgeKind, MapGlob, MapRule, MapTarget, NodeId, NodeInfo, Prefix,
+    Contract, Edge, EdgeKind, MapGlob, MapRule, MapTarget, NodeId, NodeInfo, PackagePattern,
+    PackageRule, PackageRuleKind, Prefix,
 };
 
 const DIRECTIONS: [&str; 4] = ["LR", "RL", "TB", "BT"];
@@ -22,7 +23,9 @@ const DOTTED: &str = "-.->";
 ///
 /// A comment line `%% exports <node>: <Name>, <Name>` declares the public surface of a node and is
 /// stored in [`Contract::surfaces`], and `%% map <node>: <glob>, <glob>` maps files to a node and
-/// is stored in [`Contract::maps`]. Every other `%%` line is a plain comment. The node of an
+/// is stored in [`Contract::maps`]. `%% packages <node>: <name>, ..` and
+/// `%% forbid-packages <node>: <name>, ..` are package rules, stored in
+/// [`Contract::package_rules`]. Every other `%%` line is a plain comment. The node of an
 /// exports line is checked like an edge endpoint, once the whole file has been read.
 ///
 /// # Errors
@@ -34,12 +37,18 @@ pub fn parse(src: &str) -> Result<Contract, DiagramError> {
     let src = src.strip_prefix('\u{feff}').unwrap_or(src);
     let mut parser = Parser::default();
     let mut line: u32 = 0;
-    for raw in src.lines() {
+    'lines: for raw in src.lines() {
         line = line.saturating_add(1);
         let text = raw.trim();
         if let Some(directive) = directive(text, "exports") {
             parser.exports(directive, line)?;
             continue;
+        }
+        for kind in [PackageRuleKind::Allow, PackageRuleKind::Forbid] {
+            if let Some(rest) = directive(text, kind.directive()) {
+                parser.package_rule(kind, rest, line)?;
+                continue 'lines;
+            }
         }
         if let Some(directive) = directive(text, "map") {
             parser.map(directive, line)?;
@@ -83,6 +92,8 @@ struct Parser {
     maps: Vec<MapRule>,
     map_globs: BTreeMap<String, u32>,
     rules: RuleParser,
+    package_rules: Vec<PackageRule>,
+    package_names: BTreeMap<(NodeId, String), (PackageRuleKind, u32)>,
 }
 
 impl Parser {
@@ -227,6 +238,56 @@ impl Parser {
         }
         self.exports_lines.insert(node.clone(), line);
         self.exports.push(PendingExports { line, node, names });
+        Ok(())
+    }
+
+    /// Records the `%% packages` or `%% forbid-packages` directive (`kind`) whose text after the
+    /// keyword is `rest`. A name listed twice for one node, in either kind, is an error.
+    fn package_rule(
+        &mut self,
+        kind: PackageRuleKind,
+        rest: &str,
+        line: u32,
+    ) -> Result<(), DiagramError> {
+        let directive = kind.directive();
+        let malformed = |reason: String| DiagramError::MalformedPackages {
+            line,
+            directive,
+            reason,
+        };
+        let (raw_node, list) = rest
+            .split_once(':')
+            .ok_or_else(|| malformed("expected `<node>: <name>, <name>`".to_owned()))?;
+        let raw_node = raw_node.trim();
+        if raw_node.is_empty() {
+            return Err(malformed("no node before the `:`".to_owned()));
+        }
+        let node = valid_id(raw_node, line)?;
+        let mut names = Vec::new();
+        // why: `%% packages config:` lists no name on purpose, the node may use no third party package.
+        if !(list.trim().is_empty() && kind == PackageRuleKind::Allow) {
+            for raw in list.split(',') {
+                let name = PackagePattern::parse(raw).map_err(|e| malformed(e.to_owned()))?;
+                let key = (node.clone(), name.as_str().to_owned());
+                if let Some((first_kind, first_line)) = self.package_names.get(&key) {
+                    return Err(malformed(if *first_kind == kind {
+                        format!("`{name}` for `{node}` is already listed on line {first_line}")
+                    } else {
+                        format!(
+                            "`{name}` for `{node}` is on line {first_line} of the other list: it cannot be both allowed and forbidden"
+                        )
+                    }));
+                }
+                self.package_names.insert(key, (kind, line));
+                names.push(name);
+            }
+        }
+        self.package_rules.push(PackageRule {
+            line,
+            node,
+            kind,
+            names,
+        });
         Ok(())
     }
 
@@ -379,12 +440,22 @@ impl Parser {
         let rules = self
             .rules
             .finish(&self.nodes, &self.boundaries, &edges, &edge_lines)?;
+        for rule in &self.package_rules {
+            if !self.nodes.contains_key(&rule.node) {
+                return Err(DiagramError::UndeclaredPackagesNode {
+                    line: rule.line,
+                    directive: rule.kind.directive(),
+                    id: rule.node.clone(),
+                });
+            }
+        }
         Ok(Contract {
             nodes: self.nodes,
             edges,
             surfaces,
             maps: self.maps,
             rules,
+            package_rules: self.package_rules,
         })
     }
 }

@@ -174,6 +174,7 @@ mod tests {
         assert_eq!(
             ids,
             [
+                "forbidden-package",
                 "ignored-tag-files",
                 "over-budget",
                 "planned-realized",
@@ -181,6 +182,7 @@ mod tests {
                 "production-imports-test",
                 "stale-edge",
                 "stale-map",
+                "stale-package",
                 "test-only-edge",
                 "undeclared-edge",
                 "unknown-node",
@@ -189,7 +191,7 @@ mod tests {
                 "upward-edge",
             ]
         );
-        assert_eq!(value["runs"][0]["results"].as_array().unwrap().len(), 13);
+        assert_eq!(value["runs"][0]["results"].as_array().unwrap().len(), 15);
     }
 
     #[test]

@@ -33,6 +33,15 @@
   type-only imports. There is no warning for a solid edge realised only by type imports: `brief` and
   `neighbors` mark it `could be -->|type|` (JSON `type_candidate`). `brief`, `neighbors` and `diff`
   show the kinds (`type`, `planned-type`, `type-test`, `planned-type-test` in JSON).
+- Package rules: `%% packages <node>: <name>, ...` is an allow-list of third-party packages and
+  `%% forbid-packages <node>: <name>, ...` a deny-list of any package, the standard library
+  included (`node:child_process`, `subprocess`, `lit`). A use that is not allowed, or is denied, is
+  the error `forbidden-package` at the import line. A trailing `*` makes a prefix (`@scope/*`,
+  `serde*`, `node:*`), several lines per node add up, the deny-list wins, an allow-list leaves the
+  standard library alone, and `%% packages config:` (no name) allows no third-party package. Test
+  code is exempt from both. An allow entry no non-test code uses is the warning `stale-package`.
+  An unknown node, a malformed or contradictory line is a contract error with its line number.
+
 - Package uses: every import of code outside the repository is recorded per file as a package use
   (`FileImports::packages`: name, kind `third-party` or `stdlib`, location, `test_only`), the data
   the coming package rules read. TypeScript, JavaScript, Svelte and HTML: a Node builtin is stdlib
