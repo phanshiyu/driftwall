@@ -359,6 +359,7 @@ fn rs_with(source: &str, file: &str, repo: &[&str]) -> FileImports {
         python: &PythonLayout::default(),
         swift: &SwiftModules::default(),
         vite_roots: &BTreeMap::new(),
+        test_files: &BTreeSet::new(),
     };
     extract_in(source, Language::Rust, Path::new(file), &env).expect("extract succeeds")
 }
@@ -451,7 +452,7 @@ fn rust_files_named_as_tests_or_under_a_tests_directory_are_test_only() {
         ("src/lint/rules_test.rs", true),
         ("src/lint/rules_tests.rs", true),
         ("src/lint/rules.rs", false),
-        ("src/lint/tests.rs", false),
+        ("src/lint/tests.rs", true),
         ("src/lint/test.rs", false),
         ("src/latest/rules.rs", false),
         ("src/lint/contests.rs", false),

@@ -57,6 +57,7 @@ pub fn extract(
             python: &python,
             swift: &SwiftModules::default(),
             vite_roots: &BTreeMap::new(),
+            test_files: &BTreeSet::new(),
         },
     )
 }
@@ -169,7 +170,8 @@ fn found_in(
             file: file.to_path_buf(),
             line: line_of(anchor),
         };
-        let flags = (spec.flags)(anchor, source, file);
+        let mut flags = (spec.flags)(anchor, source, file);
+        flags.test_only |= env.test_files.contains(file);
         let reference = Reference {
             specifier,
             names: &names,

@@ -774,9 +774,16 @@ callers can decide what a type-only or test import is worth.
   (`#[cfg(test)] mod tests { fn f() { use crate::a::B; } }`), including a `use` that is itself
   annotated, and inside a module whose body starts with the inner attribute `#![cfg(test)]`. Only
   the exact predicate `test` counts: `cfg(any(test, ..))`, `cfg(all(test, ..))` and `cfg(not(test))`
-  do not. An import in a file under a `tests/` directory or named `*_test.rs` or `*_tests.rs` is
-  `test_only` whatever it is written in. A file that a `#[cfg(test)] mod tests;` declaration pulls in
-  is not followed: its own name has to say it is a test file.
+  do not. An import in a file under a `tests/` directory or named `tests.rs`, `*_test.rs` or `*_tests.rs` is
+  `test_only` whatever it is written in. So is an import in a file that a `#[cfg(test)]` module
+  declaration pulls in: `#[cfg(test)] mod tests;`, `#[cfg(test)] mod fixtures;`, any name, in any
+  file and at any depth (also inside an inline module, and a declaration annotated through its
+  module, `#[cfg(test)] mod a { mod b; }`). The file is found through the module-path model, the
+  same one that resolves `use crate::..` paths: relative to the declaring file and its inline
+  modules, `<name>.rs` or `<name>/mod.rs`. A declaration that finds no known file, and one whose
+  attribute is not exactly `cfg(test)` (see above), pulls in nothing. The modules a test file
+  declares, with or without an attribute (`mod support;` in `tests.rs`), are test code in turn, to
+  any depth. `#[path = ".."]` is not followed. The declaring file is not made test code.
 - TypeScript, JavaScript, Svelte and HTML: files named `*.test.*` or `*.spec.*` (a middle name segment
   equal to `test` or `spec`, so `a.test.ts`, `a.spec.tsx`, `a.test.svelte`), or under a `__tests__`,
   `test` or `tests` directory at any depth.

@@ -38,6 +38,7 @@ fn run(source: &str, repo: &[&str], config: AliasConfig) -> FileImports {
         python: &PythonLayout::default(),
         swift: &SwiftModules::default(),
         vite_roots: &BTreeMap::new(),
+        test_files: &BTreeSet::new(),
     };
     extract_in(
         source,
@@ -215,6 +216,7 @@ fn files_without_a_governing_config_see_no_aliases_and_the_specifier_is_a_packag
         python: &PythonLayout::default(),
         swift: &SwiftModules::default(),
         vite_roots: &BTreeMap::new(),
+        test_files: &BTreeSet::new(),
     };
     let got = extract_in(
         "import a from '@/a';",

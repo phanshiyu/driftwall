@@ -49,6 +49,7 @@ mod rust;
 mod rust_module;
 mod rust_scope;
 mod rust_syntax;
+mod rust_test_modules;
 mod shell;
 mod spec;
 mod statement;
@@ -93,6 +94,8 @@ mod references_tests;
 mod rust_dogfood_tests;
 #[cfg(test)]
 mod rust_symbols_tests;
+#[cfg(test)]
+mod rust_test_modules_tests;
 #[cfg(test)]
 mod rust_tests;
 #[cfg(test)]
@@ -181,6 +184,9 @@ pub struct Environment<'a> {
     /// Repository-relative directory holding a `vite.config.*` file to the Vite root that config
     /// gives, see [`vite_roots`]. Only the resolution of root-absolute paths in HTML reads it.
     pub vite_roots: &'a BTreeMap<PathBuf, PathBuf>,
+    /// Files that are test code because a `#[cfg(test)] mod x;` declaration pulls them in, see
+    /// the module `rust_test_modules`. Every import written in one is `test_only`.
+    pub test_files: &'a BTreeSet<PathBuf>,
 }
 
 /// One query match handed to a language resolver: the module reference as written and, for
@@ -297,6 +303,7 @@ pub fn collect_with_assets(
     let python = PythonLayout::new(&known, python_roots(root, files));
     let swift = SwiftModules::new(swift_targets(root, files));
     let vite = vite_roots(root, files);
+    let test_files = rust_test_modules::test_files(root, files, &known);
     let env = Environment {
         known: &known,
         assets,
@@ -308,6 +315,7 @@ pub fn collect_with_assets(
         python: &python,
         swift: &swift,
         vite_roots: &vite,
+        test_files: &test_files,
     };
     let entries: Vec<(&PathBuf, &Language)> = files.iter().collect();
     // why: collected into an indexed Vec so the reported error never depends on thread scheduling.

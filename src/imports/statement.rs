@@ -156,16 +156,21 @@ pub fn shell_flags(_anchor: Node<'_>, _source: &str, file: &Path) -> Flags {
 
 /// The flags of the Rust `anchor` (see [`rust_anchor`]) written in `file`.
 ///
-/// Rust has no type-only import. Test code: a file under a `tests` directory or named `*_test.rs`
-/// or `*_tests.rs`, or anything written inside an item or module annotated `#[cfg(test)]`, or in a
-/// module whose body starts with `#![cfg(test)]`, at any depth.
+/// Rust has no type-only import. Test code: a file for which [`rust_test_file`] holds, or anything
+/// written inside an item or module annotated `#[cfg(test)]`, or in a module whose body starts with
+/// `#![cfg(test)]`, at any depth. A file that a test module declaration pulls in is test code too,
+/// which this function cannot see: see `rust_test_modules`.
 pub fn rust_flags(anchor: Node<'_>, source: &str, file: &Path) -> Flags {
+    Flags::new(false, rust_test_file(file) || in_cfg_test(anchor, source))
+}
+
+/// Whether the name or place of the Rust `file` says it is test code: a file under a `tests`
+/// directory, named `tests.rs`, or named `*_test.rs` or `*_tests.rs`.
+pub fn rust_test_file(file: &Path) -> bool {
     let stem = file.file_stem().and_then(|stem| stem.to_str());
-    let test_file = stem.is_some_and(|stem| stem.ends_with("_test") || stem.ends_with("_tests"));
-    Flags::new(
-        false,
-        test_file || in_directory(file, &["tests"]) || in_cfg_test(anchor, source),
-    )
+    stem.is_some_and(|stem| stem.ends_with("_test") || stem.ends_with("_tests"))
+        || file.file_name().is_some_and(|name| name == "tests.rs")
+        || in_directory(file, &["tests"])
 }
 
 /// Whether `file` is a `.d.ts`, `.d.mts` or `.d.cts` declaration file.
@@ -278,7 +283,7 @@ fn in_type_checking_block(node: Node<'_>, source: &str) -> bool {
 
 /// Whether `node` is inside something annotated `#[cfg(test)]`: it, or an ancestor, is preceded by
 /// the attribute, or an ancestor body starts with the inner attribute `#![cfg(test)]`.
-fn in_cfg_test(node: Node<'_>, source: &str) -> bool {
+pub fn in_cfg_test(node: Node<'_>, source: &str) -> bool {
     let mut current = Some(node);
     while let Some(candidate) = current {
         if annotated(candidate, source) || starts_with_inner_cfg_test(candidate, source) {

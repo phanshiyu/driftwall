@@ -256,6 +256,20 @@ impl CrateRoot {
 }
 
 impl Site {
+    /// The file of the module that `mod name;`, written at this site, declares: `<name>.rs` or
+    /// `<name>/mod.rs` in the directory of the current module. `None` when no known file is it.
+    pub fn declared_file(&self, name: &str, known: &BTreeSet<PathBuf>) -> Option<PathBuf> {
+        let written: Vec<&str> = self
+            .module
+            .names
+            .iter()
+            .map(String::as_str)
+            .chain([name])
+            .collect();
+        let (file, matched) = self.root.deepest_file(&written, known);
+        (matched == written.len()).then_some(file)
+    }
+
     /// The site of a path written in `file`, inside the inline `mod name { }` blocks `inline`
     /// listed outermost first. `None` when `file` belongs to no crate.
     pub fn of(file: &Path, inline: &[&str], known: &BTreeSet<PathBuf>) -> Option<Self> {

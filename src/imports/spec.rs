@@ -101,7 +101,7 @@ static SHELL_GRAMMAR: Grammar = Grammar {
     query: queries::SHELL,
 };
 
-static RUST_GRAMMAR: Grammar = Grammar {
+pub(super) static RUST_GRAMMAR: Grammar = Grammar {
     name: "rust",
     language: || tree_sitter_rust::LANGUAGE.into(),
     query: queries::RUST,
