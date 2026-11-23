@@ -645,6 +645,8 @@ pub enum ViolationKind {
     UpwardEdge,
     /// A node exceeds a limit of its `%% budget`.
     OverBudget,
+    /// Production code imports a test file, with `%% tests: isolated`.
+    ProductionImportsTest,
 }
 
 /// How serious a violation is.

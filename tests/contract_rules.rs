@@ -239,3 +239,66 @@ fn brief_and_neighbors_show_the_budget_with_its_current_values() {
     );
     assert!(value["nodes"][1].get("budget").is_none(), "{value}");
 }
+
+/// Two nodes in one boundary-less contract, where `app/main.ts` (production) imports `lib/helper.test.ts`.
+fn imports_a_test_helper(extra: &str) -> tempfile::TempDir {
+    repo(&[
+        (
+            "architecture.mmd",
+            &format!("flowchart LR\n  app\n  lib\n  app --> lib\n{extra}"),
+        ),
+        ("app/.arch", "node: app\n"),
+        ("lib/.arch", "node: lib\n"),
+        (
+            "app/main.ts",
+            "import { x } from '../lib/lib';\nimport { h } from '../lib/helper.test';\nimport { w } from './own.test';\nexport const go = [x, h, w];\n",
+        ),
+        ("app/own.test.ts", "export const w = 1;\n"),
+        (
+            "app/main.test.ts",
+            "import { go } from './main';\nimport { h } from '../lib/helper.test';\nexport const t = go;\n",
+        ),
+        ("lib/lib.ts", "export const x = 1;\n"),
+        ("lib/helper.test.ts", "export const h = 1;\n"),
+    ])
+}
+
+#[test]
+fn a_production_import_of_a_test_file_is_an_error_even_inside_one_node() {
+    let dir = imports_a_test_helper("  %% tests: isolated\n");
+    let output = driftwall(&dir, &["lint", "--format", "json"]);
+    assert_eq!(code(&output), 1);
+    let value = json(&output);
+    let found: Vec<(&str, u64)> = value["violations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|v| v["kind"] == "production-imports-test")
+        .map(|v| {
+            (
+                v["at"]["file"].as_str().unwrap(),
+                v["at"]["line"].as_u64().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(found, [("app/main.ts", 2), ("app/main.ts", 3)]);
+}
+
+#[test]
+fn without_the_rule_production_may_import_test_files() {
+    let dir = imports_a_test_helper("");
+    let value = json(&driftwall(&dir, &["lint", "--format", "json"]));
+    assert!(
+        !kinds(&value).contains(&"production-imports-test"),
+        "{value}"
+    );
+}
+
+#[test]
+fn brief_lists_tests_isolated() {
+    let dir = imports_a_test_helper("  %% tests: isolated\n");
+    let text = stdout(&driftwall(&dir, &["brief"]));
+    assert!(text.contains("rules:\n  tests: isolated\n"), "{text}");
+    let value = json(&driftwall(&dir, &["brief", "--format", "json"]));
+    assert_eq!(value["rules"]["tests_isolated"], true);
+}

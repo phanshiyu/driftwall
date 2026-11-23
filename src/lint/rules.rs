@@ -12,7 +12,8 @@ pub(super) const fn severity(kind: ViolationKind) -> Severity {
         | ViolationKind::UnknownNode
         | ViolationKind::UndeclaredEdge
         | ViolationKind::PrivateSymbol
-        | ViolationKind::UpwardEdge => Severity::Error,
+        | ViolationKind::UpwardEdge
+        | ViolationKind::ProductionImportsTest => Severity::Error,
         ViolationKind::StaleEdge
         | ViolationKind::PlannedRealized
         | ViolationKind::TestOnlyEdge
@@ -48,6 +49,9 @@ pub(super) const fn hint(kind: ViolationKind) -> &'static str {
         }
         ViolationKind::IgnoredTagFiles => {
             "delete the `.arch` files: the contract's `%% map` lines decide ownership"
+        }
+        ViolationKind::ProductionImportsTest => {
+            "move what is shared out of the test file into production code, or remove the import; the `%% tests` line is the user's to change"
         }
         ViolationKind::OverBudget => {
             "reduce the node, or ask the user to raise its `%% budget` line in the contract"

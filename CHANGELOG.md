@@ -5,6 +5,10 @@
 - Release: the npm package is published through npm trusted publishing (an OIDC id-token from
   `.github/workflows/publish-npm.yml`), so no `NPM_TOKEN` secret is needed. `tests/release.rs` pins
   it, and the hand fix for dist 0.34's `uses: $/` path in the generated `release.yml`.
+- Test isolation: `%% tests: isolated` makes a production import site of a test file the error
+  `production-imports-test`, on any pair and inside one node, by the same test classification
+  that decides `test_only` (see "Import kind"). `brief` shows `tests: isolated` in its `rules:`
+  block (JSON `rules.tests_isolated`).
 - Budgets: `%% budget <node>: fan-out <n>, files <n>, lines <n>` (any subset) limits a node, and
   exceeding a limit is the new warning `over-budget`, at the budget line, naming the measure, the
   limit and the actual value. Fan-out counts the distinct nodes the node depends on in production

@@ -9,7 +9,7 @@ use std::path::Path;
 
 use tree_sitter::Node;
 
-use crate::model::ImportKind;
+use crate::model::{ImportKind, Language};
 
 /// The nearest ancestor of `node`, or `node` itself, whose kind is one of `kinds`. `node` when
 /// there is none, so a location is always found.
@@ -152,14 +152,35 @@ fn ecmascript_test_file(file: &Path) -> bool {
 /// depth below it. Test code: `test_*.py`, `*_test.py`, `conftest.py`, or a file under a `tests` or
 /// `test` directory.
 pub fn python_flags(anchor: Node<'_>, source: &str, file: &Path) -> Flags {
-    let name = file.file_name().and_then(|name| name.to_str());
-    let stem = file.file_stem().and_then(|stem| stem.to_str());
-    let test_file = name == Some("conftest.py")
-        || stem.is_some_and(|stem| stem.starts_with("test_") || stem.ends_with("_test"));
     Flags::new(
         in_type_checking_block(anchor, source),
-        test_file || in_directory(file, &["tests", "test"]),
+        python_test_file(file),
     )
+}
+
+/// Whether `file` is a Python test file: `test_*.py`, `*_test.py`, `conftest.py`, or below a
+/// `tests` or `test` directory.
+fn python_test_file(file: &Path) -> bool {
+    let name = file.file_name().and_then(|name| name.to_str());
+    let stem = file.file_stem().and_then(|stem| stem.to_str());
+    name == Some("conftest.py")
+        || stem.is_some_and(|stem| stem.starts_with("test_") || stem.ends_with("_test"))
+        || in_directory(file, &["tests", "test"])
+}
+
+/// Whether the name or place of `file`, written in `language`, says it is test code. The file
+/// rule behind every import's test flag, without the part that needs the statement (a Rust
+/// `#[cfg(test)]` item) or the module declarations of other files (see `rust_test_modules`).
+pub fn test_file(language: Language, file: &Path) -> bool {
+    match language {
+        Language::TypeScript | Language::JavaScript | Language::Svelte | Language::Html => {
+            ecmascript_test_file(file)
+        }
+        Language::Python => python_test_file(file),
+        Language::Rust => rust_test_file(file),
+        Language::Swift => swift_test_file(file),
+        Language::Shell => shell_test_file(file),
+    }
 }
 
 /// The Swift `import` declaration around a specifier, its `@testable` attribute included.
@@ -170,10 +191,12 @@ pub fn swift_anchor(specifier: Node<'_>) -> Node<'_> {
 /// The flags of the Swift import written in `file`: always runtime. Test code: a file under a
 /// directory named `Tests`, `Test`, `tests` or `test`.
 pub fn swift_flags(_anchor: Node<'_>, _source: &str, file: &Path) -> Flags {
-    Flags::new(
-        false,
-        in_directory(file, &["Tests", "Test", "tests", "test"]),
-    )
+    Flags::new(false, swift_test_file(file))
+}
+
+/// Whether `file` is below a directory named `Tests`, `Test`, `tests` or `test`.
+fn swift_test_file(file: &Path) -> bool {
+    in_directory(file, &["Tests", "Test", "tests", "test"])
 }
 
 /// The shell command around a specifier: the `source` or `.` that holds it.
@@ -184,12 +207,18 @@ pub fn shell_anchor(specifier: Node<'_>) -> Node<'_> {
 /// The flags of the shell command written in `file`: always runtime. Test code: a file whose name up
 /// to its first `.` starts with `test_` or ends with `_test`, or under a `test` or `tests` directory.
 pub fn shell_flags(_anchor: Node<'_>, _source: &str, file: &Path) -> Flags {
+    Flags::new(false, shell_test_file(file))
+}
+
+/// Whether `file` is a shell test file: a name that starts with `test_` or ends with `_test` before
+/// its first `.`, or below a `test` or `tests` directory.
+fn shell_test_file(file: &Path) -> bool {
     let stem = file
         .file_name()
         .and_then(|name| name.to_str())
         .and_then(|name| name.split('.').next());
-    let test_file = stem.is_some_and(|stem| stem.starts_with("test_") || stem.ends_with("_test"));
-    Flags::new(false, test_file || in_directory(file, &["test", "tests"]))
+    stem.is_some_and(|stem| stem.starts_with("test_") || stem.ends_with("_test"))
+        || in_directory(file, &["test", "tests"])
 }
 
 /// The flags of the Rust `anchor` (see [`rust_anchor`]) written in `file`.

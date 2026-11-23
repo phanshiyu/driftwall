@@ -100,6 +100,9 @@ pub fn render_overview_text(overview: &Overview) -> String {
         if overview.rules.no_cycles_boundaries {
             out.push_str("  no-cycles: boundaries\n");
         }
+        if overview.rules.tests_isolated {
+            out.push_str("  tests: isolated\n");
+        }
     }
     out.push_str(&blind::summary_block(
         &overview.blind_spots,

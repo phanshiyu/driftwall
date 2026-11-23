@@ -386,3 +386,44 @@ fn budgets_survive_a_render_round_trip() {
     assert_eq!(again.len(), 2);
     assert_eq!(again[&NodeId::new("a").unwrap()].fan_out, Some(3));
 }
+
+#[test]
+fn a_tests_line_takes_only_isolated_and_only_once() {
+    let rules = parse(&format!("{GRAPH}  %% tests: isolated\n"))
+        .unwrap()
+        .rules;
+    assert_eq!(rules.tests_isolated, Some(10));
+    for bad in [
+        "%% tests: all\n",
+        "%% tests:\n",
+        "%% tests: isolated please\n",
+    ] {
+        let err = error(&format!("{GRAPH}{bad}"));
+        assert!(
+            matches!(err, DiagramError::MalformedRule { line: 10, .. }),
+            "{bad}: {err:?}"
+        );
+    }
+    let twice = error(&format!("{GRAPH}%% tests: isolated\n%% tests: isolated\n"));
+    assert!(matches!(
+        twice,
+        DiagramError::DuplicateRule {
+            line: 11,
+            first_line: 10,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn comments_that_only_start_with_tests_stay_plain() {
+    let src = format!("{GRAPH}%% tests -->|test| a: unit tests\n%% tests are next to the code\n");
+    assert!(parse(&src).unwrap().rules.is_empty());
+}
+
+#[test]
+fn the_tests_line_survives_a_render_round_trip() {
+    let rendered = render(&parse(&format!("{GRAPH}%% tests: isolated\n")).unwrap());
+    assert!(rendered.contains("  %% tests: isolated\n"), "{rendered}");
+    assert!(parse(&rendered).unwrap().rules.tests_isolated.is_some());
+}

@@ -7,6 +7,7 @@
 
 mod budget;
 mod diff;
+mod isolation;
 mod layers;
 mod observe;
 mod overview;

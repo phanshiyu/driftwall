@@ -178,6 +178,7 @@ mod tests {
                 "over-budget",
                 "planned-realized",
                 "private-symbol",
+                "production-imports-test",
                 "stale-edge",
                 "stale-map",
                 "test-only-edge",
@@ -188,7 +189,7 @@ mod tests {
                 "upward-edge",
             ]
         );
-        assert_eq!(value["runs"][0]["results"].as_array().unwrap().len(), 12);
+        assert_eq!(value["runs"][0]["results"].as_array().unwrap().len(), 13);
     }
 
     #[test]

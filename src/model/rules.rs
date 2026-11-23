@@ -46,13 +46,19 @@ pub struct RulesSummary {
     /// Whether the contract has `%% no-cycles: boundaries`. Omitted from JSON when false.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub no_cycles_boundaries: bool,
+    /// Whether the contract has `%% tests: isolated`. Omitted from JSON when false.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub tests_isolated: bool,
 }
 
 impl RulesSummary {
     /// Whether the contract has no rule directive at all.
     #[must_use]
     pub const fn is_empty(&self) -> bool {
-        self.order.is_empty() && !self.no_cycles && !self.no_cycles_boundaries
+        self.order.is_empty()
+            && !self.no_cycles
+            && !self.no_cycles_boundaries
+            && !self.tests_isolated
     }
 }
 
@@ -68,6 +74,7 @@ impl Rules {
                 .unwrap_or_default(),
             no_cycles: self.no_cycles.is_some(),
             no_cycles_boundaries: self.no_cycles_boundaries.is_some(),
+            tests_isolated: self.tests_isolated.is_some(),
         }
     }
 
@@ -158,6 +165,8 @@ pub struct Rules {
     pub no_cycles_boundaries: Option<u32>,
     /// The `%% budget` lines by node.
     pub budgets: BTreeMap<NodeId, Budget>,
+    /// The line of `%% tests: isolated`, see "Test isolation".
+    pub tests_isolated: Option<u32>,
 }
 
 impl Rules {
@@ -168,5 +177,6 @@ impl Rules {
             && self.no_cycles.is_none()
             && self.no_cycles_boundaries.is_none()
             && self.budgets.is_empty()
+            && self.tests_isolated.is_none()
     }
 }

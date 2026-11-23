@@ -113,6 +113,8 @@ mod skipped_tests;
 #[cfg(test)]
 mod swift_tests;
 #[cfg(test)]
+mod test_file_tests;
+#[cfg(test)]
 mod tests;
 #[cfg(test)]
 mod tsconfig_tests;
@@ -159,6 +161,9 @@ pub struct FileImports {
     /// References that cannot be followed: undeclared packages, computed specifiers and embeds of
     /// non-source files. Never a lint finding, see `SkipReason`.
     pub skipped: Vec<Skipped>,
+    /// Whether the file is test code by its name, its place, or a `#[cfg(test)] mod` declaration
+    /// that pulls it in (see "Import kind" in `docs/DESIGN.md`).
+    pub test_file: bool,
 }
 
 /// What a resolver may consult besides the importing file: every known repository file and the

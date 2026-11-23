@@ -19,6 +19,7 @@ pub(super) const fn kind_str(kind: ViolationKind) -> &'static str {
         ViolationKind::IgnoredTagFiles => "ignored-tag-files",
         ViolationKind::UpwardEdge => "upward-edge",
         ViolationKind::OverBudget => "over-budget",
+        ViolationKind::ProductionImportsTest => "production-imports-test",
     }
 }
 

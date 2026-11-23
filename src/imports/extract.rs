@@ -8,7 +8,7 @@ use tree_sitter::{Node, Parser, Query, QueryCursor, StreamingIterator};
 
 use super::rust_paths::PathModules;
 use super::spec::{Grammar, LanguageSpec, Region};
-use super::statement::Flags;
+use super::statement::{self, Flags};
 use super::{
     Environment, FileImports, ImportsError, PythonLayout, Reference, Resolution, SwiftModules,
     Workspaces, spec,
@@ -117,6 +117,7 @@ pub fn extract_in(
         resolved,
         unresolved: unresolved.into_iter().collect(),
         skipped: skipped.into_iter().collect(),
+        test_file: statement::test_file(language, file) || env.test_files.contains(file),
     })
 }
 

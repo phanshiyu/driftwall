@@ -218,6 +218,32 @@ line per node, which must be declared. Anything else is a contract error.
   has `budget` with, per measure that has a limit, `{"limit": n, "actual": n}` (a node without a
   budget line has no `budget` key).
 
+#### Test isolation
+
+`%% tests: isolated` keeps test code out of production: an import written in production code of a
+file that is test code is the error `production-imports-test`, whatever the edges say. `isolated`
+is the only value; the line is given at most once.
+
+- Test code is what "Import kind" calls `test_only`, and the rule uses the same classification:
+  a file is a test file when its name or place says so for its language (TypeScript, JavaScript,
+  Svelte and HTML: `*.test.*`, `*.spec.*`, or under `__tests__`, `test`, `tests`; Python:
+  `test_*.py`, `*_test.py`, `conftest.py`, or under `tests` or `test`; Swift: under `Tests`, `Test`,
+  `tests` or `test`; shell: `test_*`, `*_test`, or under `test` or `tests`; Rust: a file under
+  `tests`, named `tests.rs`, `*_test.rs` or `*_tests.rs`, or a file a `#[cfg(test)] mod` declaration
+  pulls in). A file that holds only a `#[cfg(test)]` module is not a test file: the rule is about
+  files, and the statements inside the module are test code, so they are never a production site.
+- A violation is a resolved import site that is not `test_only` whose target is a test file.
+  Test code importing test code, and test code importing production code, are fine, and so is
+  production code importing a node's non-test files. The check is per site, not per edge: it
+  applies inside one node as well as across nodes, to pairs with a solid edge, a `|test|` edge or no
+  edge (an undeclared pair is also `undeclared-edge`), and to files no node owns.
+- Only source files are test files. An asset or an excluded file is never one, and a reference
+  driftwall skipped (`brief` lists them) is not seen.
+- The finding is at the import: "production file `a/x.ts` imports test file `a/helper.test.ts`, but
+  `%% tests: isolated` on line 12 keeps test code out of production". One per site. The hint says to
+  move the shared code out of the test file or mark the importer as test code. The check is the
+  per-helper form of the per-edge `-->|test|` check ("Test edges").
+
 ## Ownership
 
 A `.arch` file contains `node: <id>` and, optionally, `scope: here` (comments start with `#`; each
@@ -1409,6 +1435,7 @@ module and no symbol and adds nothing to `uses:`.
 | `unresolved-import` | warning | relative import resolves to nothing, whatever its extension; Python absolute import into a first-party package that holds no such module; shell `source` of a path that finds no file |
 | `private-symbol` | error | an import uses a symbol outside the target node's declared surface |
 | `over-budget` | warning | a node exceeds a `%% budget` limit (fan-out, files or lines), see "Budgets" |
+| `production-imports-test` | error | a production import site whose target is a test file, with `%% tests: isolated`, see "Test isolation" |
 | `upward-edge` | error | an import goes from a node in a lower `%% order` boundary to one in a higher boundary, see "Layer order" |
 | `stale-map` | warning | a `%% map` glob matches no file, see "Contract map" |
 | `ignored-tag-files` | warning | the contract has `%% map` lines and `.arch` files exist, which are not read |
@@ -1842,11 +1869,11 @@ and carry the owner of an excluded or ignored file that a tag covers.
   node owns and the tags, so it is the same in `brief`, `neighbors` and JSON, and for every run.
 - A contract with rule directives (see "Contract rules") adds to `brief`: a `rules:` block after the
   edges, one line per directive (`  order: entry > engine > shared`, `  no-cycles`,
-  `  no-cycles: boundaries`), and for a node in a listed
+  `  no-cycles: boundaries`, `  tests: isolated`), and for a node in a listed
   boundary ` layer: engine (2 of 3)` and for a node with a budget ` budget: fan-out 3/5, files 21/20
   over` at the end of its line, before the blind spots. In JSON the
   document has `rules` (`order`, the boundaries top first; `no_cycles` and `no_cycles_boundaries`,
-  `true` when the line is there) and the node has `layer` (`boundary`,
+  `true` when the line is there; `tests_isolated`) and the node has `layer` (`boundary`,
   `rank` from 0 at the top, `of`); both are absent when the contract has no such rule, so a contract
   without rule directives reads as before. `neighbors` prints the same `layer:` and `budget:` lines after `dirs:`.
 - `neighbors <NODE>` prints one node's incoming and outgoing edges with up to 3 `file:line`
@@ -1920,7 +1947,7 @@ with `why:`. The golden rule is to leave an agent as little room to err as possi
     - type-only edges: a node may use another's types but not its runtime code (done: `-->|type|`,
       see "Type edges");
     - test-only edges: production code may not import test helpers (done: `-->|test|`, see
-      "Test edges"; the check is per edge, not yet per helper);
+      "Test edges", and per helper with `%% tests: isolated`, see "Test isolation");
     - layer order: a node may use only nodes in lower boundaries, so arrows need not be drawn
       (done: `%% order:`, see "Layer order");
     - no cycles between named nodes or boundaries (done: `%% no-cycles`, see "No cycles");

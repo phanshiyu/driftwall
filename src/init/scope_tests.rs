@@ -25,6 +25,7 @@ fn import(from: &str, to: &str) -> (PathBuf, FileImports) {
             resolved: vec![ResolvedImport::new(at, PathBuf::from(to))],
             unresolved: Vec::new(),
             skipped: Vec::new(),
+            test_file: false,
         },
     )
 }

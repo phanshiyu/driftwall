@@ -150,6 +150,7 @@ mod tests {
                 "ignored-tag-files",
                 "upward-edge",
                 "over-budget",
+                "production-imports-test",
             ]
         );
     }

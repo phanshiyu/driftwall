@@ -14,6 +14,8 @@ pub(super) enum Directive<'a> {
     NoCycles(&'a str),
     /// `%% budget <node>: fan-out <n>, ...`: the text after the keyword.
     Budget(&'a str),
+    /// `%% tests: isolated`: the text after the colon.
+    Tests(&'a str),
 }
 
 /// The rule directive a comment line is, or `None` for anything else.
@@ -24,6 +26,9 @@ pub(super) fn directive(text: &str) -> Option<Directive<'_>> {
     let body = text.strip_prefix("%%")?.trim_start();
     if let Some(rest) = body.strip_prefix("order:") {
         return Some(Directive::Order(rest.trim()));
+    }
+    if let Some(rest) = body.strip_prefix("tests:") {
+        return Some(Directive::Tests(rest.trim()));
     }
     if let Some(rest) = body.strip_prefix("budget")
         && (rest.is_empty() || rest.starts_with(char::is_whitespace))
@@ -47,6 +52,9 @@ pub(super) fn render(rules: &Rules) -> Vec<String> {
     if rules.no_cycles_boundaries.is_some() {
         lines.push("  %% no-cycles: boundaries".to_owned());
     }
+    if rules.tests_isolated.is_some() {
+        lines.push("  %% tests: isolated".to_owned());
+    }
     for (node, budget) in &rules.budgets {
         let limits: Vec<String> = [
             ("fan-out", budget.fan_out),
@@ -68,6 +76,7 @@ pub(super) struct RuleParser {
     no_cycles: Option<u32>,
     no_cycles_boundaries: Option<u32>,
     budgets: BTreeMap<NodeId, Budget>,
+    tests_isolated: Option<u32>,
 }
 
 impl RuleParser {
@@ -77,7 +86,27 @@ impl RuleParser {
             Directive::Order(rest) => self.order(rest, line),
             Directive::NoCycles(rest) => self.no_cycles(rest, line),
             Directive::Budget(rest) => self.budget(rest, line),
+            Directive::Tests(rest) => self.tests(rest, line),
         }
+    }
+
+    fn tests(&mut self, rest: &str, line: u32) -> Result<(), DiagramError> {
+        if rest != "isolated" {
+            return Err(DiagramError::MalformedRule {
+                line,
+                rule: "tests".to_owned(),
+                reason: "expected `%% tests: isolated`".to_owned(),
+            });
+        }
+        if let Some(first_line) = self.tests_isolated {
+            return Err(DiagramError::DuplicateRule {
+                line,
+                rule: "tests".to_owned(),
+                first_line,
+            });
+        }
+        self.tests_isolated = Some(line);
+        Ok(())
     }
 
     fn budget(&mut self, rest: &str, line: u32) -> Result<(), DiagramError> {
@@ -221,6 +250,7 @@ impl RuleParser {
             no_cycles: self.no_cycles,
             no_cycles_boundaries: self.no_cycles_boundaries,
             budgets: self.budgets,
+            tests_isolated: self.tests_isolated,
         })
     }
 }
