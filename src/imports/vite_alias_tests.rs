@@ -154,3 +154,36 @@ fn a_key_that_only_shares_a_prefix_is_not_the_alias() {
     assert_eq!(repo.skipped("x.ts"), pairs(&[(1, "library")]));
     assert_eq!(skipped(&repo, "x.ts")[0].2, SkipReason::UndeclaredPackage);
 }
+
+#[test]
+fn a_path_helper_with_a_literal_first_argument_is_relative_to_the_config() {
+    for value in [
+        "path.resolve('wasm/pkg/w.js')",
+        "path.join('wasm/pkg/w.js')",
+        "resolve('wasm/pkg/w.js')",
+        "path.resolve(process.cwd(), 'wasm', 'pkg/w.js')",
+        "path.resolve(__dirname, 'wasm/pkg/w.js')",
+        "fileURLToPath(new URL('./wasm/pkg/w.js', import.meta.url))",
+    ] {
+        let config = format!(
+            "import path from 'node:path';\nexport default {{ resolve: {{ alias: {{ w: {value} }} }} }};\n"
+        );
+        let repo = repo(&[
+            ("vite.config.ts", &config),
+            ("src/a.ts", "import init from 'w';\n"),
+        ]);
+        assert_eq!(
+            skipped(&repo, "src/a.ts"),
+            [(
+                1,
+                "w".to_owned(),
+                SkipReason::AliasTargetMissing,
+                Some(
+                    "alias `w` points to `wasm/pkg/w.js`, which has no file in the repository"
+                        .to_owned()
+                )
+            )],
+            "{value}"
+        );
+    }
+}

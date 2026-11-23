@@ -188,7 +188,7 @@ mod tests {
     #[test]
     fn unrecognised_values_and_other_shapes_give_nothing() {
         for text in [
-            "export default { resolve: { alias: { a: process.cwd(), b: '/abs' } } };",
+            "export default { resolve: { alias: { a: path.resolve('/abs'), b: '/abs' } } };",
             "export default { alias: { a: './a' } };",
             "export default { resolve: { alias: makeAliases() } };",
             "export default { resolve: {} };",

@@ -744,13 +744,17 @@ Its value is read when it is one of
 - a plain string literal, a path relative to the config directory (`'ui'`, `'./ui'`, `'.'`);
 - `__dirname` or `import.meta.dirname`, or `path.dirname(fileURLToPath(import.meta.url))` or
   `path.dirname(__filename)`: the config directory;
+- `process.cwd()`: the config directory, which is where Vite runs from;
 - `path.resolve(D, 'a', 'b')` or `path.join(D, 'a', 'b')` (the callee may be written with or
-  without `path.`), where `D` is any of the directory forms of this list and every other argument is
-  a plain string literal: the directory joined with the literals, `..` resolved lexically;
+  without `path.`), where `D` is any of the directory forms of this list or a plain string literal
+  and every other argument is a plain string literal: the directory joined with the literals, `..`
+  resolved lexically. A literal first argument is relative to the config directory, so
+  `path.resolve('engine/wasm/pkg')` with one argument is `engine/wasm/pkg` below it, as Vite's
+  working directory is that of the config; an absolute literal is not recognised;
 - `fileURLToPath(new URL('<literal>', import.meta.url))`, also written `new URL(..).pathname`: the
   literal joined onto the config directory.
 
-Any other value (a variable, `process.cwd()`, an absolute path, a path that leaves the repository,
+Any other value (a variable, an absolute path, a path that leaves the repository,
 an expression driftwall does not recognise) means the config directory, as does a config that
 cannot be read or has no `root`. The extraction functions that are given no file system (`extract`)
 know no Vite configs, so they use rules 2 and 3.

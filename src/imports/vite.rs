@@ -156,9 +156,12 @@ impl Reader<'_> {
         let arguments = node.child_by_field_name("arguments")?;
         let mut cursor = arguments.walk();
         let mut arguments = arguments.named_children(&mut cursor);
+        if self.text(callee)? == "process.cwd" && arguments.next().is_none() {
+            return Some(Value::Dir(self.dir.to_path_buf()));
+        }
         let first = self.value(arguments.next()?)?;
         match (name, first) {
-            ("resolve" | "join", Value::Dir(mut path)) => {
+            ("resolve" | "join", Value::Dir(mut path) | Value::Text(mut path)) => {
                 for argument in arguments {
                     let literal = literal_text(argument, self.source)?;
                     if literal.starts_with('/') {
@@ -339,6 +342,7 @@ mod tests {
             "export default { root: path.resolve(__dirname) };",
             "export default { root: path.dirname(fileURLToPath(import.meta.url)) };",
             "export default { root: dirname(__filename) };",
+            "export default { root: process.cwd() };",
             "export default { root: fileURLToPath(new URL('.', import.meta.url)) };",
         ] {
             assert_eq!(
@@ -403,9 +407,9 @@ mod tests {
     fn anything_else_gives_no_root() {
         for text in [
             "export default {};",
-            "export default { root: process.cwd() };",
             "export default { root: path.resolve(__dirname, name) };",
             "export default { root: path.resolve(__dirname, '/abs') };",
+            "export default { root: path.resolve('/abs') };",
             "export default { root: '/abs' };",
             "export default { root: '../../../out' };",
             "export default { root };",

@@ -89,3 +89,7 @@
   are test code. A destructured `require` or `await import` records the names it takes. JSDoc
   `import('x').T` types in `/**` comments are type-only imports. `unreachable-module` only names
   Python modules and packages.
+- Vite config paths: `path.resolve('lit')` and `path.join('lit')` with a literal first argument are
+  relative to the config directory, and `process.cwd()` is the config directory, so
+  `alias: { w: path.resolve('wasm/pkg/w.js') }` is `alias-target-missing` instead of
+  `undeclared-package`.
