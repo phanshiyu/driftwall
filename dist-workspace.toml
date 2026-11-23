@@ -13,5 +13,12 @@ installers = ["shell", "npm"]
 targets = ["aarch64-apple-darwin", "aarch64-unknown-linux-gnu", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu"]
 # Where to host releases
 hosting = "github"
-# Publish the npm package from CI on release
-publish-jobs = ["npm"]
+# release.yml is generated, then one line is fixed by hand: dist 0.34 renders a local publish job as
+# `uses: $/.github/...`. tests/release.rs pins the fix; rerun it after every `dist generate`.
+allow-dirty = ["ci"]
+# Publish the npm package from CI on release, through npm trusted publishing (no token):
+# .github/workflows/publish-npm.yml, given an OIDC id-token below.
+publish-jobs = ["./publish-npm"]
+
+[dist.github-custom-job-permissions]
+publish-npm = { contents = "read", id-token = "write" }

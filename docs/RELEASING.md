@@ -9,7 +9,12 @@ macOS and Linux binaries (arm64 and x86_64), creates a GitHub release, and publi
 
 1. The repository must be public. The npm package downloads binaries from the GitHub release, and a
    private repository's release assets are not downloadable by npm users.
-2. Add an `NPM_TOKEN` repository secret (an npm automation token with publish rights).
+2. npm publishes through trusted publishing (GitHub's OIDC id-token); no npm token exists anywhere.
+   On npmjs.com, add a trusted publisher for the package `driftwall`: GitHub Actions, repository
+   `phanshiyu/driftwall`, workflow filename `release.yml` (the workflow the tag starts; it calls
+   `publish-npm.yml`). If npm rejects the first publish, the setting may need `publish-npm.yml`
+   instead. A pending trusted publisher expires if no publish succeeds within two days, so add it
+   just before the first release.
 3. Confirm the name is still free: `npm view driftwall` should 404 before the first publish.
 
 ## Each release
@@ -19,5 +24,7 @@ macOS and Linux binaries (arm64 and x86_64), creates a GitHub release, and publi
 3. Commit, then `git tag vX.Y.Z && git push origin main vX.Y.Z`.
 
 Windows is not a release target yet: path handling has only been exercised on Unix.
-`.github/workflows/release.yml` is generated. Change `dist-workspace.toml` and run `dist generate`,
-never edit the workflow by hand.
+`.github/workflows/release.yml` is generated. Change `dist-workspace.toml` and run `dist generate`.
+One line is then fixed by hand: dist 0.34 renders the local publish job as
+`uses: $/.github/workflows/publish-npm.yml`; change `$/` to `./`. `tests/release.rs` fails until
+you do, and `allow-dirty = ["ci"]` lets dist accept the edit.

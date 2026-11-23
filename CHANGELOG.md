@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Release: the npm package is published through npm trusted publishing (an OIDC id-token from
+  `.github/workflows/publish-npm.yml`), so no `NPM_TOKEN` secret is needed. `tests/release.rs` pins
+  it, and the hand fix for dist 0.34's `uses: $/` path in the generated `release.yml`.
 - Contract map specificity: a glob that matches files by pattern now beats the subtree glob of
   its directory (`ui/src/components/*.test.tsx` over `ui/src/components/`, `src/*.ts` over `src/`),
   then a longer literal prefix wins (`src/a*.ts` over `src/*.ts`), then a longer literal suffix
