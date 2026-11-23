@@ -464,9 +464,12 @@ An absolute module that no root resolves is decided by its first segment, the to
    a namespace portion, so a miss below it is most likely that package, as with any undeclared
    third party. The existing reason is reused so the reference stays visible, and the import is not
    a finding. Exception as in 1: the module itself exists as the directory;
-2. else when some repository path matches the name, anywhere (a file `<name>.py` or a directory
-   `<name>/` with a Python file below it, at any depth), the import is skipped as
-   `unreachable-module`. Its message names the first such path in path order and says that no import
+2. else when some repository path matches the name, anywhere, the import is skipped as
+   `unreachable-module`. Only a Python module or package matches: a file `<name>.py`, or a
+   directory `<name>/` that holds an `__init__.py` or another `.py` file directly. A directory that
+   merely has Python files somewhere deeper (a Rust crate `engine/dizione` with a script in
+   `engine/dizione/scripts/`) is not a Python package and never matches. Its message names the
+   first such path in path order and says that no import
    root of the importing file reaches it. This is how a script reachable only through a `Makefile`
    `PYTHONPATH` is seen;
 3. else it is a third party or standard library module and is ignored.

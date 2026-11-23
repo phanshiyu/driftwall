@@ -322,6 +322,39 @@ fn a_script_reachable_only_through_a_makefile_pythonpath_is_unreachable() {
 }
 
 #[test]
+fn unreachable_module_never_names_a_directory_that_is_not_a_python_package() {
+    // why: `engine/dizione` is a Rust crate with a helper script deeper down, not a Python package.
+    let repo = repo(&[
+        ("engine/dizione/Cargo.toml", ""),
+        ("engine/dizione/scripts/gen.py", ""),
+        ("app/run.py", "import dizione\nimport gen\n"),
+    ]);
+    let skipped = repo.imports("app/run.py").skipped;
+    assert_eq!(skipped.len(), 1, "{skipped:?}");
+    assert_eq!(skipped[0].specifier, "gen");
+    assert_eq!(
+        skipped[0].message.as_deref(),
+        Some(
+            "`gen` matches `engine/dizione/scripts/gen.py`, which no import root of `app/run.py` reaches"
+        )
+    );
+}
+
+#[test]
+fn a_directory_holding_python_directly_is_still_an_unreachable_package() {
+    let repo = repo(&[
+        ("tools/helpers/util.py", ""),
+        ("app/run.py", "import helpers\n"),
+    ]);
+    let skipped = repo.imports("app/run.py").skipped;
+    assert_eq!(skipped.len(), 1, "{skipped:?}");
+    assert_eq!(
+        skipped[0].message.as_deref(),
+        Some("`helpers` matches `tools/helpers`, which no import root of `app/run.py` reaches")
+    );
+}
+
+#[test]
 fn the_same_import_resolves_once_pythonpath_is_configured() {
     let repo = repo(&[
         (

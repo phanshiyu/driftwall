@@ -21,7 +21,7 @@ pub struct PythonLayout {
     /// Directories with a Python file somewhere below them, at any depth.
     directories: BTreeSet<PathBuf>,
     /// Top-level name to the first repository path in path order that can supply it: a
-    /// `<name>.py` file or a directory named `<name>` with a Python file below it.
+    /// `<name>.py` file or a directory named `<name>` that holds a `.py` file directly.
     names: BTreeMap<String, PathBuf>,
 }
 
@@ -34,20 +34,27 @@ impl PythonLayout {
             configured,
             ..Self::default()
         };
+        // why: a directory is a Python package for `names` only when a `.py` file is directly in it.
+        let mut holders: BTreeSet<&Path> = BTreeSet::new();
         for file in known {
             if file.extension().is_none_or(|ext| ext != SOURCE_EXTENSION) {
                 continue;
             }
+            holders.extend(file.parent());
             if file.file_name().is_some_and(|name| name == INIT_FILE) {
                 layout.packages.extend(file.parent().map(Path::to_path_buf));
             } else if let Some(stem) = file.file_stem().and_then(|stem| stem.to_str()) {
                 layout.offer(stem, file);
             }
-            for dir in file.ancestors().skip(1) {
-                let Some(name) = dir.file_name().and_then(|name| name.to_str()) else {
-                    continue;
-                };
-                layout.directories.insert(dir.to_path_buf());
+            layout.directories.extend(
+                file.ancestors()
+                    .skip(1)
+                    .filter(|dir| dir.file_name().is_some())
+                    .map(Path::to_path_buf),
+            );
+        }
+        for dir in holders {
+            if let Some(name) = dir.file_name().and_then(|name| name.to_str()) {
                 layout.offer(name, dir);
             }
         }
@@ -171,7 +178,7 @@ mod tests {
     }
 
     #[test]
-    fn a_name_matches_a_file_or_a_directory_with_python_below_it() {
+    fn a_name_matches_a_file_or_a_directory_holding_python_directly() {
         let layout = layout(
             &["scripts/tuner.py", "deep/er/pkg/mod.py", "__init__.py"],
             &[],
@@ -180,7 +187,7 @@ mod tests {
             layout.matching("tuner"),
             Some(Path::new("scripts/tuner.py"))
         );
-        assert_eq!(layout.matching("er"), Some(Path::new("deep/er")));
+        assert_eq!(layout.matching("er"), None);
         assert_eq!(layout.matching("pkg"), Some(Path::new("deep/er/pkg")));
         assert_eq!(
             layout.matching("mod"),
