@@ -81,6 +81,12 @@ impl<'s> WrittenPath<'s> {
         Self { glob: true, ..self }
     }
 
+    /// Whether the path is the prefix of a glob, `use a::b::*`.
+    #[must_use]
+    pub const fn is_glob(&self) -> bool {
+        self.glob
+    }
+
     /// Whether the path, when it ends at a module file, only binds that module's name: written in
     /// a `use` or `mod` declaration and not a glob. Such a path uses no item of the module.
     pub const fn binds_module(&self) -> bool {

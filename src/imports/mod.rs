@@ -46,6 +46,10 @@ mod python_config;
 mod python_layout;
 mod python_stdlib;
 mod queries;
+mod reexport;
+mod reexport_ecmascript;
+mod reexport_python;
+mod reexport_rust;
 mod resolve;
 mod rust;
 mod rust_module;
@@ -99,6 +103,10 @@ mod python_symbols_tests;
 mod python_tests;
 #[cfg(test)]
 mod query_tests;
+#[cfg(test)]
+mod reexport_tests;
+#[cfg(test)]
+mod reexport_web_tests;
 #[cfg(test)]
 mod references_tests;
 #[cfg(test)]
@@ -159,6 +167,9 @@ pub use tsconfig::{alias_configs, project_configs};
 pub use vite::vite_roots;
 pub use vite_alias::{ViteAlias, vite_aliases};
 pub use workspace::{Workspaces, discover as workspaces};
+
+/// A file's path, its imports and its re-export table when it may have one.
+type Collected = (PathBuf, FileImports, Option<reexport::Table>);
 
 /// The imports found in one file. Every list is sorted and free of duplicates.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -416,7 +427,7 @@ pub fn collect_with_assets(
     };
     let entries: Vec<(&PathBuf, &Language)> = files.iter().collect();
     // why: collected into an indexed Vec so the reported error never depends on thread scheduling.
-    let results: Vec<Result<(PathBuf, FileImports), ImportsError>> = entries
+    let results: Vec<Result<Collected, ImportsError>> = entries
         .par_iter()
         .map(|&(path, &language)| {
             let source =
@@ -425,8 +436,18 @@ pub fn collect_with_assets(
                     source,
                 })?;
             let imports = extract_in(&source, language, path, &env)?;
-            Ok((path.clone(), imports))
+            let table = reexport::facade(&source, language, path, &env);
+            Ok((path.clone(), imports, table))
         })
         .collect();
-    results.into_iter().collect()
+    let mut imports = BTreeMap::new();
+    let mut tables = reexport::Tables::new();
+    for result in results {
+        let (path, found, table) = result?;
+        tables.extend(table.map(|table| (path.clone(), table)));
+        imports.insert(path, found);
+    }
+    reexport::complete(&mut tables, root, files, &env);
+    reexport::apply(&mut imports, &tables);
+    Ok(imports)
 }

@@ -15,6 +15,15 @@
   (JSON `via`, `boundary_edges`), and `diff` reports them (`added_boundary_edges` and friends).
   `init` still writes node edges. An edge to a boundary with no node is a contract error.
 
+- Re-exports: an import of a name through a module that re-exports it is attributed to the file
+  that defines the name, so `use crate::ui::Tone;` with `pub use tone::Tone;` in `ui/mod.rs` is a
+  dependency on `ui/tone.rs`, and that file can be its own node. Rust `pub use` (also `pub(crate)`,
+  groups, `as`), TypeScript and JavaScript `export { X } from`, `export type`, `export *`, and
+  Python `from .x import Y` in an `__init__.py` are followed, through chains, with cycle protection.
+  A glob is followed only when exactly one source can define the name. Module imports, `*`, names
+  defined in the module itself and names nothing explains stay on the module file, and the
+  re-exporting module keeps its own edge. `exports` and `private-symbol` are judged at the
+  definition, under its name. See "Re-exports" in DESIGN.md.
 - `brief` and `init`: summary lines count in the singular when there is one (`1 error`, `1 edge`, `1 .arch file`), as `lint` does.
 - README: rewritten in plain language (the idea, a worked example with real output, quick start, a contract cheat sheet linked to DESIGN.md). `tests/readme.rs` now fails when a README command or flag is not in the CLI, or a link or DESIGN.md anchor is missing.
 

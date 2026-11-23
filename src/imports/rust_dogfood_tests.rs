@@ -47,7 +47,8 @@ fn lint_depends_on_the_other_engine_nodes() {
     let all = dogfood();
     let deps = dependencies(&all, "src/lint/mod.rs");
     for expected in [
-        "src/diagram/mod.rs",
+        // why: `diagram/mod.rs` only re-exports `parse`, so lint depends on the file that defines it.
+        "src/diagram/parse.rs",
         "src/ownership/mod.rs",
         "src/imports/mod.rs",
         "src/model/mod.rs",
@@ -160,13 +161,16 @@ fn assert_uses(all: &BTreeMap<PathBuf, FileImports>, file: &str, target: &str, n
 
 #[test]
 fn lint_uses_the_diagram_parser_by_name() {
-    // why: `diagram::parse(&source)` is reached through the `self` binding of `use crate::diagram`.
+    // why: `diagram::parse(&source)` is reached through the `self` binding of `use crate::diagram`;
+    // why: `diagram/mod.rs` only re-exports it, so the sites are at the files that define them.
+    let all = dogfood();
     assert_uses(
-        &dogfood(),
+        &all,
         "src/lint/mod.rs",
-        "src/diagram/mod.rs",
-        &["DiagramError", "parse"],
+        "src/diagram/error.rs",
+        &["DiagramError"],
     );
+    assert_uses(&all, "src/lint/mod.rs", "src/diagram/parse.rs", &["parse"]);
 }
 
 #[test]
@@ -204,11 +208,25 @@ fn a_module_import_group_is_a_dependency_that_uses_no_symbol() {
 
 #[test]
 fn the_binary_uses_the_report_renderers_by_name() {
+    // why: `report/mod.rs` only re-exports the renderers, so each is used at its own file.
+    let all = dogfood();
     assert_uses(
-        &dogfood(),
+        &all,
         "src/cli/commands.rs",
-        "src/report/mod.rs",
-        &["render_text", "render_json", "render_sarif"],
+        "src/report/text.rs",
+        &["render_text"],
+    );
+    assert_uses(
+        &all,
+        "src/cli/commands.rs",
+        "src/report/json.rs",
+        &["render_json"],
+    );
+    assert_uses(
+        &all,
+        "src/cli/commands.rs",
+        "src/report/sarif.rs",
+        &["render_sarif"],
     );
 }
 

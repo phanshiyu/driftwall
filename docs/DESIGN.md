@@ -754,6 +754,8 @@ declare at the `node: *` line of its `.arch` file.
   TypeScript and JavaScript). Python handles relative imports, `__init__.py`, and absolute imports against
   an ordered list of import roots, see "Python resolution" below. Rust handles `use crate::`, `use super::`, and `mod` declarations are
   containment, not edges; see "Rust resolution" below.
+  A named import through a module that re-exports the name is attributed to the file that defines
+  it, see "Re-exports".
   Swift imports resolve through the targets of `Package.swift` (see "Swift resolution") and shell
   `source` commands through literal and script-relative paths (see "Shell resolution").
 - Extraction is tree-sitter based and driven by a per-language table (extensions, grammar, query),
@@ -1391,6 +1393,64 @@ content as separate from the document, CDATA sections, `<textarea>` or `<title>`
 comments, or an unquoted attribute value that contains `>`. A script inside any element, such as
 `<svelte:head>`, is found like one at the top level.
 
+### Re-exports
+
+An import of a name through a module that only re-exports it is attributed to the file that
+defines the name, so a file inside a directory can be its own node while callers write the
+directory's path (`use crate::ui::Tone;` with `pub use tone::Tone;` in `ui/mod.rs` is a dependency
+on `ui/tone.rs`). This is a second step after resolution: an import is first resolved as in the
+language's section, then each name it uses is followed.
+
+- **What is followed.** A resolved import that uses named symbols (`Client`, `default`) of a target
+  file that re-exports one of them from another repository file. The symbol is replaced by the
+  file that defines it, under the name it has there, and the same site is recorded once per
+  defining file: `use crate::ui::{Tone, Theme}` with both re-exported from different files is two
+  imports at one line, each with its own symbols. A name the module defines itself, and a name no
+  re-export explains, stays on the module file.
+- **Never followed (nothing is invented).** A site that uses no symbol (a module binding: `use
+  crate::ui;`, `import ui`, `from pkg import submodule`, a side-effect import) and a site that uses
+  `*` (a glob, `import * as ui`, `export *` as an import) stay on the module file. So does a
+  re-export statement itself: the re-exporting module keeps its own edge to the file it names
+  (`pub use tone::Tone;` is `ui/mod.rs` to `ui/tone.rs`), also when that file re-exports the name
+  again. An import kind (`type-only`, `test_only`, `runtime`), the line and the other symbols of
+  the site are unchanged.
+- **Chains.** A re-export of a re-export is followed to the end. A walk that meets a name it
+  already passed (a cycle) follows nothing: the site stays on the module it named.
+- **Defined locally wins.** A module that defines a name (a top-level item in Rust, a declaration
+  or `export` in TypeScript, a top-level `def`, `class` or assignment in Python) and also
+  re-exports it keeps the name: the site stays on that module.
+- **Globs.** `pub use x::*;` (Rust), `export * from './x'` (TypeScript and JavaScript) and `from .x
+  import *` (Python) re-export every name `x` exports. A name is followed through globs only when
+  exactly one glob source of the module can export it. A source can export a name when the file it
+  names defines it, re-exports it by name or can export it through globs of its own (a cheap
+  check by names, the same tables the walk uses; a macro-generated name is not known). When none
+  or several glob sources can, the site stays on the module. A glob never carries `default`.
+- **Rust.** The re-exports of a file are its top-level `pub use`, `pub(crate) use`, `pub(super) use`
+  and `pub(in ..) use` declarations: `pub use x::Y;`, `pub use x::{Y, Z};`, `pub use x::Y as W;` (a
+  caller of `W` is attributed to the file defining `Y`, under the name `Y`). A private `use` is not
+  a re-export. A path that resolves to a module file as a whole (`pub use crate::gitlab;`) re-exports
+  a module, not an item, and is not followed.
+- **TypeScript and JavaScript.** The re-exports of a file are its `export { X } from './x'`,
+  `export { X as Y } from './x'`, `export { default } from`, `export { default as Y } from`,
+  `export type { X } from`, `export { type X } from` and `export * from './x'`. `export * as ns from`
+  names a namespace, a module binding, and is not followed. `import { X } from './a'; export { X }`
+  is not read as a re-export. The specifier resolves as any other, so aliases and `index` files work.
+- **Python.** The re-exports of an `__init__.py` are its `from .x import Y`, `from .x import Y as
+  W` and `from .x import *` statements (relative or absolute). Only `__init__.py` is read: another
+  module that imports a name is not a facade. When a star source defines `__all__` as a list or
+  tuple of string literals, that list is the names it can export through a glob; otherwise they are
+  its public names (no leading underscore). A name that is a submodule is a module binding and is
+  not followed.
+- **Symbols and surfaces.** The recorded symbol of a followed name is its name at the definition,
+  and the edge, the `exports` check (`private-symbol`) and `brief` all see the defining file's node
+  and that name. The public surface is judged at the definition, not at the re-exporting module: with
+  `%% map tokens: src/ui/tone.rs` and `%% exports tokens: Tone`, `use crate::ui::Tone` is allowed and
+  `use crate::ui::Other` (defined in `ui/other.rs`, another node) is judged against that node. The
+  facade module's own node needs no `exports` line for what it only forwards. An import that stays
+  on the module file is judged against the module's node as before.
+- **Not read.** Re-exports inside inline `mod` blocks or functions, and dynamic ones (`__getattr__`,
+  `globals()`). A conditional one (`#[cfg(..)]`, `if TYPE_CHECKING:`) is read like any other.
+
 ### Import location
 
 An import's line is the line where its statement starts, not the line of the specifier string: the
@@ -1650,6 +1710,8 @@ Every resolved import records the symbols it uses, exactly as written in the cod
   uses `*`. A module binding (`import a.b`, `import a.b as c`, `from a import submodule`, a literal
   `importlib.import_module("a.b")`) uses no symbol, as in Rust: it is a dependency on the module file.
 - A side-effect import (`import './x'`) uses no symbol.
+- A name that a module re-exports is recorded at the file that defines it, under the name it has
+  there, see "Re-exports".
 
 Method calls on values (`client.fetch()`) are not resolved: knowing which `fetch` needs type
 information. driftwall reports only what the syntax proves.

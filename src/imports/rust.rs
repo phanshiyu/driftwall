@@ -35,7 +35,7 @@ use std::path::Path;
 use super::resolve::join_normalised;
 use super::rust_module::{Site, WrittenPath};
 use super::rust_syntax;
-use super::{Environment, Reference, Resolution};
+use super::{Bindings, Environment, Reference, Resolution};
 use crate::model::{PackageKind, SkipReason, Symbol};
 
 /// The crates the Rust toolchain ships, which no manifest lists.
@@ -61,7 +61,7 @@ pub fn resolve(
     let site = Site::of(importer, &inline, env.known, env.rust_paths);
     let mut resolutions = Vec::new();
     for path in &paths {
-        let path = through_bindings(path, reference, &inline, site.as_ref(), env);
+        let path = through_bindings(path, reference.bindings, &inline, site.as_ref(), env);
         let Some((target, symbol)) = path.target(site.as_ref(), env) else {
             resolutions.extend(package(&path, importer, env));
             continue;
@@ -121,16 +121,16 @@ fn embed(path: &str, importer: &Path, env: &Environment<'_>) -> Resolution {
 /// `path` with its first segment replaced by the module path the file bound that name to, when
 /// the name is bound in the module block `inline` to a path that is a repository module file.
 /// Otherwise `path` unchanged.
-fn through_bindings<'s>(
+pub(super) fn through_bindings<'s>(
     path: &WrittenPath<'s>,
-    reference: &Reference<'s>,
+    bindings: &Bindings<'s>,
     inline: &[&'s str],
     site: Option<&Site>,
     env: &Environment<'_>,
 ) -> WrittenPath<'s> {
     let bound = path
         .first_name()
-        .and_then(|name| reference.bindings.get(inline, name));
+        .and_then(|name| bindings.get(inline, name));
     match bound {
         Some(prefix)
             if prefix
