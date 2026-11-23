@@ -19,9 +19,10 @@ use crate::model::{SkipReason, Symbol};
 /// module binding too. Only `from a import *` uses [`Symbol::All`].
 ///
 /// An absolute module is looked up under the import roots of the importer. One that no root
-/// resolves is unresolved when its top-level name is a first-party module or package under a root,
+/// resolves is unresolved when its top-level name is a first-party module or regular package under a root,
 /// unreachable when the name matches a repository path no root reaches, and otherwise a third
-/// party or standard library module, which is ignored. A relative module that matches nothing is
+/// party or standard library module, which is ignored. A name that is only a directory without
+/// `__init__.py` is a namespace portion an installed package beats: skipped as undeclared. A relative module that matches nothing is
 /// unresolved.
 ///
 /// A call to `importlib.import_module(..)` or `__import__(..)` with a plain string literal
@@ -127,10 +128,25 @@ fn miss(module: &[&str], roots: &[PathBuf], importer: &Path, env: &Environment<'
     }
     let first_party = roots.iter().any(|root| {
         let base = join(root, &[first]);
-        env.known.contains(&base.with_extension("py")) || env.python.is_directory(&base)
+        env.known.contains(&base.with_extension("py"))
+            || env.known.contains(&base.join("__init__.py"))
     });
     if first_party {
         return Resolution::Unresolved;
+    }
+    // why: a directory with no `__init__.py` is a namespace portion, which an installed regular package of the same name beats.
+    if let Some(root) = roots
+        .iter()
+        .find(|root| env.python.is_directory(&join(root, &[first])))
+    {
+        return Resolution::SkippedWith {
+            reason: SkipReason::UndeclaredPackage,
+            message: format!(
+                "`{first}` is the namespace directory `{}` (no `__init__.py`) and holds no `{}`; treated as an installed package",
+                join(root, &[first]).display(),
+                module.join(".")
+            ),
+        };
     }
     env.python
         .matching(first)

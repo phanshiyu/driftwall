@@ -61,3 +61,7 @@
   root files are one `root` node when the root also has source directories. A test file (`*.test.*`,
   `*.spec.*`, `test_*.py`, `*_test.py`, `*_test.rs`, `*_tests.rs`) joins the module it tests, or else the
   node of its directory, and never makes a node of its own.
+- Python namespace directories: a miss below a top-level directory with no `__init__.py` (for
+  example `from vendorkit.core.x import Y` when `vendorkit/` is an installed package that the
+  repository only extends) is no longer an `unresolved-import`. It is skipped as `undeclared-package`
+  with a message; directories with an `__init__.py` keep the warning.

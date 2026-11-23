@@ -373,16 +373,52 @@ fn a_missing_module_of_a_first_party_package_is_unresolved() {
 }
 
 #[test]
-fn a_missing_module_below_a_directory_without_init_is_unresolved() {
+fn a_miss_below_a_namespace_directory_is_an_undeclared_package_not_unresolved() {
     let repo = repo(&[
         ("ns/pkg/real.py", ""),
         (
             "main.py",
-            "import ns.pkg.typo\nfrom ns.pkg import typo\nimport ns.pkg\n",
+            "import ns.pkg.typo\nfrom ns.pkg import typo\nimport ns.pkg\nimport ns.pkg.real\n",
         ),
     ]);
-    assert_eq!(repo.unresolved("main.py"), pairs(&[(1, "ns.pkg.typo")]));
-    assert_eq!(repo.edges("main.py"), Vec::new());
+    assert_eq!(repo.unresolved("main.py"), Vec::new());
+    assert_eq!(repo.edges("main.py"), pairs(&[(4, "ns/pkg/real.py")]));
+    let skipped = repo.imports("main.py").skipped;
+    assert_eq!(skipped.len(), 1);
+    assert_eq!(skipped[0].reason, SkipReason::UndeclaredPackage);
+    assert_eq!(skipped[0].specifier, "ns.pkg.typo");
+    assert!(
+        skipped[0]
+            .message
+            .as_deref()
+            .is_some_and(|m| m.contains("namespace directory `ns`"))
+    );
+}
+
+#[test]
+fn an_installed_package_sharing_a_namespace_directory_name_is_not_a_warning() {
+    let repo = repo(&[
+        ("vendorkit/controllers/ctl.py", ""),
+        (
+            "app/main.py",
+            "from vendorkit.core.data_type.common import TradeType\n",
+        ),
+    ]);
+    assert_eq!(repo.unresolved("app/main.py"), Vec::new());
+    assert_eq!(repo.edges("app/main.py"), Vec::new());
+}
+
+#[test]
+fn a_miss_below_a_package_with_init_stays_unresolved() {
+    let repo = repo(&[
+        ("vendorkit/__init__.py", ""),
+        ("vendorkit/controllers/ctl.py", ""),
+        ("app/main.py", "import vendorkit.core.x\n"),
+    ]);
+    assert_eq!(
+        repo.unresolved("app/main.py"),
+        pairs(&[(1, "vendorkit.core.x")])
+    );
 }
 
 #[test]

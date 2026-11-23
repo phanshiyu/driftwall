@@ -450,10 +450,17 @@ file itself is dropped.
 
 An absolute module that no root resolves is decided by its first segment, the top-level name:
 
-1. when some root holds a first-party module or package of that name (`<root>/<name>.py`, or a
-   directory `<root>/<name>/` below which any Python file lies, with or without an `__init__.py`)
-   the import is an `unresolved-import`, as a relative miss is. Exception: the module itself exists
-   as such a directory and the miss is only a name imported from it, which is ignored;
+1. when some root holds a first-party module or regular package of that name (`<root>/<name>.py`, or
+   a directory `<root>/<name>/` that holds an `__init__.py`) the import is an `unresolved-import`, as
+   a relative miss is. Exception: the module itself exists as such a directory and the miss is only a
+   name imported from it, which is ignored;
+1a. else when some root holds a directory `<root>/<name>/` with no `__init__.py` (a namespace
+   directory, below which any Python file lies) the import is skipped as `undeclared-package`, with a
+   message naming the directory. A namespace directory is first-party only for the paths that exist
+   below it (those resolve as usual): in Python an installed regular package of the same name beats
+   a namespace portion, so a miss below it is most likely that package, as with any undeclared
+   third party. The existing reason is reused so the reference stays visible, and the import is not
+   a finding. Exception as in 1: the module itself exists as the directory;
 2. else when some repository path matches the name, anywhere (a file `<name>.py` or a directory
    `<name>/` with a Python file below it, at any depth), the import is skipped as
    `unreachable-module`. Its message names the first such path in path order and says that no import
@@ -788,7 +795,7 @@ a location, the specifier as written and a typed reason (kebab-case in serializa
 
 | Reason | When |
 | --- | --- |
-| `undeclared-package` | TypeScript or JavaScript specifier that is not relative, matches no `tsconfig` or `jsconfig` `paths` alias, is not a workspace package, is not a Node builtin and is not a declared dependency |
+| `undeclared-package` | TypeScript or JavaScript specifier that is not relative, matches no `tsconfig` or `jsconfig` `paths` alias, is not a workspace package, is not a Node builtin and is not a declared dependency; a Python absolute import that misses below a namespace directory, a top-level directory with no `__init__.py` (see "Python resolution") |
 | `dynamic-specifier` | a shell `source` or `.` whose path has no value, see "Shell resolution"; `import(expr)` or `require(expr)` whose argument is not a string literal or a template without substitutions; Python `importlib.import_module(..)` and `__import__(..)` whose first argument is not a plain string literal, or whose relative literal has no usable package (see "Python resolution") |
 | `embed-non-source` | a Rust embed whose target is not a known source file |
 | `unreachable-module` | a Python absolute import that no import root resolves, whose top-level name matches a first-party module or package elsewhere in the repository (see "Python resolution") |
