@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- README: rewritten in plain language (the idea, a worked example with real output, quick start, a contract cheat sheet linked to DESIGN.md). `tests/readme.rs` now fails when a README command or flag is not in the CLI, or a link or DESIGN.md anchor is missing.
+
 - Release: the npm package is published through npm trusted publishing (an OIDC id-token from
   `.github/workflows/publish-npm.yml`), so no `NPM_TOKEN` secret is needed. `tests/release.rs` pins
   it, and the hand fix for dist 0.34's `uses: $/` path in the generated `release.yml`.

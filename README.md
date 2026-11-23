@@ -2,19 +2,206 @@
 
 # driftwall
 
-Your architecture diagram is the contract. driftwall fails the build when the code drifts from it.
+driftwall stops architecture drift. You draw your architecture as a small diagram. driftwall reads
+your code and fails the build when the code depends on something the diagram does not allow.
 
-> Status: proof of concept under construction. This repo is built diagram-first: see
-> [`architecture.mmd`](architecture.mmd) for the contract this codebase is held to, and
-> [`docs/DESIGN.md`](docs/DESIGN.md) for the design.
+> Status: proof of concept, not yet published to crates.io or npm. Install from git (below).
 
+## The idea
 
-## Built with its own contract
+Architecture drifts when code starts using parts it was never meant to use. People do it by
+accident, and AI coding agents do it faster. Nobody notices until the design is gone.
 
-driftwall was written diagram first. Every module below was declared here, with its allowed
-dependencies, before any code existed. Once the tool could read its own Rust, it began enforcing
-this diagram on itself: `driftwall lint . --strict` on this repository prints `driftwall: clean`,
-and both the pre-commit gate and CI fail if the code and the diagram ever disagree.
+With driftwall you write the design down once, in a file called `architecture.mmd`. That file is
+your **contract**. It is a small [Mermaid](https://mermaid.js.org/) diagram:
+
+- Each box is a **component** (the diagram calls it a node): one part of your code with one job,
+  such as `ui`, `api` or `db`.
+- Each arrow is an **edge**: a dependency you allow. `ui --> api` means "`ui` may import from
+  `api`".
+- No arrow means no permission.
+
+driftwall reads the imports in your code, works out which component each file belongs to, and
+compares the two. Any import the diagram does not allow is an error, with the file and line. Run it
+in CI or a pre-commit hook and the architecture stays what you drew.
+
+## A small example
+
+A project with three components. The contract allows `ui` to use `api`, and `api` to use `db`.
+Nothing allows `ui` to use `db` directly.
+
+```text
+flowchart LR
+  ui["ui: screens"]
+  api["api: request handlers"]
+  db["db: storage"]
+  ui --> api
+  api --> db
+  %% map ui: src/ui/
+  %% map api: src/api/
+  %% map db: src/db/
+```
+
+The three `%% map` lines say which folder belongs to which component. They are Mermaid comments,
+so the diagram still renders anywhere.
+
+Now `src/ui/screen.ts` imports from `db`:
+
+```ts
+import { post } from "../api/handler";
+import { save } from "../db/store";
+```
+
+```sh
+driftwall lint .
+```
+
+```text
+src/ui/screen.ts:2: error[undeclared-edge]: `ui` imports `db` (src/db/store.ts) but architecture.mmd declares no edge ui --> db
+  hint: remove the import, or ask the user to approve adding the edge to the contract
+driftwall: 1 error, 0 warnings
+```
+
+The exit code is 1, so CI fails. Remove the import (or, if the design really changed, add
+`ui --> db` to the contract on purpose) and it passes:
+
+```text
+driftwall: clean
+```
+
+## Install
+
+You need a Rust toolchain, version 1.90 or newer. driftwall is not published yet, so install it
+from this repository:
+
+```sh
+cargo install --git https://github.com/phanshiyu/driftwall
+```
+
+macOS and Linux are supported. Windows is untested. See [docs/RELEASING.md](docs/RELEASING.md) for
+how releases will ship.
+
+## Quick start
+
+Inside an existing repository:
+
+```sh
+driftwall init . --map
+driftwall lint . --strict
+```
+
+`init` reads your code and writes a first `architecture.mmd`, with `%% map` lines that tie folders
+to components. The draft lints clean at once because it declares every dependency the code already
+has. That is a snapshot, not a design. Open the file, then:
+
+1. Merge or rename components until each one has a single job.
+2. Delete arrows you do not want. Lint will now report the code that breaks them.
+3. Fix that code, or leave it as visible debt.
+
+Add `driftwall lint .` to CI or a pre-commit hook. Exit codes: `0` clean, `1` violations, `2` the
+tool itself failed (bad diagram syntax, unreadable file, bad arguments).
+
+## Languages
+
+driftwall reads imports in TypeScript, JavaScript, Python, Rust, Swift, shell, Svelte and HTML
+files that have a `<script>` element. Other files are not read. The exact file extensions are in
+[Source languages by file](docs/DESIGN.md#source-languages-by-file).
+
+## Commands
+
+| Command | What it does |
+| --- | --- |
+| `driftwall lint [PATH]` | Check the code against the contract. Flags: `--contract FILE`, `--format text\|json\|sarif`, `--strict` (warnings fail too). |
+| `driftwall init [PATH]` | Write a first contract for an existing repository. Flags: `--depth N`, `--contract FILE`, `--map`, `--no-tags`, `--force`. |
+| `driftwall where FILE` | Show which component owns a file, and why. Flags: `--root DIR`, `--contract FILE`, `--format text\|json`. |
+| `driftwall brief [PATH]` | Print the whole architecture and its current state. Made for agents. Flags: `--contract FILE`, `--format text\|json`. |
+| `driftwall neighbors NODE [PATH]` | Print one component with every edge in or out, and the file and line of each import. Flags: `--contract FILE`, `--format text\|json`, `--files`, `--all-sites`. |
+| `driftwall diff --base REF [PATH]` | Show how the contract changed since a git ref, so a human can review it. Flags: `--contract FILE`, `--format text\|json`, `--exit-code` (exit 1 on any change). |
+
+Run `driftwall <command> --help` for the details. Output for the example above:
+
+```sh
+driftwall where src/ui/screen.ts
+```
+
+```text
+src/ui/screen.ts: ui (via architecture.mmd:7 (map src/ui/))
+```
+
+```sh
+driftwall brief .
+```
+
+```text
+driftwall: 3 nodes, 2 edges (2 implemented, 0 planned), 1 errors, 0 warnings
+nodes:
+  api: src/api/ (1 file)
+  db: src/db/ (1 file)
+  ui: src/ui/ (1 file)
+edges:
+  api --> db (1 import) uses: save
+  ui --> api (1 import) uses: post
+  ui --> db (1 import) UNDECLARED uses: save
+blind spots: none
+```
+
+```sh
+driftwall neighbors api .
+```
+
+```text
+node: api
+label: api: request handlers
+dirs: src/api/
+files: 1
+outgoing:
+  api --> db (1 import) uses: save
+    src/api/handler.ts:1
+incoming:
+  ui --> api (1 import) uses: post
+    src/ui/screen.ts:1
+blind spots: none
+```
+
+## What you can write in a contract
+
+Every line is a Mermaid edge or a Mermaid comment, so the file still renders as a diagram. Full
+syntax and behaviour are in [docs/DESIGN.md](docs/DESIGN.md).
+
+| Write | Meaning | Reference |
+| --- | --- | --- |
+| `a --> b` | `a` may depend on `b`. An arrow with no import behind it is a warning. | [Contract format](docs/DESIGN.md#contract-format) |
+| `a -.-> b` | Planned dependency, allowed until built. | [Contract format](docs/DESIGN.md#contract-format) |
+| `a -->\|test\| b` | `a` may use `b` from test code only. | [Test edges](docs/DESIGN.md#test-edges) |
+| `a -->\|type\| b` | `a` may use `b`'s types, not its runtime code. | [Type edges](docs/DESIGN.md#type-edges) |
+| `%% map ui: src/ui/` | Map files to a component, with no extra files. (`.arch` tag files still work.) | [Contract map](docs/DESIGN.md#contract-map--map) |
+| `%% exports api: post` | Only these names of `api` may be imported from outside. | [Symbols and public surfaces](docs/DESIGN.md#symbols-and-public-surfaces) |
+| `%% order: entry > engine > shared` | Layers, top to bottom. Imports may not point upward, even with no arrow drawn. | [Layer order](docs/DESIGN.md#layer-order) |
+| `%% no-cycles` | The declared arrows may not form a cycle. | [No cycles](docs/DESIGN.md#no-cycles) |
+| `%% budget lint: fan-out 5, files 20` | Warn when a component grows past a limit (`fan-out`, `files`, `lines`). | [Budgets](docs/DESIGN.md#budgets) |
+| `%% tests: isolated` | Production code may not import test files. | [Test isolation](docs/DESIGN.md#test-isolation) |
+| `%% packages db: sqlx` | A component may use only these outside packages. | [Package rules](docs/DESIGN.md#package-rules) |
+| `%% forbid-packages domain: subprocess` | A component may never use these packages. | [Package rules](docs/DESIGN.md#package-rules) |
+
+Every kind of finding, with its severity, is listed in
+[Rules (violation kinds)](docs/DESIGN.md#rules-violation-kinds). `lint` prints `text`, `json`
+(stable, for agents) or `sarif` (for code scanning).
+
+## Use it with AI coding agents
+
+Agents drift fastest, so give them the contract up front and check their work:
+
+- `driftwall brief` prints the architecture in one call, and `driftwall neighbors NODE` zooms in
+  on one component.
+- `driftwall lint . --format json` gives machine-readable findings with file and line.
+- [integrations/claude-code](integrations/claude-code) holds a Claude Code skill and hooks. One
+  injects the contract at session start. One blocks the agent from finishing while lint fails.
+
+## This repository follows its own contract
+
+driftwall was designed diagram first, and this repository is checked against the diagram below on
+every commit. The pre-commit gate and CI both run `driftwall lint .`, and a test fails if the
+diagram stops matching [`architecture.mmd`](architecture.mmd).
 
 <!-- architecture:start -->
 ```mermaid
@@ -66,47 +253,13 @@ flowchart LR
 ```
 <!-- architecture:end -->
 
-Solid arrows are dependencies the code uses and must keep declaring. A dotted arrow would be a
-dependency declared ahead of the code. The diagram above is copied verbatim from
-[`architecture.mmd`](architecture.mmd), and a test fails if the two drift apart.
+## Learn more
 
-- `architecture.mmd` declares nodes and the dependencies allowed between them.
-- `.arch` files tag directories with a node.
-- `driftwall lint` finds unmapped files, unknown nodes and undeclared dependencies, with file and
-  line, in text, JSON or SARIF.
-- Built for AI agents: a deterministic map of where code lives and what may depend on what.
+- [docs/DESIGN.md](docs/DESIGN.md): the full specification and rule reference.
+- [docs/dogfood/README.md](docs/dogfood/README.md): driftwall used on nine real repositories.
+- [docs/RELEASING.md](docs/RELEASING.md): how releases are built.
+- [CHANGELOG.md](CHANGELOG.md): what changed.
 
-## Install
+## License
 
-Not published yet. See [docs/RELEASING.md](docs/RELEASING.md). Until then:
-
-```
-cargo install --git https://github.com/phanshiyu/driftwall
-```
-
-## Use
-
-```
-driftwall init            # baseline architecture.mmd and .arch tags from the existing code
-driftwall lint            # exit 0 clean, 1 violations, 2 tool error
-driftwall lint --format json
-driftwall where src/foo.ts
-driftwall brief           # the whole architecture and its current state, for agents
-driftwall neighbors lint  # one node's dependencies, with file:line sites
-driftwall diff --base main   # contract changes versus a git ref, for human review
-```
-
-An excerpt of `driftwall brief .` on this repository:
-
-```
-driftwall: 8 nodes, 17 edges (17 implemented, 0 planned), 0 errors, 0 warnings
-nodes:
-  cli: src (11 files)
-  lint: src/lint (8 files)
-  model: src/model (1 file)
-edges:
-  cli --> lint (3 imports)
-  lint --> model (11 imports)
-```
-
-Agent integration (Claude Code skill and hooks): [integrations/claude-code](integrations/claude-code).
+[MIT](LICENSE).
