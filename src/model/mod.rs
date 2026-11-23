@@ -449,6 +449,9 @@ pub enum SkipReason {
     /// A specifier that a Vite `resolve.alias` entry matches whose target path has no file in the
     /// repository, typically a build output.
     AliasTargetMissing,
+    /// A `new URL('<literal>', import.meta.url)` whose target is a directory, missing or outside
+    /// the repository.
+    FileReferenceMissing,
 }
 
 /// A reference driftwall saw and could not follow, kept so it is never silently dropped.

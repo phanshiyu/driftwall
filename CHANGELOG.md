@@ -124,3 +124,4 @@
   `folded, no node`, and `init` tagless of this repository reproduces exactly the nodes of its contract.
 - `init` reads the imports again when a Rust embed of an asset was skipped before the tags were known, so its
   note counts the same skipped references as `lint` on the baseline it writes.
+- File references: `new URL('<literal>', import.meta.url)` in TypeScript, JavaScript, Svelte and HTML scripts is a dependency on the file it names, relative to the importing file: a source file is a `runtime` import that uses no symbol, any other file an `asset`. A directory, a missing file or a path outside the repository is the new skipped reason `file-reference-missing` (never a finding), and a non-literal first argument is `dynamic-specifier`.

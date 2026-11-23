@@ -4,7 +4,7 @@
 //! imported names as `@name`; all captures of one match are resolved together.
 
 /// Forms shared by TypeScript and JavaScript: `import ... from`, `import 'a'`, every
-/// `export ... from`, dynamic `import(...)` and `require(...)`. The argument of a call is captured
+/// `export ... from`, dynamic `import(...)`, `require(...)` and `new URL(..., import.meta.url)`. The argument of a call is captured
 /// whatever it is, so the resolver can tell a literal from a computed specifier.
 macro_rules! ecmascript_imports {
     () => {
@@ -18,6 +18,11 @@ macro_rules! ecmascript_imports {
   function: (identifier) @callee
   arguments: (arguments . (_) @specifier .)
   (#eq? @callee "require"))
+(new_expression
+  constructor: (identifier) @constructor
+  arguments: (arguments . (_) @specifier . (_) @base .)
+  (#eq? @constructor "URL")
+  (#eq? @base "import.meta.url"))
 "#
     };
 }

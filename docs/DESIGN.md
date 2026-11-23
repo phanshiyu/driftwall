@@ -473,6 +473,29 @@ with `/*` but not `/**`, a `//` comment, a string and a `/**/` comment are not r
 is found by the grammar, so a `/**` inside a string literal is not one. It is test code by the file
 rules of "Import kind". A JSDoc `@import {T} from './x'` tag is not read.
 
+#### File references (`new URL`)
+
+`new URL('<path>', import.meta.url)` in TypeScript, JavaScript, Svelte and HTML scripts names a file
+relative to the file it is written in: Vite bundles a source file reached this way as a module or
+worker and copies any other file as an asset, and tests use it to spawn scripts and read fixtures. It
+is read by this form only (no heuristic for any other string that looks like a path): a `new`
+expression of the plain identifier `URL` whose first argument is anything and whose second argument is
+exactly `import.meta.url`. Its location is the line the `new` expression starts on.
+
+- A first argument that is not a plain string literal or a template without substitutions is skipped
+  as `dynamic-specifier`.
+- The literal is joined onto the directory of the importing file, `.` and `..` folded, with no
+  probing (a file reference names the exact file, so no extension is appended and no `index` file is
+  tried) and with a `?` or `#` suffix removed. A literal with a URL scheme (`https:`, `data:`) is not
+  a repository file and is ignored.
+- A known source file (excluded files included) is a resolved import of kind `runtime` that uses no
+  symbol, so it is never `private-symbol`, and still a dependency on that file's node.
+- An existing non-source file is an `asset` import, as an import of it would be.
+- A target that is a directory, does not exist, or leaves the repository (a leading `/` included) is
+  skipped as `file-reference-missing`, with a message naming the repository path looked for. It is
+  not an `unresolved-import` and so never a finding: unlike an `import`, the file may be created at
+  run time or by a build, and the skip keeps it visible in `brief`.
+
 ### Python resolution
 
 A module reference is the dotted module of `import a.b`, `import a.b as c`, `from a.b import c`,
@@ -943,7 +966,7 @@ import { b } from './a';` on one line) stay two entries, so a type-only use is n
 runtime or the other way round. Entries are sorted by location, target, symbols, kind, `test_only`.
 
 `asset`: a TypeScript or JavaScript import that resolves to an existing non-source repository file
-(`./data.json`, `./style.css`, `../x.svg`, see "Asset files"). It uses no symbol, so it is never
+(`./data.json`, `./style.css`, `../x.svg`, see "Asset files"), and a `new URL('<file>', import.meta.url)` of such a file (see "File references"). It uses no symbol, so it is never
 `private-symbol`, it is a dependency on the node that owns the asset, and it is `asset` even inside a
 declaration file. As for every import, an asset owned by nobody or by the importer's own node is no
 edge.
@@ -982,10 +1005,11 @@ a location, the specifier as written and a typed reason (kebab-case in serializa
 | Reason | When |
 | --- | --- |
 | `undeclared-package` | TypeScript or JavaScript specifier that is not relative, matches no `tsconfig` or `jsconfig` `paths` alias, is not a workspace package, is not a Node builtin and is not a declared dependency; a Python absolute import that misses below a namespace directory, a top-level directory with no `__init__.py` (see "Python resolution") |
-| `dynamic-specifier` | a shell `source` or `.` whose path has no value, see "Shell resolution"; `import(expr)` or `require(expr)` whose argument is not a string literal or a template without substitutions; Python `importlib.import_module(..)` and `__import__(..)` whose first argument is not a plain string literal, or whose relative literal has no usable package, and a Python file loader whose path is not a literal naming a known file (see "Python resolution") |
+| `dynamic-specifier` | a shell `source` or `.` whose path has no value, see "Shell resolution"; `import(expr)` or `require(expr)`, or `new URL(expr, import.meta.url)`, whose argument is not a string literal or a template without substitutions; Python `importlib.import_module(..)` and `__import__(..)` whose first argument is not a plain string literal, or whose relative literal has no usable package, and a Python file loader whose path is not a literal naming a known file (see "Python resolution") |
 | `embed-non-source` | a Rust embed whose target is neither a known source file nor an asset a tag covers |
 | `unreachable-module` | a Python absolute import that no import root resolves, whose top-level name matches a first-party module or package elsewhere in the repository (see "Python resolution") |
 | `alias-target-missing` | a TypeScript or JavaScript specifier that a Vite `resolve.alias` entry matches whose target path has no file in the repository (see "Vite aliases") |
+| `file-reference-missing` | a `new URL('<literal>', import.meta.url)` whose target is a directory, missing or outside the repository (see "File references") |
 | `undeclared-owner` | an import of an asset or an excluded file whose owner is not a declared node, recorded by `lint` rather than by import extraction (see "Asset files" and "Excluded files") |
 | `unresolved-root-path` | a root-absolute `src`, `href` or import specifier of an HTML file that finds no file below its Vite root (see "Svelte and HTML") |
 

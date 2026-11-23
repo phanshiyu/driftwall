@@ -73,6 +73,8 @@ mod ecmascript_symbols_tests;
 #[cfg(test)]
 mod excluded_tests;
 #[cfg(test)]
+mod file_reference_tests;
+#[cfg(test)]
 mod fixtures;
 #[cfg(test)]
 mod html_tests;

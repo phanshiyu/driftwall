@@ -39,11 +39,54 @@ pub fn ecmascript(
     importer: &Path,
     env: &Environment<'_>,
 ) -> Vec<Resolution> {
-    if literal_text(reference.node, reference.source).is_none() {
+    let Some(literal) = literal_text(reference.node, reference.source) else {
         return vec![Resolution::Skipped(SkipReason::DynamicSpecifier)];
+    };
+    if is_file_reference(reference.node) {
+        return vec![file_reference(literal, importer, env)];
     }
     let resolution = specifier(reference.specifier, importer, env);
     vec![resolution.using(ecmascript_symbols::used(reference.node, reference.source))]
+}
+
+/// Whether `node`, a captured specifier, is the first argument of a `new` expression: the only
+/// `new` form the query captures is `new URL(.., import.meta.url)`.
+fn is_file_reference(node: tree_sitter::Node<'_>) -> bool {
+    node.parent()
+        .and_then(|arguments| arguments.parent())
+        .is_some_and(|parent| parent.kind() == "new_expression")
+}
+
+/// Resolves the literal `written` of `new URL(written, import.meta.url)` in `importer`: the exact
+/// file it names, relative to the importer, with no probing.
+fn file_reference(written: &str, importer: &Path, env: &Environment<'_>) -> Resolution {
+    let path = strip_suffix(written);
+    // why: `https:` and `data:` URLs name no repository file.
+    if has_scheme(path) {
+        return Resolution::Ignored;
+    }
+    match join_normalised(importer.parent(), path) {
+        Some(target) if env.known.contains(&target) => Resolution::resolved(target),
+        Some(target) if env.assets.contains(&target) => Resolution::Asset { target },
+        other => {
+            let looked =
+                other.map_or_else(|| written.to_owned(), |path| path.display().to_string());
+            Resolution::SkippedWith {
+                reason: SkipReason::FileReferenceMissing,
+                message: format!("`{looked}` is a directory, missing or outside the repository"),
+            }
+        }
+    }
+}
+
+/// Whether `path` starts with a URL scheme: a letter, then letters, digits, `+`, `-` or `.`, then `:`.
+fn has_scheme(path: &str) -> bool {
+    path.split_once(':').is_some_and(|(scheme, _)| {
+        scheme.starts_with(|c: char| c.is_ascii_alphabetic())
+            && scheme
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'))
+    })
 }
 
 /// Resolves the literal `written` as the specifier of an import in `importer`: the suffix, the

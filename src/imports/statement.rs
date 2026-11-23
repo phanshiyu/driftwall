@@ -25,11 +25,17 @@ fn enclosing<'a>(node: Node<'a>, kinds: &[&str]) -> Node<'a> {
 }
 
 /// The TypeScript and JavaScript statement or call expression around a specifier: an `import` or
-/// `export` statement, or the `require(..)` or `import(..)` call.
+/// `export` statement, the `require(..)` or `import(..)` call, or the `new URL(..)` expression.
 pub fn ecmascript_anchor(specifier: Node<'_>) -> Node<'_> {
+    // why: the nearest of these wins, so a `new URL(..)` inside another call is located at its own line.
     enclosing(
         specifier,
-        &["import_statement", "export_statement", "call_expression"],
+        &[
+            "import_statement",
+            "export_statement",
+            "call_expression",
+            "new_expression",
+        ],
     )
 }
 
