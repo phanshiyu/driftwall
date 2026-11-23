@@ -125,13 +125,7 @@ fn init_makes_one_node_per_swift_target_and_lints_clean() {
 
     let contract = driftwall::diagram::parse(&read(dir.path(), "architecture.mmd")).unwrap();
     let nodes: Vec<String> = contract.nodes.keys().map(ToString::to_string).collect();
-    for expected in [
-        "AppCore",
-        "DeskApp",
-        "app-cli",
-        "app-perf",
-        "AppCoreTests",
-    ] {
+    for expected in ["AppCore", "DeskApp", "app-cli", "app-perf", "AppCoreTests"] {
         assert!(
             nodes.contains(&expected.to_owned()),
             "{expected} in {nodes:?}"

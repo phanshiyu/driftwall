@@ -349,26 +349,14 @@ fn a_sub_project_with_its_own_manifest_is_split_by_directory() {
 /// A dashboard sub-project: manifest, flat `src/`, and `test/`, `scripts/`, `dev/` beside it.
 fn dashboard() -> Files {
     vec![
-        (
-            "apps/dashboard/package.json",
-            "{\"name\": \"dashboard\"}\n",
-        ),
-        (
-            "apps/dashboard/vite.config.ts",
-            "export default {};\n",
-        ),
+        ("apps/dashboard/package.json", "{\"name\": \"dashboard\"}\n"),
+        ("apps/dashboard/vite.config.ts", "export default {};\n"),
         (
             "apps/dashboard/src/app.ts",
             "import { cards } from './cards';\nimport { api } from './api';\n\nexport const app = [cards, api];\n",
         ),
-        (
-            "apps/dashboard/src/cards.ts",
-            "export const cards = 1;\n",
-        ),
-        (
-            "apps/dashboard/src/api.ts",
-            "export const api = 1;\n",
-        ),
+        ("apps/dashboard/src/cards.ts", "export const cards = 1;\n"),
+        ("apps/dashboard/src/api.ts", "export const api = 1;\n"),
         (
             "apps/dashboard/test/app.test.ts",
             "import { app } from '../src/app';\n\nexport const t = app;\n",
@@ -377,10 +365,7 @@ fn dashboard() -> Files {
             "apps/dashboard/scripts/build.mjs",
             "export const build = 1;\n",
         ),
-        (
-            "apps/dashboard/dev/serve.mjs",
-            "export const serve = 1;\n",
-        ),
+        ("apps/dashboard/dev/serve.mjs", "export const serve = 1;\n"),
     ]
 }
 
@@ -388,10 +373,7 @@ fn dashboard() -> Files {
 fn a_dashboard_unit_splits_src_and_keeps_test_scripts_and_dev_as_directories() {
     let dir = repo(&dashboard());
     init_ok(&dir);
-    assert_eq!(
-        read(&dir, "apps/dashboard/src/.arch"),
-        "node: *\n"
-    );
+    assert_eq!(read(&dir, "apps/dashboard/src/.arch"), "node: *\n");
     assert_eq!(
         read(&dir, "apps/dashboard/.arch"),
         "node: dashboard\nscope: here\n"

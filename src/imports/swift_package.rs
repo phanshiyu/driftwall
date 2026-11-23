@@ -276,12 +276,12 @@ let package = Package(
         assert_eq!(
             found,
             [
-                t("Dotted", "pkg/b", false),
-                t("Gen", "pkg/Sources/Gen", false),
                 t("AppCore", "pkg/Sources/AppCore", false),
                 t("AppCoreTests", "pkg/Tests/AppCoreTests", true),
-                t("Macros", "pkg/Sources/Macros", false),
                 t("DeskApp", "pkg/App/PM", false),
+                t("Dotted", "pkg/b", false),
+                t("Gen", "pkg/Sources/Gen", false),
+                t("Macros", "pkg/Sources/Macros", false),
             ]
         );
     }

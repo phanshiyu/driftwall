@@ -300,10 +300,7 @@ fn a_script_reachable_only_through_a_makefile_pythonpath_is_unreachable() {
         ("scripts/tuner.py", "def parse(): ...\n"),
         ("vendorkit/__init__.py", ""),
         ("vendorkit/bt/__init__.py", ""),
-        (
-            "vendorkit/bt/parity.py",
-            "\n\nfrom tuner import parse\n",
-        ),
+        ("vendorkit/bt/parity.py", "\n\nfrom tuner import parse\n"),
     ]);
     let imports = repo.imports("vendorkit/bt/parity.py");
     assert_eq!(imports, {
