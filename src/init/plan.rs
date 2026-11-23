@@ -42,7 +42,8 @@ pub struct InitPlan {
 /// tagged `node: *` and each module and subdirectory becomes a node instead. Imports of or from
 /// files outside `files` and `assets` are ignored.
 ///
-/// `assets` are the walked files that are not source. An asset has the owner the tags give it (the
+/// `assets` are the walked files that are not source, and the excluded source files, which imports
+/// resolve to like assets. An asset has the owner the tags give it (the
 /// existing ones and the ones planned here, see [`owner_in`]), and an import of an asset whose
 /// owner is another declared node is an edge, exactly as `lint` counts it.
 #[must_use]

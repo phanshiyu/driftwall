@@ -69,6 +69,8 @@ mod asset_tests;
 #[cfg(test)]
 mod ecmascript_symbols_tests;
 #[cfg(test)]
+mod excluded_tests;
+#[cfg(test)]
 mod fixtures;
 #[cfg(test)]
 mod html_tests;
@@ -265,7 +267,8 @@ impl Resolution {
     }
 }
 
-/// [`collect_with_assets`] when no asset is known, so an import of a non-source file is unresolved.
+/// [`collect_with_assets`] when no asset or excluded file is known, so an import of a non-source
+/// file is unresolved.
 ///
 /// # Errors
 /// The same as [`collect_with_assets`].
@@ -273,14 +276,16 @@ pub fn collect(
     root: &Path,
     files: &BTreeMap<PathBuf, Language>,
 ) -> Result<BTreeMap<PathBuf, FileImports>, ImportsError> {
-    collect_with_assets(root, files, &BTreeSet::new())
+    collect_with_assets(root, files, &BTreeSet::new(), &BTreeSet::new())
 }
 
 /// Reads and extracts every file in `files`, relative to `root`.
 ///
 /// The key set of `files` is the set of known repository files used for resolution, and `assets`
 /// the set of repository files that are not source, which a TypeScript or JavaScript import can
-/// also resolve to. Library
+/// also resolve to. `excluded` is the set of source files the scan left out (vendored, minified,
+/// generated): they are never read, but they are known files, so an import of one resolves to it
+/// exactly like an import of any source file. Library
 /// crates are discovered once from the `Cargo.toml` files next to the known `lib.rs` files, and
 /// import aliases once from the `tsconfig.json` and `jsconfig.json` files at or above the
 /// TypeScript and JavaScript files, and declared packages from the `package.json` files there.
@@ -293,8 +298,10 @@ pub fn collect_with_assets(
     root: &Path,
     files: &BTreeMap<PathBuf, Language>,
     assets: &BTreeSet<PathBuf>,
+    excluded: &BTreeSet<PathBuf>,
 ) -> Result<BTreeMap<PathBuf, FileImports>, ImportsError> {
-    let known: BTreeSet<PathBuf> = files.keys().cloned().collect();
+    // why: an excluded file is not read, but it is a repository file an import can name.
+    let known: BTreeSet<PathBuf> = files.keys().chain(excluded).cloned().collect();
     let crates = library_crates(root, &known);
     let aliases = alias_configs(root, files);
     let packages = package_dependencies(root, files);

@@ -523,3 +523,19 @@ fn the_same_repository_always_gets_the_same_baseline() {
         assert_eq!(arch_files(first.path()), arch_files(second.path()));
     }
 }
+
+#[test]
+fn an_import_of_an_excluded_file_is_an_edge_init_declares() {
+    let dir = repo(&[
+        (
+            "src/a/x.mjs",
+            "import {g} from './g.mjs'; import {h} from '../b/h.mjs';\n",
+        ),
+        ("src/a/g.mjs", "// do not edit\nexport const g = 1;\n"),
+        ("src/b/h.mjs", "// @generated\nexport const h = 1;\n"),
+        ("src/b/y.mjs", "export const y = 1;\n"),
+    ]);
+    init_ok(&dir);
+    assert_eq!(edge_pairs(&dir), ["a b"]);
+    assert_lints_clean(&dir);
+}

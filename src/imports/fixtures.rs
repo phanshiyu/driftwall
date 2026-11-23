@@ -61,7 +61,8 @@ impl Repo {
 
     /// The imports of every source file.
     pub fn collect(&self) -> BTreeMap<PathBuf, FileImports> {
-        collect_with_assets(self.dir.path(), &self.files, &self.assets).expect("collect succeeds")
+        collect_with_assets(self.dir.path(), &self.files, &self.assets, &BTreeSet::new())
+            .expect("collect succeeds")
     }
 
     /// The imports of `file`.

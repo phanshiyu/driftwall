@@ -12,6 +12,8 @@ mod reconcile;
 mod rules;
 
 #[cfg(test)]
+mod excluded_tests;
+#[cfg(test)]
 mod fixtures;
 #[cfg(test)]
 mod resolution_tests;
@@ -156,7 +158,8 @@ pub fn observe(root: &Path, options: &LintOptions) -> Result<Observation, LintEr
         .chain(&ownership.asset_unmapped)
         .cloned()
         .collect();
-    let imports = imports::collect_with_assets(root, &files, &assets)?;
+    let excluded: BTreeSet<PathBuf> = ownership.excluded.values().flatten().cloned().collect();
+    let imports = imports::collect_with_assets(root, &files, &assets, &excluded)?;
 
     let report = reconcile(&contract, &ownership, &imports, &options.contract);
     let observed = observed_edges(&contract, &ownership, &imports);

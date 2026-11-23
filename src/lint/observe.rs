@@ -13,8 +13,8 @@ use crate::model::{
 ///
 /// An import counts only when both files have an owner, the owners differ, and both owners are
 /// declared in the contract. Anything else (an unmapped file, an owner that names an unknown
-/// node, an import within one node) is not a crossing. An asset has an owner like a source file, so
-/// an import of an asset owned by another node is a crossing. The order follows `imports`.
+/// node, an import within one node) is not a crossing. An asset or an excluded file has an owner
+/// like a source file, so an import of one owned by another node is a crossing. The order follows `imports`.
 pub(super) fn crossings<'a>(
     contract: &Contract,
     ownership: &Ownership,
@@ -39,11 +39,12 @@ pub(super) fn crossings<'a>(
         .collect()
 }
 
-/// The imports of an asset whose owner is not a node the contract declares, as skipped references.
+/// The imports of an asset or an excluded file whose owner is not a node the contract declares, as
+/// skipped references.
 ///
 /// Such an import is no crossing (see [`crossings`]), but it must not vanish: it is recorded when
 /// the importing file is owned by a declared node. The specifier is the repository path of the
-/// asset and the message names it and its owner. Sorted and free of duplicates.
+/// target and the message names it and its owner. Sorted and free of duplicates.
 pub(super) fn undeclared_owners(
     contract: &Contract,
     ownership: &Ownership,
@@ -54,7 +55,16 @@ pub(super) fn undeclared_owners(
         .flat_map(|file_imports| &file_imports.resolved)
         .filter_map(|import| {
             declared_owner(contract, ownership, &import.at.file)?;
-            let owner = ownership.asset_owners.get(&import.target)?;
+            let (kind, owner) = ownership
+                .asset_owners
+                .get(&import.target)
+                .map(|owner| ("asset", owner))
+                .or_else(|| {
+                    ownership
+                        .excluded_owners
+                        .get(&import.target)
+                        .map(|owner| ("excluded file", owner))
+                })?;
             if contract.nodes.contains_key(owner) {
                 return None;
             }
@@ -64,7 +74,7 @@ pub(super) fn undeclared_owners(
                 specifier: asset.to_string(),
                 reason: SkipReason::UndeclaredOwner,
                 message: Some(format!(
-                    "asset `{asset}` is owned by `{owner}`, which the contract does not declare"
+                    "{kind} `{asset}` is owned by `{owner}`, which the contract does not declare"
                 )),
             })
         })
@@ -114,8 +124,8 @@ pub fn observed_symbols(
     used
 }
 
-/// The owner of `file`, a source file or an asset, only when that owner is a node the contract
-/// declares.
+/// The owner of `file`, a source file, an asset or an excluded file, only when that owner is a node
+/// the contract declares.
 fn declared_owner<'a>(
     contract: &Contract,
     ownership: &'a Ownership,
@@ -125,6 +135,7 @@ fn declared_owner<'a>(
         .owners
         .get(file)
         .or_else(|| ownership.asset_owners.get(file))
+        .or_else(|| ownership.excluded_owners.get(file))
         .filter(|owner| contract.nodes.contains_key(*owner))
 }
 

@@ -98,8 +98,9 @@ impl Decision {
 ///
 /// Vendored, minified and generated files (see [`exclusion_of`] and [`announces_generated`]) are
 /// not source: they appear in
-/// [`Ownership::excluded`] and nowhere else, unless the root `.driftwallignore` whitelists them
-/// with a negated pattern.
+/// [`Ownership::excluded`] and nowhere else (and [`Ownership::excluded_owners`], which names the
+/// node of each one a tag covers), unless the root `.driftwallignore` whitelists them with a
+/// negated pattern.
 ///
 /// Every other walked file is an asset, owned by the same tag rules and listed in
 /// [`Ownership::asset_owners`] or [`Ownership::asset_unmapped`]. Assets never appear in
@@ -187,6 +188,14 @@ pub fn scan(root: &Path) -> Result<Ownership, OwnershipError> {
             None => {
                 ownership.asset_unmapped.insert(asset);
             }
+        }
+    }
+    // why: like an asset, an excluded file must never fail the scan, so a bad derived name is no owner.
+    for file in ownership.excluded.values().flatten() {
+        let owner = nearest_decision(&decisions, file)
+            .and_then(|(dir, decision)| decision.node_for(dir, file).ok());
+        if let Some(node) = owner {
+            ownership.excluded_owners.insert(file.clone(), node);
         }
     }
     tags.extend(derived);

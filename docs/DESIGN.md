@@ -98,9 +98,24 @@ default. A source file is excluded when
   is read lossily.
 
 A file that matches several gets the first of `vendored`, `minified`, `generated`. Excluded files are
-never owned, never unmapped and never resolve as import targets. They are not silently dropped:
-`Ownership::excluded` maps each reason to the sorted set of excluded paths, so a report can show
-them. `.arch` files are never excluded.
+never parsed, never in `Ownership::owners` and never `unmapped-file`: their own imports are not read.
+They are not silently dropped: `Ownership::excluded` maps each reason to the sorted set of excluded
+paths, so a report can show them. `.arch` files are never excluded.
+
+**Excluded files are import targets.** Leaving a file out of the scan does not make it disappear
+from the repository, and an import of it is real code that depends on it. An excluded file is
+probed exactly like a source file (see "Probing"), so `./font-metrics.mjs` finds the excluded
+`font-metrics.mjs` before it would find `font-metrics.d.mts`, and `./g.mjs` is no
+`unresolved-import` when `g.mjs` exists and was excluded. Such an import is a resolved import of kind
+`runtime` unless the import says otherwise (see "Import kind"), it records its symbols like any
+other, and it is a dependency on the node that owns the excluded file. The owner is decided by the
+tag rules of source files, as for assets: `Ownership::excluded_owners` maps each owned excluded file
+to its node, an excluded file that no tag covers (or whose derived name under `node: *` is not a node
+id) is in no map and is a target with no owner, which makes no edge. When the owner is not a node
+the contract declares, the import is recorded as an `undeclared-owner` skipped reference, as for an
+asset (see "Asset files"), with the message ``excluded file `<path>` is owned by `<node>`, which the
+contract does not declare``. Excluded files stay out of `owners`, `unmapped`, every file count and
+every module-node derivation: they only resolve and have an owner.
 
 A project opts files back in with a negated pattern in the `.driftwallignore` at the repository
 root (`!vendor/mine/`, `!static/app.min.js`, `!dist/`, `!src/api.gen.ts`): a file whose path that file whitelists is source
@@ -228,7 +243,8 @@ declare at the `node: *` line of its `.arch` file.
 ## Import semantics
 
 - An import is an edge only when it resolves to a repository file owned by a different node. The
-  file is a source file or, for TypeScript and JavaScript, an asset (see "Asset files").
+  file is a source file, an excluded file (see "Excluded files") or, for TypeScript and JavaScript,
+  an asset (see "Asset files").
 - Imports inside one node are ignored. Third party and standard library imports are ignored.
 - A relative import that resolves to nothing is an `unresolved-import` warning, never silently
   dropped, whatever extension the specifier has (`./missing.json` included). So is a Python absolute
@@ -273,7 +289,8 @@ resolves the specifier.
 A candidate path (a relative path, an alias target, a package entry) is looked up against the files
 the scan knows. The first that exists wins, in this order:
 
-1. the path itself as a source file, then the path itself as an asset (see "Asset files"). A candidate
+1. the path itself as a source file (an excluded file counts as one, see "Excluded files"), then the
+   path itself as an asset (see "Asset files"). A candidate
    written with a trailing `/` is a directory and skips this step and the next two;
 2. the path with an extension appended, in this order: `ts`, `tsx`, `d.ts`, `mts`, `cts`, `d.mts`,
    `d.cts`, `js`, `jsx`, `mjs`, `cjs`, `svelte`. The extension is appended, so `user.service` finds
@@ -842,7 +859,7 @@ a location, the specifier as written and a typed reason (kebab-case in serializa
 | `dynamic-specifier` | a shell `source` or `.` whose path has no value, see "Shell resolution"; `import(expr)` or `require(expr)` whose argument is not a string literal or a template without substitutions; Python `importlib.import_module(..)` and `__import__(..)` whose first argument is not a plain string literal, or whose relative literal has no usable package, and a Python file loader whose path is not a literal naming a known file (see "Python resolution") |
 | `embed-non-source` | a Rust embed whose target is not a known source file |
 | `unreachable-module` | a Python absolute import that no import root resolves, whose top-level name matches a first-party module or package elsewhere in the repository (see "Python resolution") |
-| `undeclared-owner` | an import of an asset whose owner is not a declared node, recorded by `lint` rather than by import extraction (see "Asset files") |
+| `undeclared-owner` | an import of an asset or an excluded file whose owner is not a declared node, recorded by `lint` rather than by import extraction (see "Asset files" and "Excluded files") |
 | `unresolved-root-path` | a root-absolute `src`, `href` or import specifier of an HTML file that finds no file below its Vite root (see "Svelte and HTML") |
 
 For `undeclared-package`, a specifier that a `paths` pattern matches is an alias and never skipped,
@@ -859,7 +876,7 @@ For a skipped Python call the specifier is the text of its first argument.
 
 A skipped reference may carry a `message`, a sentence of explanation. `unreachable-module` has one:
 it names the repository path the top-level name matches. So has `unresolved-root-path`: it names
-the Vite root that was searched. And `undeclared-owner`: it names the asset and its owner. `message` is absent from the
+the Vite root that was searched. And `undeclared-owner`: it names the asset or excluded file and its owner. `message` is absent from the
 serialized form when there is none.
 
 ## Symbols and public surfaces

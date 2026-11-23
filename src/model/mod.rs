@@ -279,6 +279,11 @@ pub struct Ownership {
     pub tag_dirs: BTreeMap<PathBuf, DirTag>,
     /// Source files the scan left out, by reason. They are neither owned nor unmapped.
     pub excluded: BTreeMap<Exclusion, BTreeSet<PathBuf>>,
+    /// Owner per excluded file that a tag covers, by the same rules as source files and assets.
+    /// An excluded file is still an import target, so an import of it is a dependency on this
+    /// node. It stays in [`Ownership::excluded`] and in no other field: one that no tag covers is
+    /// in no map here.
+    pub excluded_owners: BTreeMap<PathBuf, NodeId>,
     /// Owner per repository-relative asset: every other walked file (`data.json`, `style.css`),
     /// by the same tag rules as source files. Assets are not source, so they are in no other field
     /// and count in no file total.
