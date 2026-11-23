@@ -915,7 +915,8 @@ which node every source file belongs to. A file is decided by the first rule tha
    others, and a plan that needs an `.arch` at that same path is a conflict as for any existing file.
 2. **Code units** (only without `--depth`). Directories that a manifest or the layout names as one
    buildable or importable unit are decomposed into nodes, see below.
-3. **The automatic cut** (only without `--depth`) for everything that is left.
+3. **The automatic cut** (only without `--depth`) for everything that is left. Large nodes that
+   result from rules 2 and 3 are then cut once more, see "The layer split".
 4. **`--depth N`** replaces rules 2 and 3: every file left belongs to its ancestor directory at
    depth N from the repo root, or to its own directory when that is shallower, one directory node
    each. Module nodes and units never appear under an explicit `--depth`, so both layouts stay
@@ -1025,6 +1026,26 @@ and `components` when it is.
   the root is the source directory of the primary JavaScript unit too: with a root `package.json`
   whose `src/` is itself a unit (it has a `tsconfig.json`), the files of the root unit are the
   tooling files and the directories beside `src/`, so they are cut here and not by `node: *`.
+
+### The layer split
+
+After rules 2 and 3 (never under `--depth`), a node that is too big to read is cut one more level.
+A node qualifies when it stands for one directory (a directory node, or a module node whose files
+all lie below one subdirectory of a `node: *` directory), owns at least 35 source files, and at
+least one child directory of it holds at least 8 of those files. Then every child directory with
+at least 8 of the node's files becomes a directory node `<id>-<child>` covering everything below it
+that no nearer tag takes, and the node keeps the rest (its loose files and the small child
+directories) as a directory node of the directory, with the same id it had and scope `subtree`
+(small children are not covered by a tag of their own, so they must stay under the parent). A
+module node that is split is no longer derived by `node: *`: its id is now declared by the tag at its
+directory, and the nearer tags win. When the node has a name (`ui-components`, a Swift target) the
+children are `<name>-<child>`; otherwise their ids come from the path like any directory node.
+
+A node with more than 4 qualifying children is not split: that is a flat collection of features
+(`src/ui` with `kit/`, `lesson/`, `mascot/`, ..), not layers, and splitting it would only multiply
+nodes. The split applies once, to the nodes rules 2 and 3 produced, never to its own results. The
+numbers 35, 8 and 4 were chosen on real repositories: they split a screens-plus-`settings/`-plus-`ui/`
+directory of 38 files and leave a feature collection of 195 files, and 33-file directories, whole.
 
 ### Prefixes
 

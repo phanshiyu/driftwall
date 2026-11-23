@@ -24,7 +24,7 @@ pub(super) enum Counted {
 }
 
 /// The node a file ends up in, before directory ids are assigned.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) enum Owner {
     /// The directory node tagged at this directory (empty for the repository root).
     Directory(PathBuf),

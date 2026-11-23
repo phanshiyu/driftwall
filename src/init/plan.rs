@@ -75,6 +75,7 @@ pub fn plan(
         if !rest.is_empty() {
             draft.cut_automatically(&rest);
         }
+        draft.split_layers();
     }
 
     let directory_ids = ids::assign(

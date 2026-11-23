@@ -65,3 +65,6 @@
   example `from vendorkit.core.x import Y` when `vendorkit/` is an installed package that the
   repository only extends) is no longer an `unresolved-import`. It is skipped as `undeclared-package`
   with a message; directories with an `__init__.py` keep the warning.
+- `init` layer split: a node of 35 or more source files with at least one child directory holding 8 or
+  more of them (and at most 4 such children) is cut one level further: one node per large child
+  directory (`components-settings`, `components-ui`), the rest stays in the parent node.

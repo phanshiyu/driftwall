@@ -9,6 +9,7 @@ mod existing;
 mod ids;
 mod layout;
 mod plan;
+mod split;
 mod units;
 mod write;
 
@@ -16,6 +17,8 @@ mod write;
 mod plan_tests;
 #[cfg(test)]
 mod scope_tests;
+#[cfg(test)]
+mod split_tests;
 #[cfg(test)]
 mod swift_tests;
 #[cfg(test)]
