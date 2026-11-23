@@ -42,14 +42,20 @@ pub fn ecmascript(
     if literal_text(reference.node, reference.source).is_none() {
         return vec![Resolution::Skipped(SkipReason::DynamicSpecifier)];
     }
-    let specifier = strip_suffix(reference.specifier);
-    let resolution = if is_relative(specifier) {
-        resolve(specifier, importer, env)
-    } else {
-        resolve_bare(specifier, importer, env)
-    };
-    let resolution = with_query_kind(reference.specifier, resolution);
+    let resolution = specifier(reference.specifier, importer, env);
     vec![resolution.using(ecmascript_symbols::used(reference.node, reference.source))]
+}
+
+/// Resolves the literal `written` as the specifier of an import in `importer`: the suffix, the
+/// relative or bare resolution and the query kind of the module documentation, with no symbols.
+pub fn specifier(written: &str, importer: &Path, env: &Environment<'_>) -> Resolution {
+    let stripped = strip_suffix(written);
+    let resolution = if is_relative(stripped) {
+        resolve(stripped, importer, env)
+    } else {
+        resolve_bare(stripped, importer, env)
+    };
+    with_query_kind(written, resolution)
 }
 
 /// `resolution` for a specifier written as `specifier`, with a source file target turned into an

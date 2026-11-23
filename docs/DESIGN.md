@@ -376,6 +376,22 @@ A declared dependency is a name listed in `dependencies`, `devDependencies`, `pe
 `optionalDependencies` of any `package.json` at or above the file, up to the repository root, because
 Node searches every ancestor `node_modules`. A name declared in any one of them is declared.
 
+#### JSDoc type imports
+
+A block comment that starts with `/**` in a TypeScript, JavaScript or Svelte script may name a module
+in a type: `@type {import('../../src/types').ImageManifest}`, `@returns {import('./x').T}`,
+`@param {import("y")} p`. Each such `import(` is an import of kind `type-only`, resolved like the
+specifier of an `import` statement (relative, aliases, workspace packages, package check, assets,
+queries), so an unresolvable relative one is an `unresolved-import` and an undeclared package is
+skipped as `undeclared-package`. It is read by this form only: the word `import` not preceded by an
+identifier character or a `.`, optional whitespace, `(`, optional whitespace, a string in single or
+double quotes with no escape, optional whitespace and `)`. When `.` and an identifier
+follow the `)`, the import uses that member as its symbol (`ImageManifest`, `T`); with none it uses
+no symbol. Its location is the line of the `import` word, inside the comment. A comment that starts
+with `/*` but not `/**`, a `//` comment, a string and a `/**/` comment are not read. The comment
+is found by the grammar, so a `/**` inside a string literal is not one. It is test code by the file
+rules of "Import kind". A JSDoc `@import {T} from './x'` tag is not read.
+
 ### Python resolution
 
 A module reference is the dotted module of `import a.b`, `import a.b as c`, `from a.b import c`,
@@ -744,8 +760,9 @@ callers can decide what a type-only or test import is worth.
 `type-only`:
 
 - TypeScript and JavaScript: `import type ...`, `export type ... from`, an import or re-export where
-  every specifier is written `type X` (`import { type A, type B } from`), and every import in a
-  declaration file (`.d.ts`, `.d.mts`, `.d.cts`). `import { type A, B }` is `runtime`, as is a
+  every specifier is written `type X` (`import { type A, type B } from`), every import in a
+  declaration file (`.d.ts`, `.d.mts`, `.d.cts`), and every JSDoc `import('x')` type (see "JSDoc type
+  imports"). `import { type A, B }` is `runtime`, as is a
   default or namespace import beside type specifiers, `import {} from`, and `require(..)` or
   `import(..)`.
 - Python: an import anywhere inside the body of `if TYPE_CHECKING:` or `if typing.TYPE_CHECKING:`

@@ -3,8 +3,8 @@
 use std::path::Path;
 
 use super::{
-    Bindings, Environment, Reference, Resolution, markup, python, queries, resolve, rust, shell,
-    statement, statement::Flags, swift,
+    Bindings, Environment, Reference, Resolution, jsdoc, markup, python, queries, resolve, rust,
+    shell, statement, statement::Flags, swift,
 };
 use crate::model::Language;
 
@@ -51,6 +51,17 @@ pub struct Loads {
     /// Resolves one path written in `importer`. The import it makes uses no symbol.
     pub resolve: fn(&str, &Path, &Environment<'_>) -> Resolution,
     /// Decides from the importing file whether the import is written in test code.
+    pub flags: fn(&Path) -> Flags,
+}
+
+/// How a language finds and resolves the modules its comments name in types, see "`JSDoc` type imports" in `docs/DESIGN.md`.
+pub struct Docs {
+    /// The imports written in the comments below the root of a parsed region.
+    pub read: for<'a> fn(tree_sitter::Node<'_>, &'a str) -> Vec<jsdoc::DocImport<'a>>,
+    /// Resolves one specifier written in `importer`. Its import uses at most the member read.
+    pub resolve: fn(&str, &Path, &Environment<'_>) -> Resolution,
+    /// Decides from the importing file whether the import is written in test code. The import is
+    /// type-only whatever the file.
     pub flags: fn(&Path) -> Flags,
 }
 
@@ -119,7 +130,16 @@ pub struct LanguageSpec {
     pub resolve: fn(&Reference<'_>, &Path, &Environment<'_>) -> Vec<Resolution>,
     /// How the files that [`Scan::loads`] lists resolve, for a language whose markup loads files.
     pub loads: Option<Loads>,
+    /// `JSDoc` type imports, for a language whose scripts are TypeScript or JavaScript.
+    pub docs: Option<&'static Docs>,
 }
+
+/// The [`LanguageSpec::docs`] of TypeScript, JavaScript and Svelte.
+static DOCS: Docs = Docs {
+    read: jsdoc::read,
+    resolve: resolve::specifier,
+    flags: statement::doc_flags,
+};
 
 static TYPESCRIPT: LanguageSpec = LanguageSpec {
     language: Language::TypeScript,
@@ -129,6 +149,7 @@ static TYPESCRIPT: LanguageSpec = LanguageSpec {
     flags: statement::ecmascript_flags,
     resolve: resolve::ecmascript,
     loads: None,
+    docs: Some(&DOCS),
 };
 
 static PYTHON: LanguageSpec = LanguageSpec {
@@ -139,6 +160,7 @@ static PYTHON: LanguageSpec = LanguageSpec {
     flags: statement::python_flags,
     resolve: python::resolve,
     loads: None,
+    docs: None,
 };
 
 static SVELTE: LanguageSpec = LanguageSpec {
@@ -149,6 +171,7 @@ static SVELTE: LanguageSpec = LanguageSpec {
     flags: statement::ecmascript_flags,
     resolve: resolve::ecmascript,
     loads: None,
+    docs: Some(&DOCS),
 };
 
 static HTML: LanguageSpec = LanguageSpec {
@@ -162,6 +185,7 @@ static HTML: LanguageSpec = LanguageSpec {
         resolve: markup::resolve_load,
         flags: statement::load_flags,
     }),
+    docs: None,
 };
 
 static JAVASCRIPT: LanguageSpec = LanguageSpec {
@@ -172,6 +196,7 @@ static JAVASCRIPT: LanguageSpec = LanguageSpec {
     flags: statement::ecmascript_flags,
     resolve: resolve::ecmascript,
     loads: None,
+    docs: Some(&DOCS),
 };
 
 static RUST: LanguageSpec = LanguageSpec {
@@ -182,6 +207,7 @@ static RUST: LanguageSpec = LanguageSpec {
     flags: statement::rust_flags,
     resolve: rust::resolve,
     loads: None,
+    docs: None,
 };
 
 static SWIFT: LanguageSpec = LanguageSpec {
@@ -192,6 +218,7 @@ static SWIFT: LanguageSpec = LanguageSpec {
     flags: statement::swift_flags,
     resolve: swift::resolve,
     loads: None,
+    docs: None,
 };
 
 static SHELL: LanguageSpec = LanguageSpec {
@@ -202,6 +229,7 @@ static SHELL: LanguageSpec = LanguageSpec {
     flags: statement::shell_flags,
     resolve: shell::resolve,
     loads: None,
+    docs: None,
 };
 
 /// The table entry for `language`, or `None` when extraction is not implemented for it yet.

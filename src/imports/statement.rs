@@ -96,6 +96,12 @@ pub fn load_flags(file: &Path) -> Flags {
     Flags::new(false, ecmascript_test_file(file))
 }
 
+/// The test flag of a `JSDoc` type import written in `file`, by the file rules of
+/// [`ecmascript_flags`]. The import is type-only whatever the file.
+pub fn doc_flags(file: &Path) -> Flags {
+    Flags::new(true, ecmascript_test_file(file))
+}
+
 /// Whether `file` is a TypeScript or JavaScript test file: `*.test.*`, `*.spec.*`, or below a
 /// `__tests__`, `test` or `tests` directory.
 fn ecmascript_test_file(file: &Path) -> bool {

@@ -34,6 +34,7 @@ mod ecmascript_symbols;
 mod error;
 mod extract;
 mod glob;
+mod jsdoc;
 mod manifest;
 mod markup;
 mod package;
@@ -70,6 +71,8 @@ mod ecmascript_symbols_tests;
 mod fixtures;
 #[cfg(test)]
 mod html_tests;
+#[cfg(test)]
+mod jsdoc_tests;
 #[cfg(test)]
 mod kind_tests;
 #[cfg(test)]
@@ -124,7 +127,7 @@ pub use project::Project;
 pub use python_config::python_roots;
 pub use python_layout::PythonLayout;
 pub use rust_scope::Bindings;
-pub use spec::{Grammar, LanguageSpec, Load, Loads, Region, Scan, spec};
+pub use spec::{Docs, Grammar, LanguageSpec, Load, Loads, Region, Scan, spec};
 pub use swift::SwiftModules;
 pub use swift_package::{SwiftTarget, swift_targets};
 pub use tsconfig::{alias_configs, project_configs};

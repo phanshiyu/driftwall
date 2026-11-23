@@ -181,6 +181,18 @@ fn found_in(
             found.record(resolution, &at, specifier, flags);
         }
     }
+    if let Some(docs) = spec.docs {
+        for doc in (docs.read)(tree.root_node(), source) {
+            let at = Location {
+                file: file.to_path_buf(),
+                line: doc.line,
+            };
+            let symbols = doc.member.map(|name| Symbol::Name(name.to_owned()));
+            let resolution =
+                (docs.resolve)(doc.specifier, file, env).using(symbols.into_iter().collect());
+            found.record(resolution, &at, doc.specifier, (docs.flags)(file));
+        }
+    }
     Ok(())
 }
 
