@@ -715,6 +715,8 @@ pub enum ViolationKind {
     ForbiddenPackage,
     /// An entry of a `%% packages` line that no package use of its node matches.
     StalePackage,
+    /// A node named by `%% facade` owns no file that re-exports anything.
+    StaleFacade,
 }
 
 /// How serious a violation is.

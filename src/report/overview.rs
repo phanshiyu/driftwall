@@ -105,6 +105,9 @@ pub fn render_overview_text(overview: &Overview) -> String {
         if overview.rules.tests_isolated {
             out.push_str("  tests: isolated\n");
         }
+        if !overview.rules.facades.is_empty() {
+            let _ = writeln!(out, "  facade: {}", overview.rules.facades.join(", "));
+        }
     }
     out.push_str(&blind::summary_block(
         &overview.blind_spots,

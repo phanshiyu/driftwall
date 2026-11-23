@@ -195,6 +195,7 @@ mod tests {
                 "production-imports-test",
                 "redundant-edge",
                 "stale-edge",
+                "stale-facade",
                 "stale-map",
                 "stale-package",
                 "test-only-edge",
@@ -205,7 +206,7 @@ mod tests {
                 "upward-edge",
             ]
         );
-        assert_eq!(value["runs"][0]["results"].as_array().unwrap().len(), 16);
+        assert_eq!(value["runs"][0]["results"].as_array().unwrap().len(), 17);
     }
 
     #[test]

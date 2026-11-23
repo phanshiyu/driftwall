@@ -32,6 +32,7 @@ fn import(from: &str, to: &str) -> (PathBuf, FileImports) {
             skipped: Vec::new(),
             test_file: false,
             packages: Vec::new(),
+            reexports: false,
         },
     )
 }

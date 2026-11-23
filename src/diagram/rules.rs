@@ -18,6 +18,8 @@ pub(super) enum Directive<'a> {
     Budget(&'a str),
     /// `%% tests: isolated`: the text after the colon.
     Tests(&'a str),
+    /// `%% facade <node>, <node>`: the text after the keyword.
+    Facade(&'a str),
 }
 
 /// The rule directive a comment line is, or `None` for anything else.
@@ -31,6 +33,11 @@ pub(super) fn directive(text: &str) -> Option<Directive<'_>> {
     }
     if let Some(rest) = body.strip_prefix("tests:") {
         return Some(Directive::Tests(rest.trim()));
+    }
+    if let Some(rest) = body.strip_prefix("facade")
+        && (rest.is_empty() || rest.starts_with(char::is_whitespace))
+    {
+        return Some(Directive::Facade(rest.trim()));
     }
     if let Some(rest) = body.strip_prefix("budget")
         && (rest.is_empty() || rest.starts_with(char::is_whitespace))
@@ -57,6 +64,10 @@ pub(super) fn render(rules: &Rules) -> Vec<String> {
     if rules.tests_isolated.is_some() {
         lines.push("  %% tests: isolated".to_owned());
     }
+    if !rules.facades.is_empty() {
+        let nodes: Vec<String> = rules.facades.keys().map(ToString::to_string).collect();
+        lines.push(format!("  %% facade {}", nodes.join(", ")));
+    }
     for (node, budget) in &rules.budgets {
         let limits: Vec<String> = [
             ("fan-out", budget.fan_out),
@@ -79,6 +90,7 @@ pub(super) struct RuleParser {
     no_cycles_boundaries: Option<u32>,
     budgets: BTreeMap<NodeId, Budget>,
     tests_isolated: Option<u32>,
+    facades: BTreeMap<NodeId, u32>,
 }
 
 impl RuleParser {
@@ -89,7 +101,30 @@ impl RuleParser {
             Directive::NoCycles(rest) => self.no_cycles(rest, line),
             Directive::Budget(rest) => self.budget(rest, line),
             Directive::Tests(rest) => self.tests(rest, line),
+            Directive::Facade(rest) => self.facade(rest, line),
         }
+    }
+
+    fn facade(&mut self, rest: &str, line: u32) -> Result<(), DiagramError> {
+        let malformed = |reason: String| DiagramError::MalformedRule {
+            line,
+            rule: "facade".to_owned(),
+            reason,
+        };
+        if rest.is_empty() {
+            return Err(malformed("expected `%% facade <node>, <node>`".to_owned()));
+        }
+        for raw in rest.split(',') {
+            let node = NodeId::new(raw.trim())
+                .map_err(|source| DiagramError::InvalidId { line, source })?;
+            if let Some(first) = self.facades.get(&node) {
+                return Err(malformed(format!(
+                    "`{node}` is already a facade on line {first}"
+                )));
+            }
+            self.facades.insert(node, line);
+        }
+        Ok(())
     }
 
     fn tests(&mut self, rest: &str, line: u32) -> Result<(), DiagramError> {
@@ -243,6 +278,15 @@ impl RuleParser {
                 });
             }
         }
+        for (node, line) in &self.facades {
+            if !nodes.contains_key(node) {
+                return Err(DiagramError::MalformedRule {
+                    line: *line,
+                    rule: "facade".to_owned(),
+                    reason: format!("`{node}` is not a declared node"),
+                });
+            }
+        }
         if let Some(line) = self.no_cycles {
             check_node_cycles(line, nodes, edges, edge_lines, boundary_edges)?;
         }
@@ -255,6 +299,7 @@ impl RuleParser {
             no_cycles_boundaries: self.no_cycles_boundaries,
             budgets: self.budgets,
             tests_isolated: self.tests_isolated,
+            facades: self.facades,
         })
     }
 }

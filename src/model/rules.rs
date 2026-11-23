@@ -50,6 +50,9 @@ pub struct RulesSummary {
     /// Whether the contract has `%% tests: isolated`. Omitted from JSON when false.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub tests_isolated: bool,
+    /// The nodes of the `%% facade` lines, sorted. Empty, and omitted from JSON, without one.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub facades: Vec<String>,
 }
 
 impl RulesSummary {
@@ -60,6 +63,7 @@ impl RulesSummary {
             && !self.no_cycles
             && !self.no_cycles_boundaries
             && !self.tests_isolated
+            && self.facades.is_empty()
     }
 }
 
@@ -76,6 +80,7 @@ impl Rules {
             no_cycles: self.no_cycles.is_some(),
             no_cycles_boundaries: self.no_cycles_boundaries.is_some(),
             tests_isolated: self.tests_isolated.is_some(),
+            facades: self.facades.keys().map(ToString::to_string).collect(),
         }
     }
 
@@ -170,6 +175,8 @@ pub struct Rules {
     pub budgets: BTreeMap<NodeId, Budget>,
     /// The line of `%% tests: isolated`, see "Test isolation".
     pub tests_isolated: Option<u32>,
+    /// The nodes of the `%% facade` lines with the line of each, see "Re-exports".
+    pub facades: BTreeMap<NodeId, u32>,
 }
 
 impl Rules {
@@ -181,5 +188,6 @@ impl Rules {
             && self.no_cycles_boundaries.is_none()
             && self.budgets.is_empty()
             && self.tests_isolated.is_none()
+            && self.facades.is_empty()
     }
 }

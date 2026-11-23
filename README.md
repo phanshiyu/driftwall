@@ -181,6 +181,7 @@ syntax and behaviour are in [docs/DESIGN.md](docs/DESIGN.md).
 | `%% no-cycles` | The declared arrows may not form a cycle. | [No cycles](docs/DESIGN.md#no-cycles) |
 | `%% budget lint: fan-out 5, files 20` | Warn when a component grows past a limit (`fan-out`, `files`, `lines`). | [Budgets](docs/DESIGN.md#budgets) |
 | `%% tests: isolated` | Production code may not import test files. | [Test isolation](docs/DESIGN.md#test-isolation) |
+| `%% facade ui-lib` | Callers of a re-exporting module depend on it, not on what it re-exports. | [Re-exports](docs/DESIGN.md#re-exports) |
 | `%% packages db: sqlx` | A component may use only these outside packages. | [Package rules](docs/DESIGN.md#package-rules) |
 | `%% forbid-packages domain: subprocess` | A component may never use these packages. | [Package rules](docs/DESIGN.md#package-rules) |
 

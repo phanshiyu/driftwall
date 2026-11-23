@@ -59,7 +59,7 @@ flowchart LR
 - A comment whose first word is `exports` is the surface directive (see "Symbols and public
   surfaces"), and one whose first word is `map` is the mapping directive (see "Contract map").
   The comments whose first word is `order:` (see "Layer order"), `no-cycles` or `no-cycles:` (see
-  "No cycles"), `budget` (see "Budgets") or `tests:` (see "Test isolation") are the rule directives
+  "No cycles"), `budget` (see "Budgets") `tests:` (see "Test isolation") or `facade` (see "Re-exports") are the rule directives
   of "Contract rules". The colon must follow the word directly, so a comment such as `%% tests -->
   ...` stays plain. The comments whose first word is `packages` or `forbid-packages` are package rules (see
   "Package rules"). Every other comment is plain.
@@ -234,7 +234,7 @@ Rules that are not about one pair of nodes are directives, one `%%` line each, p
 contract and stored in `Contract::rules`. Each is checked deterministically from data driftwall
 already has. A directive that is malformed, names something undeclared, or is given twice (one
 `%% order`, one `%% tests`, one `%% no-cycles`, one `%% no-cycles: boundaries`, one `%% budget` per
-node) is a contract error with its line, like any other syntax outside the subset: silently
+node, a node once in `%% facade`) is a contract error with its line, like any other syntax outside the subset: silently
 ignoring one would let a typo become a missing rule. `render` writes them back, after the edges.
 `brief` and `neighbors` show them, see below.
 
@@ -1449,6 +1449,24 @@ language's section, then each name it uses is followed.
   tuple of string literals, that list is the names it can export through a glob; otherwise they are
   its public names (no leading underscore). A name that is a submodule is a module binding and is
   not followed.
+- **Facades.** Following to the definition is the default. A node that deliberately presents
+  other nodes' items as its own (an anti-corruption layer, a wire module) is declared with
+  `%% facade <node>[, <node>]`, one or more nodes per line and any number of lines. When an
+  importer that is not in a facade node imports a name through a re-export in a file that node
+  owns, the site is attributed to that file, and the walk does not go past it: with `%% facade
+  ui-lib`, `import { Comment } from '../lib/wire'` is a dependency on `ui-lib` even though
+  `wire.ts` re-exports it from `types`. The walk still follows chains up to the facade file, so a
+  barrel in front of the facade is followed. The facade's own re-export statements keep their
+  edges to the definitions (`ui-lib --> types`), and inside the facade node nothing changes: its
+  own files follow re-exports as above. `exports` and `private-symbol` for a name reached through a
+  facade are judged at the facade node, since that is where the site now is. A facade node
+  whose files re-export nothing is the warning `stale-facade` at its directive's line
+  ("`%% facade ui-lib` on line 9 names a node whose files re-export nothing"), so a stale
+  declaration is not left behind. A node that is not declared is a contract error with the line.
+  A node listed twice is also an error. `render` writes the directive back as one line, nodes
+  sorted. `brief` shows `  facade: ui-lib` in its `rules:` block and the JSON `rules` has
+  `facades`, a sorted list of node ids, absent when empty. `diff` compares nodes, edges and
+  surfaces only and does not report rule directives, so it does not report facades either.
 - **Symbols and surfaces.** The recorded symbol of a followed name is its name at the definition,
   and the edge, the `exports` check (`private-symbol`) and `brief` all see the defining file's node
   and that name. The public surface is judged at the definition, not at the re-exporting module: with
@@ -1773,6 +1791,7 @@ module and no symbol and adds nothing to `uses:`.
 | `planned-realized` | warning | dotted edge now backed by production code, promote it to solid (a dotted test or type edge to `-->|test|` or `-->|type|`) |
 | `redundant-edge` | warning | node edge that a boundary edge already covers with a kind at least as wide, see "Boundary edges" |
 | `test-only-edge` | warning | solid edge whose every import site is test-only, declare it `-->|test|`; also an unlabelled dotted edge whose every site is test-only, which the app does not use yet |
+| `stale-facade` | warning | a node named by `%% facade` owns no file that re-exports anything, see "Re-exports" |
 | `unresolved-import` | warning | relative import resolves to nothing, whatever its extension; Python absolute import into a first-party package that holds no such module; shell `source` of a path that finds no file |
 | `private-symbol` | error | an import uses a symbol outside the target node's declared surface |
 | `over-budget` | warning | a node exceeds a `%% budget` limit (fan-out, files or lines), see "Budgets" |
@@ -2235,11 +2254,11 @@ needs a valid contract: with none, `where` answers as before and lists nothing.
   node owns and the tags, so it is the same in `brief`, `neighbors` and JSON, and for every run.
 - A contract with rule directives (see "Contract rules") adds to `brief`: a `rules:` block after the
   edges, one line per directive (`  order: entry > engine > shared`, one line per `%% order` chain, `  no-cycles`,
-  `  no-cycles: boundaries`, `  tests: isolated`), and for a node in a listed
+  `  no-cycles: boundaries`, `  tests: isolated`, `  facade: ui-lib, wire`), and for a node in a listed
   boundary ` layer: engine (2 of 3)` (the place in the first chain that lists the boundary) and for a node with a budget ` budget: fan-out 3/5, files 21/20
   over` at the end of its line, before the blind spots. In JSON the
   document has `rules` (`order`, a list of chains, each the boundaries top first; `no_cycles` and `no_cycles_boundaries`,
-  `true` when the line is there; `tests_isolated`) and the node has `layer` (`boundary`,
+  `true` when the line is there; `tests_isolated`; `facades`, the node ids sorted) and the node has `layer` (`boundary`,
   `rank` from 0 at the top, `of`); both are absent when the contract has no such rule, so a contract
   without rule directives reads as before. `neighbors` prints the same `layer:` and `budget:` lines after `dirs:`.
 - **Packages.** A node that uses packages lists them in `brief` and `neighbors`, third party

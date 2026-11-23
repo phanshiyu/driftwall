@@ -7,6 +7,7 @@
 
 mod budget;
 mod diff;
+mod facade;
 mod isolation;
 mod layers;
 mod observe;
@@ -200,8 +201,14 @@ pub fn observe(root: &Path, options: &LintOptions) -> Result<Observation, LintEr
         .chain(&ownership.folded)
         .cloned()
         .collect();
-    let mut imports =
-        imports::collect_with_assets(root, &files, &assets, &ownership.asset_unmapped, &excluded)?;
+    let mut imports = imports::collect_with_facades(
+        root,
+        &files,
+        &assets,
+        &ownership.asset_unmapped,
+        &excluded,
+        &facade::files(&contract, &ownership),
+    )?;
     let owner_of = |path: &Path| {
         if uses_maps {
             mapper.owner(path, &ownership.tag_dirs)
@@ -223,6 +230,12 @@ pub fn observe(root: &Path, options: &LintOptions) -> Result<Observation, LintEr
     report
         .violations
         .extend(budget::findings(&budgets, &options.contract));
+    report.violations.extend(facade::findings(
+        &contract,
+        &ownership,
+        &imports,
+        &options.contract,
+    ));
     report.violations.sort();
     report.violations.dedup();
     let symbols = observed_symbols(&contract, &edge_ownership, &imports);

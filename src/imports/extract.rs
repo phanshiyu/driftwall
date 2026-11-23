@@ -122,6 +122,7 @@ pub fn extract_in(
         skipped: skipped.into_iter().collect(),
         test_file: statement::test_file(language, file) || env.test_files.contains(file),
         packages: packages.into_iter().collect(),
+        reexports: false,
     })
 }
 

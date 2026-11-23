@@ -23,7 +23,8 @@ pub(super) const fn severity(kind: ViolationKind) -> Severity {
         | ViolationKind::StaleMap
         | ViolationKind::IgnoredTagFiles
         | ViolationKind::OverBudget
-        | ViolationKind::StalePackage => Severity::Warning,
+        | ViolationKind::StalePackage
+        | ViolationKind::StaleFacade => Severity::Warning,
     }
 }
 
@@ -70,6 +71,9 @@ pub(super) const fn hint(kind: ViolationKind) -> &'static str {
         }
         ViolationKind::StalePackage => {
             "remove the entry from the `%% packages` line, or restore the use in code"
+        }
+        ViolationKind::StaleFacade => {
+            "remove the node from the `%% facade` line, or restore the re-exports in code"
         }
         ViolationKind::PrivateSymbol => {
             "import a name the node exports, or ask the user to approve extending its `%% exports` line in the contract"

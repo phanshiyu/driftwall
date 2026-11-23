@@ -23,6 +23,7 @@ pub(super) const fn kind_str(kind: ViolationKind) -> &'static str {
         ViolationKind::ProductionImportsTest => "production-imports-test",
         ViolationKind::ForbiddenPackage => "forbidden-package",
         ViolationKind::StalePackage => "stale-package",
+        ViolationKind::StaleFacade => "stale-facade",
     }
 }
 

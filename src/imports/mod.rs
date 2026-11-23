@@ -104,6 +104,8 @@ mod python_tests;
 #[cfg(test)]
 mod query_tests;
 #[cfg(test)]
+mod reexport_facade_tests;
+#[cfg(test)]
 mod reexport_tests;
 #[cfg(test)]
 mod reexport_web_tests;
@@ -158,6 +160,7 @@ pub use package::package_dependencies;
 pub use project::Project;
 pub use python_config::python_roots;
 pub use python_layout::PythonLayout;
+pub use reexport::Facades;
 pub use rust_paths::PathModules;
 pub use rust_scope::Bindings;
 pub use spec::{Docs, Grammar, LanguageSpec, Load, Loads, Region, Scan, spec};
@@ -186,6 +189,9 @@ pub struct FileImports {
     pub test_file: bool,
     /// Imports of code outside the repository, see "Package uses" in `docs/DESIGN.md`.
     pub packages: Vec<PackageUse>,
+    /// Whether the file re-exports something from another repository file, see "Re-exports" in
+    /// `docs/DESIGN.md`. Set by [`collect_with_facades`].
+    pub reexports: bool,
 }
 
 #[cfg(test)]
@@ -394,6 +400,24 @@ pub fn collect_with_assets(
     unowned: &BTreeSet<PathBuf>,
     excluded: &BTreeSet<PathBuf>,
 ) -> Result<BTreeMap<PathBuf, FileImports>, ImportsError> {
+    collect_with_facades(root, files, assets, unowned, excluded, &Facades::new())
+}
+
+/// [`collect_with_assets`] with facade files, where re-exports stop being followed.
+///
+/// `facades` holds each file of a facade node with the node's name: an import from outside that
+/// node goes no further than it, see "Facades" in "Re-exports" in `docs/DESIGN.md`.
+///
+/// # Errors
+/// The same as [`collect_with_assets`].
+pub fn collect_with_facades(
+    root: &Path,
+    files: &BTreeMap<PathBuf, Language>,
+    assets: &BTreeSet<PathBuf>,
+    unowned: &BTreeSet<PathBuf>,
+    excluded: &BTreeSet<PathBuf>,
+    facades: &Facades,
+) -> Result<BTreeMap<PathBuf, FileImports>, ImportsError> {
     // why: an excluded file is not read, but it is a repository file an import can name.
     let known: BTreeSet<PathBuf> = files.keys().chain(excluded).cloned().collect();
     let crates = library_crates(root, &known);
@@ -448,6 +472,6 @@ pub fn collect_with_assets(
         imports.insert(path, found);
     }
     reexport::complete(&mut tables, root, files, &env);
-    reexport::apply(&mut imports, &tables);
+    reexport::apply(&mut imports, &tables, facades);
     Ok(imports)
 }

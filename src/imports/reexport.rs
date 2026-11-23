@@ -36,6 +36,10 @@ pub struct Table {
     pub lines: BTreeSet<u32>,
 }
 
+/// The files owned by a facade node, with that node's name, see "Facades" in "Re-exports". A file
+/// not in the map is in no facade node.
+pub type Facades = BTreeMap<PathBuf, String>;
+
 /// The tables of the files that may be named by an import, by repository-relative path.
 pub type Tables = BTreeMap<PathBuf, Table>;
 
@@ -122,13 +126,22 @@ pub fn complete(
 
 /// The file that defines `name` of `file` and the name it has there, or `None` when the name stays
 /// on `file`: it is defined there, nothing re-exports it, it cannot be decided or the walk cycles.
-fn follow(tables: &Tables, file: &Path, name: &str) -> Option<(PathBuf, String)> {
+fn follow(
+    tables: &Tables,
+    file: &Path,
+    name: &str,
+    stops: &dyn Fn(&Path) -> bool,
+) -> Option<(PathBuf, String)> {
     let start = (file.to_path_buf(), name.to_owned());
     let mut current = start.clone();
     let mut seen = BTreeSet::new();
     loop {
         if !seen.insert(current.clone()) {
             return None;
+        }
+        // why: a facade is where the importer's dependency ends, the walk goes no further.
+        if stops(&current.0) {
+            break;
         }
         let Some(table) = tables.get(&current.0) else {
             break;
@@ -211,7 +224,12 @@ fn can_export(
 }
 
 /// Attributes every named symbol of every import in `imports` to the file that defines it.
-pub fn apply(imports: &mut BTreeMap<PathBuf, FileImports>, tables: &Tables) {
+pub fn apply(imports: &mut BTreeMap<PathBuf, FileImports>, tables: &Tables, facades: &Facades) {
+    for (file, found) in imports.iter_mut() {
+        found.reexports = tables
+            .get(file)
+            .is_some_and(|table| !table.names.is_empty() || !table.stars.is_empty());
+    }
     if tables
         .values()
         .all(|table| table.names.is_empty() && table.stars.is_empty())
@@ -219,6 +237,9 @@ pub fn apply(imports: &mut BTreeMap<PathBuf, FileImports>, tables: &Tables) {
         return;
     }
     for (file, found) in imports.iter_mut() {
+        let home = facades.get(file);
+        // why: inside a facade node nothing changes, every other importer stops at the facade.
+        let stops = |at: &Path| facades.get(at).is_some_and(|node| Some(node) != home);
         let own = tables.get(file).map(|table| &table.lines);
         let mut merged: BTreeMap<(Location, PathBuf, ImportKind, bool), BTreeSet<Symbol>> =
             BTreeMap::new();
@@ -228,7 +249,7 @@ pub fn apply(imports: &mut BTreeMap<PathBuf, FileImports>, tables: &Tables) {
             let groups = if kept {
                 None
             } else {
-                regroup(&import, file, tables)
+                regroup(&import, file, tables, &stops)
             };
             let Some(groups) = groups else {
                 let key = (import.at, import.target, import.kind, import.test_only);
@@ -261,12 +282,13 @@ fn regroup(
     import: &ResolvedImport,
     importer: &Path,
     tables: &Tables,
+    stops: &dyn Fn(&Path) -> bool,
 ) -> Option<BTreeMap<PathBuf, BTreeSet<Symbol>>> {
     let mut groups: BTreeMap<PathBuf, BTreeSet<Symbol>> = BTreeMap::new();
     let mut moved = false;
     for symbol in &import.symbols {
         let followed = match symbol {
-            Symbol::Name(name) => follow(tables, &import.target, name),
+            Symbol::Name(name) => follow(tables, &import.target, name, stops),
             Symbol::All => None,
         };
         match followed {

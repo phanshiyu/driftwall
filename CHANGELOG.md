@@ -15,6 +15,14 @@
   (JSON `via`, `boundary_edges`), and `diff` reports them (`added_boundary_edges` and friends).
   `init` still writes node edges. An edge to a boundary with no node is a contract error.
 
+- Facades: `%% facade <node>[, <node>]` marks a node that deliberately presents other nodes' items
+  as its own. An importer outside it that imports a name through a re-export in one of its files
+  depends on that file, and the walk does not go past it; the facade's own re-exports keep their
+  edges to the definitions, and inside the node nothing changes. `exports` is judged at the facade
+  node. A facade node that re-exports nothing is the new warning `stale-facade`; an unknown node
+  or a node listed twice is a contract error with its line. `brief` shows `facade: ...` in its
+  `rules:` block and JSON `rules.facades`. `diff` does not report rule directives, so not
+  facades either.
 - Lint marks findings at test sites: the text puts `(test code)` after the kind
   (`src/a.test.ts:3: error[undeclared-edge] (test code): ...`), JSON has `"test_only": true`, and a
   SARIF result has `"properties": {"testOnly": true}`, each only on a finding at a site written in

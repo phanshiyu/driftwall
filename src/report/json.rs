@@ -168,6 +168,7 @@ mod tests {
                 "forbidden-package",
                 "stale-package",
                 "redundant-edge",
+                "stale-facade",
             ]
         );
     }
