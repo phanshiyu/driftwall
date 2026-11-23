@@ -179,13 +179,14 @@ mod tests {
                 "private-symbol",
                 "stale-edge",
                 "stale-map",
+                "test-only-edge",
                 "undeclared-edge",
                 "unknown-node",
                 "unmapped-file",
                 "unresolved-import",
             ]
         );
-        assert_eq!(value["runs"][0]["results"].as_array().unwrap().len(), 9);
+        assert_eq!(value["runs"][0]["results"].as_array().unwrap().len(), 10);
     }
 
     #[test]

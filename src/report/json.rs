@@ -143,6 +143,7 @@ mod tests {
                 "undeclared-edge",
                 "stale-edge",
                 "planned-realized",
+                "test-only-edge",
                 "unresolved-import",
                 "private-symbol",
                 "stale-map",

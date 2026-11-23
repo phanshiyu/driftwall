@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::model::{Contract, EdgeKind, MapGlob, NodeId, NodeInfo};
+use crate::model::{Contract, MapGlob, NodeId, NodeInfo};
 
 const PREAMBLE: [&str; 4] = [
     "%% driftwall architecture contract.",
@@ -56,10 +56,7 @@ pub fn render(contract: &Contract) -> String {
     if !contract.edges.is_empty() {
         lines.push(String::new());
         for (edge, kind) in &contract.edges {
-            let arrow = match kind {
-                EdgeKind::Implemented => "-->",
-                EdgeKind::Planned => "-.->",
-            };
+            let arrow = kind.arrow();
             lines.push(format!("  {} {arrow} {}", edge.from, edge.to));
         }
     }
@@ -113,7 +110,7 @@ fn sanitize(label: &str) -> String {
 mod tests {
     use super::*;
     use crate::diagram::parse;
-    use crate::model::Edge;
+    use crate::model::{Edge, EdgeKind};
 
     fn id(raw: &str) -> NodeId {
         NodeId::new(raw).unwrap()

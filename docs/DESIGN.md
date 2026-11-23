@@ -21,17 +21,58 @@ flowchart LR
   lint -.-> model
   %% Implemented edge, must be backed by code:
   cli --> lint
-  %% Optional label, ignored by the linter:
+  %% Optional label, ignored by the linter (except `test`, see below):
   cli -->|label| report
+  %% Test-only edge: allows only test imports, see "Test edges":
+  lint -->|test| model
 ```
 
 - Node ids match `[A-Za-z][A-Za-z0-9_-]*`. Labels are display only.
 - Edge endpoints must be declared nodes. Chained edges (`a --> b --> c`) and `&` fan-out are errors.
-- `-->` is `EdgeKind::Implemented`. `-.->` is `EdgeKind::Planned`.
+- `-->` is `EdgeKind::Implemented`. `-.->` is `EdgeKind::Planned`. With the label `test`
+  (`-->|test|`, `-.->|test|`) they are `EdgeKind::Test` and `EdgeKind::PlannedTest`, see "Test edges".
+- Any other label is display only and ignored, as before. The word `test` is matched after trimming
+  spaces and exactly (`Test` and `tests` are plain labels). The Mermaid form with the text inside the
+  arrow (`a -- test --> b`) is not supported and stays a contract error like any syntax outside the
+  subset: there is one spelling of a label, so there is one spelling of a test edge.
+- A pair of nodes has at most one edge, whatever the kinds: `a --> b` with `a -->|test| b` is
+  the existing duplicate-edge error. A solid edge already allows test imports, so the test edge would
+  be redundant, and a test edge beside a solid one would be contradictory; an error says it clearly
+  and a warning would let the contract mean two things.
 - Edges between nodes in different boundaries are normal. Boundaries never carry edges.
 - A comment whose first word is `exports` is the surface directive (see "Symbols and public
   surfaces"), and one whose first word is `map` is the mapping directive (see "Contract map").
   Every other comment is plain.
+
+### Test edges
+
+A test edge, `a -->|test| b`, allows the dependency of `a` on `b` from test code only. Without
+it a contract cannot allow a parity test or a fixture to cross a boundary without also permitting
+production code to do so. It uses the `test_only` flag of every import site (see "Import kind").
+
+- A test-only site on the pair is allowed, like on a solid edge.
+- A site that is not test-only, on a pair whose only edge is a test edge, is an `undeclared-edge`
+  error. No new kind: the production dependency really is undeclared, so the finding and its hint
+  (remove the import, or ask to approve the edge) are those of any undeclared edge, and tools that
+  know the rule keep working. The message differs: "... but architecture.mmd declares only a test
+  edge a -->|test| b, which allows test imports only". Each production site is one finding.
+- A solid test edge with no site at all is `stale-edge`, exactly like a solid edge (the message
+  names the arrow `-->|test|`). Production sites do not realise it: a test edge with production
+  sites only is stale as well as each site being an error.
+- A solid edge whose every site is test-only is `test-only-edge`, a warning: "edge a --> b is
+  realised only by test code; declare it `-->|test|`". A solid edge with no site is stale instead.
+  `--strict` fails on it like on any warning. driftwall's own contract has no such edge.
+- A dotted test edge, `a -.->|test| b`, is the planned form: tolerated while no code uses it,
+  allowing test sites only. When test sites realise it, it is `planned-realized` ("promote it to
+  `-->|test|`"). Production sites on it are `undeclared-edge` like above.
+
+`brief` and `neighbors` draw a test edge `a -->|test| b` and a dotted one `a -.->|test| b`. The
+`brief` summary line counts `implemented`, `planned` and, only when there is one, `test` edges (a
+dotted test edge counts as planned). In JSON the edge `kind` is `implemented`, `planned`, `test` or
+`planned-test`, the same names `diff` uses: its text writes a changed or listed test edge as
+`a -->|test| b (test)`, and a change between kinds is a change, like planned to implemented. An
+edge code uses on a pair with only a test edge keeps the declared kind in `brief`; each
+production site shows as one `undeclared-edge` finding in `lint`.
 
 ## Ownership
 
@@ -1198,13 +1239,15 @@ module and no symbol and adds nothing to `uses:`.
 | `unknown-node` | error | `.arch` names a node the diagram does not declare |
 | `undeclared-edge` | error | code imports across nodes and the diagram has no such edge |
 | `stale-edge` | warning | solid edge with no import backing it |
-| `planned-realized` | warning | dotted edge now backed by code, promote it to solid |
+| `planned-realized` | warning | dotted edge now backed by code, promote it to solid (a dotted test edge to `-->|test|`) |
+| `test-only-edge` | warning | solid edge whose every import site is test-only, declare it `-->|test|` |
 | `unresolved-import` | warning | relative import resolves to nothing, whatever its extension; Python absolute import into a first-party package that holds no such module; shell `source` of a path that finds no file |
 | `private-symbol` | error | an import uses a symbol outside the target node's declared surface |
 | `stale-map` | warning | a `%% map` glob matches no file, see "Contract map" |
 | `ignored-tag-files` | warning | the contract has `%% map` lines and `.arch` files exist, which are not read |
 
-A dotted edge permits the import. `--strict` turns every warning into a failure.
+A dotted edge permits the import. `--strict` turns every warning into a failure. A test edge permits
+only test-only imports (see "Test edges"): a production import on it is `undeclared-edge`.
 
 ## init
 
@@ -1465,7 +1508,8 @@ test code) are condensed into strongly connected components; a node's rank is th
 longest path in that DAG from a component nothing depends on (rank 0). Nodes are ordered by
 `(rank, id)`; a boundary takes the position of its lowest-ranked member, ordered by id among equal
 ranks, and its members are ordered by `(rank, id)` inside it. Edges are ordered by the rank and id
-of their source, then of their target. A node that only test code connects has rank 0.
+of their source, then of their target. A node that only test code connects has rank 0. The edges only test code backs are written as test
+edges, `a -->|test| b` (see "Test edges"), and are the ones that do not decide the order.
 
 **Cycles.** After the edges, one comment line per cycle: `%% cycles: a <-> b <-> c` for each strongly
 connected component of the production edges with more than one node (members in id order,
@@ -1487,8 +1531,8 @@ the root `./` and `*`; a `node: <prefix>*` tag is `%% map <prefix>*: d/`. A `nod
 contract is a conflict without `--force`. The contract is presented as without `--map` (boundaries,
 labels, order, cycles), with the `%% map` lines last.
 
-- Every resolved import between files with different owners becomes one solid edge. Nothing is
-  dotted, so a fresh baseline has no stale or planned-realized findings. Imports are resolved with
+- Every resolved import between files with different owners becomes one solid edge, or a test edge
+  `-->|test|` when every import behind it is test-only. Nothing is dotted, so a fresh baseline has no stale or planned-realized findings. Imports are resolved with
   the walked non-source files (assets) known, as `lint` does: an asset (a `.json`, a `.css`) has the
   owner the tags give it, the existing ones and the ones `init` writes, and an import of an asset
   owned by another declared node is an edge. The same holds for an excluded file (see "Excluded
@@ -1697,7 +1741,8 @@ with `why:`. The golden rule is to leave an agent as little room to err as possi
 11. M11 component rules, each one `%%` line per node, checked from the AST like edges:
     - packages: which third-party packages a node may import (only `db` imports `sqlx`);
     - type-only edges: a node may use another's types but not its runtime code;
-    - test-only edges: production code may not import test helpers;
+    - test-only edges: production code may not import test helpers (done: `-->|test|`, see
+      "Test edges"; the check is per edge, not yet per helper);
     - layer order: a node may use only nodes in lower boundaries, so arrows need not be drawn;
     - no cycles between named nodes or boundaries;
     - budgets: maximum fan-out or size per node.

@@ -14,6 +14,7 @@ pub(super) const fn severity(kind: ViolationKind) -> Severity {
         | ViolationKind::PrivateSymbol => Severity::Error,
         ViolationKind::StaleEdge
         | ViolationKind::PlannedRealized
+        | ViolationKind::TestOnlyEdge
         | ViolationKind::UnresolvedImport
         | ViolationKind::StaleMap
         | ViolationKind::IgnoredTagFiles => Severity::Warning,
@@ -35,7 +36,10 @@ pub(super) const fn hint(kind: ViolationKind) -> &'static str {
         ViolationKind::StaleEdge => {
             "remove the edge from the contract, or restore the dependency in code"
         }
-        ViolationKind::PlannedRealized => "change `-.->` to `-->` in the contract",
+        ViolationKind::PlannedRealized => {
+            "change `-.->` to `-->` in the contract (`-.->|test|` to `-->|test|`)"
+        }
+        ViolationKind::TestOnlyEdge => "declare the edge `-->|test|` in the contract",
         ViolationKind::UnresolvedImport => "fix the import path or add the missing file",
         ViolationKind::StaleMap => {
             "fix the glob, or remove the `%% map` entry if the code it described is gone"

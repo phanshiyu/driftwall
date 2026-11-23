@@ -11,6 +11,7 @@ const DIRECTIONS: [&str; 4] = ["LR", "RL", "TB", "BT"];
 const RESERVED: [&str; 3] = ["end", "flowchart", "subgraph"];
 const SOLID: &str = "-->";
 const DOTTED: &str = "-.->";
+const TEST_LABEL: &str = "test";
 
 /// Parses the contract subset of Mermaid `flowchart` into a [`Contract`].
 ///
@@ -151,10 +152,18 @@ impl Parser {
             return Err(unsupported(text, line));
         };
         let mut after_arrow = after_arrow.trim_start();
+        let mut kind = kind;
         if let Some(labelled) = after_arrow.strip_prefix('|') {
-            let (_, after_label) = labelled
+            let (label, after_label) = labelled
                 .split_once('|')
                 .ok_or_else(|| unsupported(text, line))?;
+            // why: `test` is the one label with a meaning; any other label stays display only.
+            if label.trim() == TEST_LABEL {
+                kind = match kind {
+                    EdgeKind::Planned | EdgeKind::PlannedTest => EdgeKind::PlannedTest,
+                    EdgeKind::Implemented | EdgeKind::Test => EdgeKind::Test,
+                };
+            }
             after_arrow = after_label.trim_start();
         }
         let (raw_to, tail) = split_ident(after_arrow);
@@ -1101,6 +1110,48 @@ mod tests {
         let (err, _) = err_line("flowchart LR\na\n%% mapped a: x/\n%%map\n");
         assert!(
             matches!(err, DiagramError::MalformedMap { line: 4, .. }),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn the_test_label_makes_a_test_edge_and_any_other_label_stays_plain() {
+        let kind = |arrow: &str| {
+            let contract = parse(&format!("flowchart LR\na\nb\na {arrow} b\n")).unwrap();
+            contract.edges.values().copied().collect::<Vec<_>>()
+        };
+        assert_eq!(kind("-->|test|"), [EdgeKind::Test]);
+        assert_eq!(kind("-->| test |"), [EdgeKind::Test]);
+        assert_eq!(kind("-.->|test|"), [EdgeKind::PlannedTest]);
+        assert_eq!(kind("-->|Test|"), [EdgeKind::Implemented]);
+        assert_eq!(kind("-->|tests|"), [EdgeKind::Implemented]);
+        assert_eq!(kind("-.->|uses|"), [EdgeKind::Planned]);
+    }
+
+    #[test]
+    fn test_edges_survive_a_render_round_trip() {
+        let src = "flowchart LR\na\nb\nc\na -->|test| b\nb -.->|test| c\n";
+        let contract = parse(src).unwrap();
+        let rendered = crate::diagram::render(&contract);
+        assert!(rendered.contains("a -->|test| b"), "{rendered}");
+        assert!(rendered.contains("b -.->|test| c"), "{rendered}");
+        assert_eq!(parse(&rendered).unwrap(), contract);
+    }
+
+    #[test]
+    fn a_solid_and_a_test_edge_on_one_pair_is_a_duplicate_edge() {
+        let (err, _) = err_line("flowchart LR\na\nb\na --> b\na -->|test| b\n");
+        assert!(
+            matches!(err, DiagramError::DuplicateEdge { line: 5, .. }),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn the_label_inside_the_arrow_is_a_contract_error() {
+        let (err, _) = err_line("flowchart LR\na\nb\na -- test --> b\n");
+        assert!(
+            matches!(err, DiagramError::Unsupported { line: 4, .. }),
             "{err:?}"
         );
     }

@@ -12,6 +12,7 @@ pub(super) const fn kind_str(kind: ViolationKind) -> &'static str {
         ViolationKind::UndeclaredEdge => "undeclared-edge",
         ViolationKind::StaleEdge => "stale-edge",
         ViolationKind::PlannedRealized => "planned-realized",
+        ViolationKind::TestOnlyEdge => "test-only-edge",
         ViolationKind::UnresolvedImport => "unresolved-import",
         ViolationKind::PrivateSymbol => "private-symbol",
         ViolationKind::StaleMap => "stale-map",
@@ -46,6 +47,8 @@ pub(super) const fn edge_kind_str(kind: EdgeKind) -> &'static str {
     match kind {
         EdgeKind::Implemented => "implemented",
         EdgeKind::Planned => "planned",
+        EdgeKind::Test => "test",
+        EdgeKind::PlannedTest => "planned-test",
     }
 }
 
@@ -53,8 +56,8 @@ pub(super) const fn edge_kind_str(kind: EdgeKind) -> &'static str {
 /// solid, because code does use it.
 pub(super) const fn arrow(kind: Option<EdgeKind>) -> &'static str {
     match kind {
-        Some(EdgeKind::Planned) => "-.->",
-        Some(EdgeKind::Implemented) | None => "-->",
+        Some(kind) => kind.arrow(),
+        None => "-->",
     }
 }
 
@@ -111,7 +114,12 @@ mod tests {
 
     #[test]
     fn edge_kind_names_match_the_models_serde_names() {
-        for kind in [EdgeKind::Implemented, EdgeKind::Planned] {
+        for kind in [
+            EdgeKind::Implemented,
+            EdgeKind::Planned,
+            EdgeKind::Test,
+            EdgeKind::PlannedTest,
+        ] {
             let serde_name = serde_json::to_string(&kind).unwrap();
             assert_eq!(serde_name, format!("\"{}\"", edge_kind_str(kind)));
         }
@@ -138,6 +146,8 @@ mod tests {
     fn arrows_follow_the_contract_syntax() {
         assert_eq!(arrow(Some(EdgeKind::Implemented)), "-->");
         assert_eq!(arrow(Some(EdgeKind::Planned)), "-.->");
+        assert_eq!(arrow(Some(EdgeKind::Test)), "-->|test|");
+        assert_eq!(arrow(Some(EdgeKind::PlannedTest)), "-.->|test|");
         assert_eq!(arrow(None), "-->");
     }
 

@@ -34,8 +34,6 @@ pub struct InitPlan {
     /// The owner of every file the plan decided or knows: source files and the assets and excluded
     /// files a tag covers. The presentation reads it to find where each node lives.
     pub owners: BTreeMap<PathBuf, NodeId>,
-    /// The edges that only test code backs: every import behind them is `test_only`.
-    pub test_only: BTreeSet<Edge>,
 }
 
 /// Builds the baseline for `files` and the `imports` found in them.
@@ -148,12 +146,11 @@ pub fn plan(
             owners.insert(asset.clone(), owner);
         }
     }
-    let test_only = add_edges(&mut contract, imports, &owners);
+    add_edges(&mut contract, imports, &owners);
     InitPlan {
         contract,
         tags,
         owners,
-        test_only,
     }
 }
 
@@ -225,13 +222,13 @@ fn scope_of(dir: &Path, draft: &Draft) -> Scope {
     }
 }
 
-/// One solid edge per pair of different owners with an import between them. Both owners must be
-/// declared in the contract, as `lint` requires. Returns the edges whose every import is test code.
+/// One solid edge per pair of different owners with an import between them, a test edge when every
+/// import behind it is test code. Both owners must be declared in the contract, as `lint` requires.
 fn add_edges(
     contract: &mut Contract,
     imports: &BTreeMap<PathBuf, FileImports>,
     owners: &BTreeMap<PathBuf, NodeId>,
-) -> BTreeSet<Edge> {
+) {
     let declared = |id: &&NodeId| contract.nodes.contains_key(*id);
     let mut found = BTreeSet::new();
     let mut production = BTreeSet::new();
@@ -255,9 +252,12 @@ fn add_edges(
             }
         }
     }
-    let test_only = found.difference(&production).cloned().collect();
     for edge in found {
-        contract.edges.insert(edge, EdgeKind::Implemented);
+        let kind = if production.contains(&edge) {
+            EdgeKind::Implemented
+        } else {
+            EdgeKind::Test
+        };
+        contract.edges.insert(edge, kind);
     }
-    test_only
 }

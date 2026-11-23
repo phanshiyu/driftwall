@@ -20,6 +20,8 @@ mod fixtures;
 #[cfg(test)]
 mod resolution_tests;
 #[cfg(test)]
+mod test_edge_tests;
+#[cfg(test)]
 mod tests;
 
 use std::collections::{BTreeMap, BTreeSet};

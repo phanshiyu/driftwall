@@ -70,8 +70,8 @@ pub fn reconcile(
 
     let crossings = crossings(contract, ownership, imports);
     for (edge, import) in &crossings {
-        if !contract.edges.contains_key(edge) {
-            violations.push(violation(
+        match contract.edges.get(edge) {
+            None => violations.push(violation(
                 ViolationKind::UndeclaredEdge,
                 Some(import.at.clone()),
                 format!(
@@ -81,12 +81,22 @@ pub fn reconcile(
                     from = edge.from,
                     to = edge.to,
                 ),
-            ));
+            )),
+            Some(kind) if kind.is_test() && !import.test_only => violations.push(violation(
+                ViolationKind::UndeclaredEdge,
+                Some(import.at.clone()),
+                format!(
+                    "`{from}` imports `{to}` ({}) from production code but {} declares only a test edge {from} -->|test| {to}, which allows test imports only",
+                    import.target.display(),
+                    contract_file.display(),
+                    from = edge.from,
+                    to = edge.to,
+                ),
+            )),
+            Some(_) => {}
         }
         violations.extend(private_symbols(contract, edge, import, contract_file));
     }
-    let realised: BTreeSet<&Edge> = crossings.iter().map(|(edge, _)| edge).collect();
-
     for file_imports in imports.values() {
         for import in &file_imports.unresolved {
             violations.push(violation(
@@ -97,32 +107,60 @@ pub fn reconcile(
         }
     }
 
-    for (edge, kind) in &contract.edges {
-        let used = realised.contains(&edge);
-        match (kind, used) {
-            (EdgeKind::Implemented, false) => violations.push(violation(
-                ViolationKind::StaleEdge,
-                None,
-                format!(
-                    "edge {} --> {} is declared but no import realises it",
-                    edge.from, edge.to
-                ),
-            )),
-            (EdgeKind::Planned, true) => violations.push(violation(
-                ViolationKind::PlannedRealized,
-                None,
-                format!(
-                    "planned edge {} -.-> {} is now realised by code",
-                    edge.from, edge.to
-                ),
-            )),
-            (EdgeKind::Implemented, true) | (EdgeKind::Planned, false) => {}
-        }
-    }
+    violations.extend(edge_findings(contract, &crossings));
 
     violations.sort();
     violations.dedup();
     LintReport { violations }
+}
+
+/// The findings about declared edges: stale, planned and realised, and solid but realised by tests
+/// only. A production site on a test edge is not counted: it is its own `undeclared-edge`.
+fn edge_findings(contract: &Contract, crossings: &[(Edge, &ResolvedImport)]) -> Vec<Violation> {
+    let sites = |holds: fn(&ResolvedImport) -> bool| -> BTreeSet<&Edge> {
+        crossings
+            .iter()
+            .filter(|(_, import)| holds(import))
+            .map(|(edge, _)| edge)
+            .collect()
+    };
+    let realised = sites(|_| true);
+    let production = sites(|import| !import.test_only);
+    let by_tests = sites(|import| import.test_only);
+    let mut violations = Vec::new();
+    for (edge, kind) in &contract.edges {
+        let (from, to) = (&edge.from, &edge.to);
+        let arrow = kind.arrow();
+        let finding = match kind {
+            EdgeKind::Implemented if !realised.contains(edge) => Some((
+                ViolationKind::StaleEdge,
+                format!("edge {from} {arrow} {to} is declared but no import realises it"),
+            )),
+            EdgeKind::Implemented if !production.contains(edge) => Some((
+                ViolationKind::TestOnlyEdge,
+                format!(
+                    "edge {from} --> {to} is realised only by test code; declare it {from} -->|test| {to}"
+                ),
+            )),
+            EdgeKind::Test if !by_tests.contains(edge) => Some((
+                ViolationKind::StaleEdge,
+                format!("edge {from} {arrow} {to} is declared but no test import realises it"),
+            )),
+            EdgeKind::Planned if realised.contains(edge) => Some((
+                ViolationKind::PlannedRealized,
+                format!("planned edge {from} {arrow} {to} is now realised by code"),
+            )),
+            EdgeKind::PlannedTest if by_tests.contains(edge) => Some((
+                ViolationKind::PlannedRealized,
+                format!("planned edge {from} {arrow} {to} is now realised by test code"),
+            )),
+            _ => None,
+        };
+        if let Some((kind, message)) = finding {
+            violations.push(violation(kind, None, message));
+        }
+    }
+    violations
 }
 
 /// One finding per symbol `import` uses that the surface of the node it enters does not list.

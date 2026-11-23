@@ -141,7 +141,9 @@ fn declared(edges: &[(Edge, EdgeKind)]) -> Vec<Declared<'_>> {
 fn edge_text(edge: &Edge, kind: EdgeKind) -> String {
     let suffix = match kind {
         EdgeKind::Implemented => String::new(),
-        EdgeKind::Planned => format!(" ({})", edge_kind_str(kind)),
+        EdgeKind::Planned | EdgeKind::Test | EdgeKind::PlannedTest => {
+            format!(" ({})", edge_kind_str(kind))
+        }
     };
     format!("{} {} {}{suffix}", edge.from, arrow(Some(kind)), edge.to)
 }
@@ -199,6 +201,19 @@ mod tests {
 - exports b: Y
 ";
         assert_eq!(render_diff_text(&sample()), expected);
+    }
+
+    #[test]
+    fn test_edges_show_their_label_and_kind() {
+        let diff = ContractDiff {
+            added_edges: vec![(edge("a", "b"), EdgeKind::Test)],
+            changed_edges: vec![(edge("a", "c"), EdgeKind::Implemented, EdgeKind::PlannedTest)],
+            ..ContractDiff::default()
+        };
+        assert_eq!(
+            render_diff_text(&diff),
+            "+ edge a -->|test| b (test)\n~ edge a --> c => a -.->|test| c (planned-test) (implemented -> planned-test)\n"
+        );
     }
 
     #[test]

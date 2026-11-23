@@ -60,12 +60,13 @@ pub fn mixed() -> LintReport {
 }
 
 /// Every kind, in declaration order, so the list can be checked against [`ordinal`].
-pub const ALL_KINDS: [ViolationKind; 9] = [
+pub const ALL_KINDS: [ViolationKind; 10] = [
     ViolationKind::UnmappedFile,
     ViolationKind::UnknownNode,
     ViolationKind::UndeclaredEdge,
     ViolationKind::StaleEdge,
     ViolationKind::PlannedRealized,
+    ViolationKind::TestOnlyEdge,
     ViolationKind::UnresolvedImport,
     ViolationKind::PrivateSymbol,
     ViolationKind::StaleMap,
@@ -81,10 +82,11 @@ pub const fn ordinal(kind: ViolationKind) -> usize {
         ViolationKind::UndeclaredEdge => 2,
         ViolationKind::StaleEdge => 3,
         ViolationKind::PlannedRealized => 4,
-        ViolationKind::UnresolvedImport => 5,
-        ViolationKind::PrivateSymbol => 6,
-        ViolationKind::StaleMap => 7,
-        ViolationKind::IgnoredTagFiles => 8,
+        ViolationKind::TestOnlyEdge => 5,
+        ViolationKind::UnresolvedImport => 6,
+        ViolationKind::PrivateSymbol => 7,
+        ViolationKind::StaleMap => 8,
+        ViolationKind::IgnoredTagFiles => 9,
     }
 }
 

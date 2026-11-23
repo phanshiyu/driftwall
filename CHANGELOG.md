@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Test edges: `a -->|test| b` (and the planned `a -.->|test| b`) allow the dependency from
+  test-only import sites and nothing else. A production import on a pair with only a test edge is
+  an `undeclared-edge` error that says only test imports are allowed; a test edge no test import
+  realises is `stale-edge`; a solid edge realised only by test code is the new warning
+  `test-only-edge` (declare it `-->|test|`). `init` writes an edge only tests use as `-->|test|`
+  and leaves it out of the layer order. `brief`, `neighbors` and `diff` show the kind (`test`,
+  `planned-test` in JSON); `a -- test --> b` is a contract error and other labels stay ignored.
 - `init` drafts read as an architecture: nodes are grouped into `subgraph` boundaries by code unit
   and directory, labelled `id: description` where a Rust `//!` doc, a Python docstring, a JSDoc
   file block or a manifest description states one (else the path), written from entry points to

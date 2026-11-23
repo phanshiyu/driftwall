@@ -120,6 +120,36 @@ pub enum EdgeKind {
     Implemented,
     /// Dotted arrow (`-.->`): declared intent, tolerated whether or not code uses it yet.
     Planned,
+    /// Solid arrow labelled `test` (`-->|test|`): only test-only imports are allowed, and one must
+    /// exist, otherwise it is stale.
+    Test,
+    /// Dotted arrow labelled `test` (`-.->|test|`): test-only imports are allowed, none is needed.
+    PlannedTest,
+}
+
+impl EdgeKind {
+    /// Whether the edge is tolerated without code (dotted).
+    #[must_use]
+    pub const fn is_planned(self) -> bool {
+        matches!(self, Self::Planned | Self::PlannedTest)
+    }
+
+    /// The arrow the contract writes the edge with, label included.
+    #[must_use]
+    pub const fn arrow(self) -> &'static str {
+        match self {
+            Self::Implemented => "-->",
+            Self::Planned => "-.->",
+            Self::Test => "-->|test|",
+            Self::PlannedTest => "-.->|test|",
+        }
+    }
+
+    /// Whether the edge allows only test-only imports.
+    #[must_use]
+    pub const fn is_test(self) -> bool {
+        matches!(self, Self::Test | Self::PlannedTest)
+    }
 }
 
 /// A directed dependency between two nodes.
@@ -505,6 +535,8 @@ pub enum ViolationKind {
     StaleEdge,
     /// A planned (dotted) edge is now used by code and should be made solid.
     PlannedRealized,
+    /// A solid edge is realised only by test-only imports and should be declared `-->|test|`.
+    TestOnlyEdge,
     /// A relative import could not be resolved to a file.
     UnresolvedImport,
     /// An import uses a symbol outside the public surface its target node declares.

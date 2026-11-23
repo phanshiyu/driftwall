@@ -31,11 +31,19 @@ pub fn render_overview_text(overview: &Overview) -> String {
             .filter(|edge| edge.kind == Some(kind))
             .count()
     };
-    let (implemented, planned) = (count(EdgeKind::Implemented), count(EdgeKind::Planned));
+    let implemented = count(EdgeKind::Implemented);
+    let planned = count(EdgeKind::Planned) + count(EdgeKind::PlannedTest);
+    let test = count(EdgeKind::Test);
+    // why: the test count is shown only when there is one, so contracts without test edges read as before.
+    let test_part = if test == 0 {
+        String::new()
+    } else {
+        format!(", {test} test")
+    };
     let mut out = format!(
-        "driftwall: {} nodes, {} edges ({implemented} implemented, {planned} planned), {} errors, {} warnings\n",
+        "driftwall: {} nodes, {} edges ({implemented} implemented, {planned} planned{test_part}), {} errors, {} warnings\n",
         overview.nodes.len(),
-        implemented + planned,
+        implemented + planned + test,
         overview.errors,
         overview.warnings,
     );

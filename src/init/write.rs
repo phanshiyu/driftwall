@@ -27,7 +27,7 @@ pub fn apply(
     if write.write_map {
         contract.maps = rules_of(every)?;
     }
-    let rendered = present::render(&contract, &baseline.test_only);
+    let rendered = present::render(&contract);
     if diagram::parse(&rendered)? != contract {
         return Err(InitError::RoundTrip);
     }
