@@ -1009,9 +1009,9 @@ a location, the specifier as written and a typed reason (kebab-case in serializa
 | `embed-non-source` | a Rust embed whose target is neither a known source file nor an asset a tag covers |
 | `unreachable-module` | a Python absolute import that no import root resolves, whose top-level name matches a first-party module or package elsewhere in the repository (see "Python resolution") |
 | `alias-target-missing` | a TypeScript or JavaScript specifier that a Vite `resolve.alias` entry matches whose target path has no file in the repository (see "Vite aliases") |
-| `file-reference-missing` | a `new URL('<literal>', import.meta.url)` whose target is a directory, missing or outside the repository (see "File references") |
 | `undeclared-owner` | an import of an asset or an excluded file whose owner is not a declared node, recorded by `lint` rather than by import extraction (see "Asset files" and "Excluded files") |
 | `unresolved-root-path` | a root-absolute `src`, `href` or import specifier of an HTML file that finds no file below its Vite root (see "Svelte and HTML") |
+| `file-reference-missing` | a `new URL('<literal>', import.meta.url)` whose target is a directory, missing or outside the repository (see "File references") |
 
 A Vite virtual module is ignored, not skipped: a specifier that starts with `virtual:` or with the
 character U+0000 (Rollup's prefix for modules a plugin generates, `virtual:pwa-register`) has no
@@ -1426,10 +1426,12 @@ A directory is answered like a source file, by the tag that covers it. The JSON 
   spaces indented, in the forms and the order of the `blind spots:` block of `neighbors` below (not
   read, excluded, ignored, skipped, unresolved), so every one is named by its path. At most 20 are
   listed, then one line `    +N more` for the rest. The `skipped references` line is followed by the
-  references themselves, grouped by reason (in the order of this document) with the reason as a
-  header line, each as `file:line specifier` (and ` - <message>` when it has one), so `brief` lists
-  what the `note:` line points to. At most 20 are listed, then one line `  +N more, see --format
-  json`. Unread extensions are ordered by file count, then name. Excluded
+  references themselves, grouped by reason (in the fixed order of the "Skipped references" table)
+  with the reason as a header line, each as `file:line specifier` (and ` - <message>` when it has
+  one), so `brief` lists what the `note:` line points to. The cap is per reason: every reason that
+  occurs is listed, with at least its first 5 references (sorted by file and line), then one line
+  `    +N more, see --format json` under that reason when it has more. A rare reason is therefore never
+  hidden behind a common one. Unread extensions are ordered by file count, then name. Excluded
   reasons and skip reasons are in the order of this document. When every count is zero the block is
   the single line `blind spots: none`. In JSON, `blind_spots` has `unread` (key to `{count, lines}`),
   `excluded` (reason to count), `ignored`, `skipped` (reason to count), `unresolved`, `unmapped`

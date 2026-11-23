@@ -66,8 +66,8 @@ fn unread_by_count(summary: &BlindSummary) -> Vec<(&String, &crate::model::Unrea
     entries
 }
 
-/// How many skipped references the `brief` text lists before it says `+N more`.
-const MAX_SKIPPED_LISTED: usize = 20;
+/// How many skipped references of one reason the `brief` text lists before it says `+N more`.
+const MAX_SKIPPED_PER_REASON: usize = 5;
 
 /// How many unmapped items the `brief` text names before it says `+N more`.
 const MAX_UNMAPPED_LISTED: usize = 20;
@@ -117,23 +117,17 @@ pub(super) fn summary_block(
             .map(|(reason, count)| format!("{} {count}", skip_reason_str(*reason)))
             .collect();
         lines.push(format!("skipped references: {}", listed.join(", ")));
-        let mut left = MAX_SKIPPED_LISTED;
         for (reason, refs) in skipped.iter().filter(|(_, refs)| !refs.is_empty()) {
-            if left == 0 {
-                break;
-            }
             lines.push(format!("  {}:", skip_reason_str(*reason)));
-            for reference in refs.iter().take(left) {
+            for reference in refs.iter().take(MAX_SKIPPED_PER_REASON) {
                 lines.push(format!("    {}", skipped_entry(reference)));
             }
-            left = left.saturating_sub(refs.len());
-        }
-        let total: usize = skipped.values().map(Vec::len).sum();
-        if total > MAX_SKIPPED_LISTED {
-            lines.push(format!(
-                "  +{} more, see --format json",
-                total - MAX_SKIPPED_LISTED
-            ));
+            if refs.len() > MAX_SKIPPED_PER_REASON {
+                lines.push(format!(
+                    "    +{} more, see --format json",
+                    refs.len() - MAX_SKIPPED_PER_REASON
+                ));
+            }
         }
     }
     if summary.unresolved > 0 {

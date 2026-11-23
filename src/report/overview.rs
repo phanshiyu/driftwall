@@ -854,10 +854,14 @@ blind spots: none
     fn brief_caps_the_skipped_list_and_json_keeps_all_of_it() {
         let overview = skipped_overview(30);
         let text = render_overview_text(&overview);
-        assert!(text.contains("      src/a.ts:20 pkg20\n"), "{text}");
-        assert!(!text.contains("pkg21"), "{text}");
-        assert!(!text.contains("pkg99"), "{text}");
-        assert!(text.contains("    +11 more, see --format json\n"), "{text}");
+        assert!(text.contains("      src/a.ts:5 pkg5\n"), "{text}");
+        assert!(!text.contains("pkg6\n"), "{text}");
+        assert!(
+            text.contains("      +25 more, see --format json\n"),
+            "{text}"
+        );
+        // why: a rare reason is listed in full whatever a common one holds.
+        assert!(text.contains("      src/a.ts:99 pkg99 - why\n"), "{text}");
         let json = parse(&render_overview_json(&overview).unwrap());
         let all = &json["blind_spots"]["skipped_references"];
         assert_eq!(all["undeclared-package"].as_array().unwrap().len(), 30);
