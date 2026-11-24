@@ -24,6 +24,19 @@
   counts findings and gains ` (K groups)` when something grouped. JSON and SARIF stay per site;
   JSON violations gain `"key": "<kind> <key>"` so a consumer can group the same way. See "Grouped
   findings" in `docs/DESIGN.md`.
+- `diff --base REF` reports ownership moves: every source file whose owning node differs between
+  REF and the working tree is listed under `moved between nodes:` as `file: old -> new`, with the
+  cause `(mapping changed)` (a `%% map` or `.arch` edit), `(renamed from <path>)` (git rename
+  detection) or both, and `(none)` for no owner. Moving code into the importing node, or editing
+  a glob so a file changes owner, no longer hides an `undeclared-edge`. Added and deleted files
+  are not moves. The owner at REF is computed by scanning the tree at REF like a lint would. JSON
+  `moved`. `--exit-code` fails on a move, and there is no flag to allow one: a human approves it in
+  review.
+- `diff` now reports rule directive changes (`%% order`, `order open`, `isolated`, `each`,
+  `budget`, `tests`, `packages`, `forbid-packages`, `facade`, `no-cycles`) as lines added and removed
+  under `rules changed:`, and a node changing boundary (or a boundary changing nesting) as `node X
+  moved from boundary A to B`. JSON `rules_added`, `rules_removed` and `boundary_moves`.
+  `--exit-code` fails on these too. See "Diff beyond the contract" in `docs/DESIGN.md`.
 
 ## 0.1.1 - 2026-11-25
 
@@ -42,8 +55,7 @@
   when no child realises it, pointing at the `%% each` line), `redundant-edge` for an explicit edge
   it covers, never an `isolation-breach` arrow, and no narrowing of an `%% order open` pair. `brief`
   and `neighbors` show `via each features: controller --> service, line N` (JSON `via`) and the
-  template in `rules:` (`rules.each`); `render` writes the template back. `diff` does not report
-  templates, like the other directives.
+  template in `rules:` (`rules.each`); `render` writes the template back.
 - Open layer order: `%% order open: app > features > shared > core` marks a chain in which every
   layer may depend on any layer below it with no arrow, so seven layers need no layer-to-layer
   arrows. Upward imports stay `upward-edge`, and imports inside one layer still need arrows. Any
@@ -52,7 +64,7 @@
   that narrowing arrows exist and the pair is not among them. A plain `%% order:` is unchanged. The
   implicit allowance is ignored by `%% no-cycles`, is never stale, and does not make an arrow
   `redundant-edge`. `brief` and `neighbors` show `via order open: <chain>, line N` (JSON `via`) and
-  `rules.open_order`; `diff` does not report rule directives, so a plain/open change is not shown.
+  `rules.open_order`.
 - Nested boundaries: a `subgraph` may contain `subgraph`s, to any depth. A boundary's members are the
   nodes inside it at any depth, and every rule uses them: `features --> shared` covers the nodes of
   every feature inside `features`, `%% order` lists an outer boundary as one layer (listing a
@@ -86,8 +98,7 @@
   edges to the definitions, and inside the node nothing changes. `exports` is judged at the facade
   node. A facade node that re-exports nothing is the new warning `stale-facade`; an unknown node
   or a node listed twice is a contract error with its line. `brief` shows `facade: ...` in its
-  `rules:` block and JSON `rules.facades`. `diff` does not report rule directives, so not
-  facades either.
+  `rules:` block and JSON `rules.facades`.
 - Lint marks findings at test sites: the text puts `(test code)` after the kind
   (`src/a.test.ts:3: error[undeclared-edge] (test code): ...`), JSON has `"test_only": true`, and a
   SARIF result has `"properties": {"testOnly": true}`, each only on a finding at a site written in

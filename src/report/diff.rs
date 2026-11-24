@@ -6,7 +6,9 @@ use serde::Serialize;
 
 use std::fmt::Display;
 
-use crate::model::{ContractDiff, DebtAdded, Edge, EdgeEnds, EdgeKind, NodeId};
+use crate::model::{
+    BoundaryMove, ContractDiff, DebtAdded, Edge, EdgeEnds, EdgeKind, Moved, NodeId,
+};
 
 use super::ReportError;
 use super::common::{arrow, edge_kind_str};
@@ -15,7 +17,8 @@ use super::json::SCHEMA_VERSION;
 /// Renders `diff` as uncoloured text, one line per change, or a line saying nothing changed.
 ///
 /// Order: added nodes, removed nodes, added edges, removed edges, changed edges, then the same three
-/// for boundary edges, added exports, removed exports. A planned edge is written `a -.-> b (planned)`; an implemented one needs no
+/// for boundary edges, added exports, removed exports, then the `rules changed:` and `moved between
+/// nodes:` sections. A planned edge is written `a -.-> b (planned)`; an implemented one needs no
 /// suffix. An exported name is written `+ exports node: Name`, one line per name, so a node that
 /// loses every name (and with that its surface) shows only `-` lines.
 #[must_use]
@@ -77,6 +80,8 @@ pub fn render_diff_text_with_debt(diff: &ContractDiff, debt: &[DebtAdded]) -> St
     for (node, name) in &diff.removed_exports {
         let _ = writeln!(out, "- exports {node}: {name}");
     }
+    push_rules(&mut out, diff);
+    push_moved(&mut out, &diff.moved);
     if !debt.is_empty() {
         out.push_str("debt added:\n");
     }
@@ -88,6 +93,60 @@ pub fn render_diff_text_with_debt(diff: &ContractDiff, debt: &[DebtAdded]) -> St
         );
     }
     out
+}
+
+/// The `rules changed:` section: directive lines added and removed, then nodes that changed
+/// boundary. Nothing when there are none.
+fn push_rules(out: &mut String, diff: &ContractDiff) {
+    if diff.rules_added.is_empty()
+        && diff.rules_removed.is_empty()
+        && diff.boundary_moves.is_empty()
+    {
+        return;
+    }
+    out.push_str("rules changed:\n");
+    // why: fmt::Write into a String is infallible, so the discarded Results carry no error.
+    for line in &diff.rules_added {
+        let _ = writeln!(out, "  + {line}");
+    }
+    for line in &diff.rules_removed {
+        let _ = writeln!(out, "  - {line}");
+    }
+    for BoundaryMove { node, from, to } in &diff.boundary_moves {
+        let (from, to) = (from.as_deref(), to.as_deref());
+        let _ = writeln!(
+            out,
+            "  node {node} moved from boundary {} to {}",
+            from.unwrap_or("(none)"),
+            to.unwrap_or("(none)")
+        );
+    }
+}
+
+/// The `moved between nodes:` section, one `<file>: <old> -> <new> (<cause>)` line per file.
+fn push_moved(out: &mut String, moved: &[Moved]) {
+    if moved.is_empty() {
+        return;
+    }
+    out.push_str("moved between nodes:\n");
+    let owner = |node: &Option<NodeId>| {
+        node.as_ref()
+            .map_or_else(|| "(none)".to_owned(), ToString::to_string)
+    };
+    for file in moved {
+        let cause = match (&file.renamed_from, file.mapping_changed) {
+            (Some(old), false) => format!("renamed from {}", old.display()),
+            (Some(old), true) => format!("renamed from {}, mapping changed", old.display()),
+            (None, _) => "mapping changed".to_owned(),
+        };
+        let _ = writeln!(
+            out,
+            "  {}: {} -> {} ({cause})",
+            file.file.display(),
+            owner(&file.from_node),
+            owner(&file.to_node)
+        );
+    }
 }
 
 /// Renders `diff` as pretty-printed JSON ending in a newline.
@@ -132,6 +191,10 @@ fn diff_json(diff: &ContractDiff, debt: Option<&[DebtAdded]>) -> Result<String, 
             .collect(),
         added_exports: exported(&diff.added_exports),
         removed_exports: exported(&diff.removed_exports),
+        rules_added: &diff.rules_added,
+        rules_removed: &diff.rules_removed,
+        boundary_moves: &diff.boundary_moves,
+        moved: &diff.moved,
         changed_edges: diff
             .changed_edges
             .iter()
@@ -164,6 +227,10 @@ struct Document<'a> {
     changed_boundary_edges: Vec<ChangedEnds<'a>>,
     added_exports: Vec<Exported<'a>>,
     removed_exports: Vec<Exported<'a>>,
+    rules_added: &'a [String],
+    rules_removed: &'a [String],
+    boundary_moves: &'a [BoundaryMove],
+    moved: &'a [Moved],
     #[serde(skip_serializing_if = "Option::is_none")]
     debt_added: Option<&'a [DebtAdded]>,
 }

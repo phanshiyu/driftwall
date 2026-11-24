@@ -227,14 +227,15 @@ fn an_explicit_edge_to_the_lower_layer_narrows_where_the_template_does_not() {
 }
 
 #[test]
-fn diff_does_not_model_templates_or_their_expansions() {
+fn diff_reports_a_template_as_its_line_and_not_its_expansion() {
     let text = |extra: &str| {
         format!(
             "flowchart LR\n  subgraph f\n    subgraph a\n      a-x\n      a-y\n    end\n  end\n{extra}"
         )
     };
     let diff = contract_diff(&text(""), &text("  %% each f: x --> y\n")).unwrap();
-    assert!(diff.is_empty(), "{diff:#?}");
+    assert_eq!(diff.rules_added, vec!["%% each f: x --> y".to_owned()]);
+    assert!(diff.added_edges.is_empty() && diff.added_boundary_edges.is_empty());
     let diff = contract_diff(&text(""), &text("  a-x --> a-y\n")).unwrap();
     assert!(!diff.is_empty());
 }

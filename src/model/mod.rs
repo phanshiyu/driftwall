@@ -14,6 +14,7 @@ mod baseline;
 mod blind;
 mod boundary;
 mod map;
+mod moved;
 mod open_order;
 mod package_rule;
 mod rules;
@@ -23,6 +24,7 @@ pub use boundary::{
     BoundaryEdge, Cover, Declared, EdgeEnds, Endpoint, Template, child_of, children, children_apart,
 };
 pub use map::{GlobError, MapGlob, MapRule, MapSite, MapTarget, Specificity};
+pub use moved::{BoundaryMove, Moved};
 pub use open_order::OpenAccess;
 pub use package_rule::{PackagePattern, PackageRule, PackageRuleKind};
 pub use rules::{
@@ -1088,10 +1090,20 @@ pub struct ContractDiff {
     /// Names only the old contract exports, as `(node, name)`, sorted. A node that lost its whole
     /// surface lists every name it had: it is unrestricted from then on.
     pub removed_exports: Vec<(NodeId, String)>,
+    /// Rule directive lines only the new contract renders, sorted. See "Diff beyond the contract".
+    pub rules_added: Vec<String>,
+    /// Rule directive lines only the old contract renders, sorted.
+    pub rules_removed: Vec<String>,
+    /// Nodes both contracts declare whose enclosing boundaries differ, sorted by node.
+    pub boundary_moves: Vec<BoundaryMove>,
+    /// Source files whose owning node differs from the one at the base ref, sorted by file. Not
+    /// filled by the pure contract comparison: the caller adds it from two scans.
+    pub moved: Vec<Moved>,
 }
 
 impl ContractDiff {
-    /// True when the two contracts declare the same nodes, edges with the same kinds, and surfaces.
+    /// True when the two contracts declare the same nodes, edges with the same kinds, surfaces,
+    /// rules and boundaries, and no file changed owner.
     #[must_use]
     pub const fn is_empty(&self) -> bool {
         self.added_nodes.is_empty()
@@ -1104,6 +1116,10 @@ impl ContractDiff {
             && self.changed_boundary_edges.is_empty()
             && self.added_exports.is_empty()
             && self.removed_exports.is_empty()
+            && self.rules_added.is_empty()
+            && self.rules_removed.is_empty()
+            && self.boundary_moves.is_empty()
+            && self.moved.is_empty()
     }
 }
 

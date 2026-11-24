@@ -11,6 +11,7 @@ mod facade;
 mod interface;
 mod isolation;
 mod layers;
+mod moves;
 mod observe;
 mod overview;
 mod packages;
@@ -61,6 +62,7 @@ use crate::model::{
 use crate::ownership::{self, OwnershipError};
 
 pub use diff::{EMPTY_CONTRACT, contract_diff};
+pub use moves::{Owners, moved, owners};
 pub use observe::{observed_edges, observed_symbols};
 pub use overview::{attach_budgets, node_view, overview, with_interface, with_packages};
 pub use reconcile::reconcile;
@@ -162,6 +164,24 @@ pub fn read_contract(root: &Path, contract: &Path) -> Result<Contract, LintError
     })
 }
 
+/// Scans `root` for ownership the way a lint does.
+// why: a contract with `%% map` lines decides ownership alone, so `.arch` files are not read.
+fn scan_ownership(
+    root: &Path,
+    contract_path: &Path,
+    contract: &Contract,
+) -> Result<Ownership, LintError> {
+    let context = ownership::MapContext {
+        contract: contract_path,
+        rules: &contract.maps,
+    };
+    Ok(if contract.maps.is_empty() {
+        ownership::scan(root)?
+    } else {
+        ownership::scan_mapped(root, context)?
+    })
+}
+
 /// Lints the repository at `root` against the contract named by `options`.
 ///
 /// # Errors
@@ -177,17 +197,12 @@ pub fn run(root: &Path, options: &LintOptions) -> Result<LintReport, LintError> 
 /// The same as [`run`].
 pub fn observe(root: &Path, options: &LintOptions) -> Result<Observation, LintError> {
     let contract = read_contract(root, &options.contract)?;
-    // why: a contract with `%% map` lines decides ownership alone, so `.arch` files are not read.
+    let ownership = scan_ownership(root, &options.contract, &contract)?;
     let context = ownership::MapContext {
         contract: &options.contract,
         rules: &contract.maps,
     };
     let uses_maps = !contract.maps.is_empty();
-    let ownership = if uses_maps {
-        ownership::scan_mapped(root, context)?
-    } else {
-        ownership::scan(root)?
-    };
     let mapper = ownership::Mapper::new(context);
 
     // why: files of unsupported languages are skipped here, so only extractable sources are read.

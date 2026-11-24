@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::diagram;
-use crate::model::{Contract, ContractDiff, Edge, EdgeEnds, EdgeKind, NodeId};
+use crate::model::{BoundaryMove, Contract, ContractDiff, Edge, EdgeEnds, EdgeKind, NodeId};
 
 use super::LintError;
 
@@ -13,7 +13,8 @@ pub const EMPTY_CONTRACT: &str = "flowchart LR\n";
 /// Parses both contract texts and reports what the new one adds, removes and changes.
 ///
 /// Pure: both texts come from the caller. Nodes, edge kinds and exported names are compared;
-/// labels and boundaries are display only. Every list is sorted.
+/// labels are display only. Rule directive lines and the boundaries around a node are compared as
+/// well. Every list is sorted. `moved` is left empty: it needs the files, not just the texts.
 ///
 /// # Errors
 /// [`LintError::OldContract`] or [`LintError::NewContract`] when a text is not a valid contract.
@@ -83,7 +84,67 @@ fn diff(old: &Contract, new: &Contract) -> ContractDiff {
             .collect(),
         added_exports: names_only_in(new, old),
         removed_exports: names_only_in(old, new),
+        rules_added: rule_lines(new)
+            .difference(&rule_lines(old))
+            .cloned()
+            .collect(),
+        rules_removed: rule_lines(old)
+            .difference(&rule_lines(new))
+            .cloned()
+            .collect(),
+        boundary_moves: boundary_moves(old, new),
+        moved: Vec::new(),
     }
+}
+
+/// The directive keywords whose rendered lines `diff` compares. `exports` and `map` are left out:
+/// surfaces have their own lines and a map change shows as the files it moves.
+const RULE_KEYWORDS: [&str; 9] = [
+    "order",
+    "isolated",
+    "no-cycles",
+    "tests",
+    "facade",
+    "each",
+    "budget",
+    "packages",
+    "forbid-packages",
+];
+
+/// The rule directive lines of `contract` as `render` writes them, trimmed.
+// why: the rendered text is canonical (sorted nodes, one line per rule), so comparing it ignores
+// why: spacing and the order of the source lines without a second description of each rule.
+fn rule_lines(contract: &Contract) -> BTreeSet<String> {
+    diagram::render(contract)
+        .lines()
+        .map(str::trim)
+        .filter(|line| {
+            let word = line
+                .strip_prefix("%% ")
+                .and_then(|rest| rest.split([':', ' ']).next());
+            word.is_some_and(|word| RULE_KEYWORDS.contains(&word))
+        })
+        .map(str::to_owned)
+        .collect()
+}
+
+/// The nodes both contracts declare that sit in different boundaries, sorted by node.
+fn boundary_moves(old: &Contract, new: &Contract) -> Vec<BoundaryMove> {
+    let chain = |info: &crate::model::NodeInfo| {
+        let boundaries: Vec<&str> = info.boundaries().collect();
+        (!boundaries.is_empty()).then(|| boundaries.join("/"))
+    };
+    old.nodes
+        .iter()
+        .filter_map(|(node, old_info)| {
+            let (from, to) = (chain(old_info), chain(new.nodes.get(node)?));
+            (from != to).then(|| BoundaryMove {
+                node: node.clone(),
+                from,
+                to,
+            })
+        })
+        .collect()
 }
 
 /// The `(node, name)` pairs that `from` exports and `other` does not, sorted. A node with no
@@ -118,9 +179,34 @@ mod tests {
     }
 
     #[test]
-    fn labels_boundaries_and_order_are_not_changes() {
-        let reordered = "flowchart LR\n  subgraph g[\"G\"]\n    c[\"renamed\"]\n  end\n  b\n  a\n  b -.-> c\n  a -->|why| b\n";
+    fn labels_and_order_are_not_changes() {
+        let reordered = "flowchart LR\n  c[\"renamed\"]\n  b\n  a\n  b -.-> c\n  a -->|why| b\n";
         assert!(diff_of(BASE, reordered).is_empty());
+    }
+
+    #[test]
+    fn a_node_entering_a_boundary_is_a_boundary_move() {
+        let new =
+            "flowchart LR\n  subgraph g[\"G\"]\n    c\n  end\n  a\n  b\n  a --> b\n  b -.-> c\n";
+        let d = diff_of(BASE, new);
+        assert_eq!(
+            d.boundary_moves,
+            vec![BoundaryMove {
+                node: node("c"),
+                from: None,
+                to: Some("g".to_owned())
+            }]
+        );
+        assert!(!d.is_empty());
+    }
+
+    #[test]
+    fn rule_lines_are_compared_as_rendered() {
+        let old = "flowchart LR\n  a\n  b\n  %% facade a, b\n  %% budget a: files 3\n";
+        let new = "flowchart LR\n  a\n  b\n  %% facade b,   a\n  %% budget a: files 4\n  %% exports a: X\n";
+        let d = diff_of(old, new);
+        assert_eq!(d.rules_added, vec!["%% budget a: files 4".to_owned()]);
+        assert_eq!(d.rules_removed, vec!["%% budget a: files 3".to_owned()]);
     }
 
     #[test]

@@ -3,8 +3,8 @@
 //! The only code that runs another program. Arguments are passed one by one, never through a
 //! shell, and a ref that could be read as an option is refused.
 
-use std::path::Path;
-use std::process::{Command, Output};
+use std::path::{Path, PathBuf};
+use std::process::{Command, Output, Stdio};
 
 use anyhow::{Context, Result, anyhow, bail};
 
@@ -40,6 +40,94 @@ pub fn contract_at(root: &Path, git_ref: &str, contract: &Path) -> Result<Option
         return Ok(None);
     }
     bail!("git show {spec}: {}", message(&shown));
+}
+
+/// Writes the tree of `git_ref` (the directory `root`, as git sees it) into the empty directory
+/// `dest`.
+///
+/// # Errors
+/// Git or `tar` cannot be run, or the ref does not exist.
+pub fn export_tree(root: &Path, git_ref: &str, dest: &Path) -> Result<()> {
+    object_spec(git_ref, Path::new("."))?;
+    let mut archive = Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["archive", "--format=tar", git_ref])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .context("cannot run git")?;
+    let tar = Command::new("tar")
+        .arg("-x")
+        .arg("-C")
+        .arg(dest)
+        .stdin(archive.stdout.take().context("git archive has no output")?)
+        .output()
+        .context("cannot run tar")?;
+    let archived = archive.wait_with_output().context("cannot run git")?;
+    if !archived.status.success() {
+        bail!("git archive {git_ref}: {}", message(&archived));
+    }
+    if !tar.status.success() {
+        bail!("tar: {}", message(&tar));
+    }
+    Ok(())
+}
+
+/// The `(old path, new path)` pairs git detects as renames between `git_ref` and the working tree
+/// of `root`, untracked files included and ignored ones not, paths relative to `root`.
+///
+/// `scratch` is an empty directory for a throwaway index: the working tree is added to that index,
+/// never the real one.
+///
+/// # Errors
+/// Git cannot be run or fails.
+pub fn renames(root: &Path, git_ref: &str, scratch: &Path) -> Result<Vec<(PathBuf, PathBuf)>> {
+    object_spec(git_ref, Path::new("."))?;
+    let index = scratch.join("index");
+    let run = |args: &[&str]| -> Result<Output> {
+        let output = Command::new("git")
+            .arg("-C")
+            .arg(root)
+            .env("GIT_INDEX_FILE", &index)
+            .args(args)
+            .output()
+            .context("cannot run git")?;
+        if output.status.success() {
+            Ok(output)
+        } else {
+            bail!("git {}: {}", args.join(" "), message(&output))
+        }
+    };
+    run(&["add", "-A", "--", "."])?;
+    let listing = run(&[
+        "diff",
+        "--cached",
+        "--name-status",
+        "-z",
+        "-M",
+        "--relative",
+        git_ref,
+        "--",
+        ".",
+    ])?;
+    Ok(parse_renames(&String::from_utf8_lossy(&listing.stdout)))
+}
+
+/// The rename entries of `git diff --name-status -z`: `R<score>`, old path, new path. Other
+/// statuses carry one path (a copy carries two and is skipped like the rest).
+fn parse_renames(listing: &str) -> Vec<(PathBuf, PathBuf)> {
+    let mut fields = listing.split('\0').filter(|field| !field.is_empty());
+    let mut found = Vec::new();
+    while let Some(status) = fields.next() {
+        let paths = if status.starts_with(['R', 'C']) { 2 } else { 1 };
+        let mut names = fields.by_ref().take(paths);
+        if let (true, Some(old), Some(new)) = (status.starts_with('R'), names.next(), names.next())
+        {
+            found.push((PathBuf::from(old), PathBuf::from(new)));
+        }
+    }
+    found
 }
 
 /// `REF:./<contract>`, the object `git show` reads, relative to the directory git runs in.
@@ -100,6 +188,15 @@ mod tests {
         assert_eq!(
             object_spec("HEAD~1", Path::new("docs/arch.mmd")).unwrap(),
             "HEAD~1:./docs/arch.mmd"
+        );
+    }
+
+    #[test]
+    fn rename_entries_are_paired_and_other_statuses_skipped() {
+        let listing = "M\0a.rs\0R100\0b/old.rs\0c/new.rs\0A\0d.rs\0C75\0e.rs\0f.rs\0D\0g.rs\0";
+        assert_eq!(
+            parse_renames(listing),
+            vec![(PathBuf::from("b/old.rs"), PathBuf::from("c/new.rs"))]
         );
     }
 

@@ -106,7 +106,7 @@ pub struct DiffArgs {
     /// Output format.
     #[arg(long, value_enum, default_value_t = ViewFormat::Text)]
     pub format: ViewFormat,
-    /// Exit 1 when the contract changed or debt was added, so CI can require approval.
+    /// Exit 1 when the contract, a rule, a boundary or a file's owner changed, or debt was added.
     #[arg(long)]
     pub exit_code: bool,
     /// Debt baseline, relative to PATH: also report entries added since REF.

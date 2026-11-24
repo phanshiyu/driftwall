@@ -5,8 +5,9 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use driftwall::lint::{self, EMPTY_CONTRACT};
-use driftwall::model::{Baseline, DEFAULT_CONTRACT, DebtAdded};
+use driftwall::model::{Baseline, DEFAULT_CONTRACT, DebtAdded, Moved};
 use driftwall::report;
+use tempfile::TempDir;
 
 use crate::args::{DiffArgs, ViewFormat};
 use crate::commands::{Run, parse_baseline, read_baseline, require_directory};
@@ -30,7 +31,8 @@ pub fn run(args: &DiffArgs) -> Result<Run> {
     let new_src = fs::read_to_string(args.path.join(&contract))
         .with_context(|| format!("cannot read {}", contract.display()))?;
     let old_src = git::contract_at(&args.path, &args.base, &contract)?;
-    let diff = lint::contract_diff(old_src.as_deref().unwrap_or(EMPTY_CONTRACT), &new_src)?;
+    let mut diff = lint::contract_diff(old_src.as_deref().unwrap_or(EMPTY_CONTRACT), &new_src)?;
+    diff.moved = moved_files(args, &contract, old_src.is_some())?;
     let Some(file) = &args.baseline else {
         let stdout = match args.format {
             ViewFormat::Text => report::render_diff_text(&diff),
@@ -50,6 +52,19 @@ pub fn run(args: &DiffArgs) -> Result<Run> {
         stdout,
         outcome: Outcome::of_diff(&diff, debt.len(), args.exit_code),
     })
+}
+
+/// The source files whose owner at the base ref differs from the owner now. `declared` is whether
+/// the contract exists at the ref; without it the old tree is owned by its `.arch` files alone.
+fn moved_files(args: &DiffArgs, contract: &Path, declared: bool) -> Result<Vec<Moved>> {
+    // why: the owner at the ref is whatever a lint of that tree would say, so the tree is scanned.
+    let old_tree = TempDir::new().context("cannot create a temporary directory")?;
+    git::export_tree(&args.path, &args.base, old_tree.path())?;
+    let scratch = TempDir::new().context("cannot create a temporary directory")?;
+    let renames = git::renames(&args.path, &args.base, scratch.path())?;
+    let old = lint::owners(old_tree.path(), contract, declared)?;
+    let new = lint::owners(&args.path, contract, true)?;
+    Ok(lint::moved(&old, &new, &renames))
 }
 
 /// The entries of the working-tree baseline `file` that are new or larger than at the base ref.
