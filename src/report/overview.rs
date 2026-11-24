@@ -91,43 +91,51 @@ pub fn render_overview_text(overview: &Overview) -> String {
         let _ = writeln!(out, "  {}", edge_line(edge));
     }
     out.push_str(&boundary_edges_block(overview));
-    if !overview.rules.is_empty() {
-        out.push_str("rules:\n");
-        for chain in &overview.rules.order {
-            let open = if overview.rules.open_order.contains(chain) {
-                " open"
-            } else {
-                ""
-            };
-            let _ = writeln!(out, "  order{open}: {}", chain.join(" > "));
-        }
-        if overview.rules.no_cycles {
-            out.push_str("  no-cycles\n");
-        }
-        if overview.rules.no_cycles_boundaries {
-            out.push_str("  no-cycles: boundaries\n");
-        }
-        if overview.rules.tests_isolated {
-            out.push_str("  tests: isolated\n");
-        }
-        for isolated in &overview.rules.isolated {
-            let _ = writeln!(
-                out,
-                "  isolated: {} ({})",
-                isolated.boundary,
-                isolated.children.join(", ")
-            );
-        }
-        if !overview.rules.facades.is_empty() {
-            let _ = writeln!(out, "  facade: {}", overview.rules.facades.join(", "));
-        }
-    }
+    out.push_str(&rules_block(&overview.rules));
     out.push_str(&blind::summary_block(
         &overview.blind_spots,
         &overview.unmapped,
         &overview.unmapped_items,
         &overview.skipped_references,
     ));
+    out
+}
+
+/// The `rules:` block of `brief`, one line per directive, empty without one.
+fn rules_block(rules: &RulesSummary) -> String {
+    let mut out = String::new();
+    if rules.is_empty() {
+        return out;
+    }
+    out.push_str("rules:\n");
+    for chain in &rules.order {
+        let open = if rules.open_order.contains(chain) {
+            " open"
+        } else {
+            ""
+        };
+        let _ = writeln!(out, "  order{open}: {}", chain.join(" > "));
+    }
+    if rules.no_cycles {
+        out.push_str("  no-cycles\n");
+    }
+    if rules.no_cycles_boundaries {
+        out.push_str("  no-cycles: boundaries\n");
+    }
+    if rules.tests_isolated {
+        out.push_str("  tests: isolated\n");
+    }
+    for isolated in &rules.isolated {
+        let _ = writeln!(
+            out,
+            "  isolated: {} ({})",
+            isolated.boundary,
+            isolated.children.join(", ")
+        );
+    }
+    if !rules.facades.is_empty() {
+        let _ = writeln!(out, "  facade: {}", rules.facades.join(", "));
+    }
     out
 }
 

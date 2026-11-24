@@ -182,6 +182,8 @@ flowchart LR
   boundaries. `render` writes the nesting back, so a contract round-trips. Boundary labels are still
   not stored (a rendered boundary is labelled with its id), and a boundary with no node at any depth
   is not rendered, as before.
+- Mermaid draws nested subgraphs, so the diagram still renders (checked with `mermaid-cli` in headless
+  Chrome: three levels, boundary edges between inner and outer boundaries, one cluster per boundary).
 - `init` drafts have one level and no nesting.
 
 ### Boundary edges
