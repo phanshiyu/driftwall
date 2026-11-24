@@ -36,10 +36,11 @@ impl Outcome {
         }
     }
 
-    /// The outcome of `diff`: a changed contract is a finding only when `exit_code` asks for it.
+    /// The outcome of `diff`: a changed contract, or debt added to the baseline (`debt` entries),
+    /// is a finding only when `exit_code` asks for it.
     #[must_use]
-    pub const fn of_diff(diff: &ContractDiff, exit_code: bool) -> Self {
-        if exit_code && !diff.is_empty() {
+    pub const fn of_diff(diff: &ContractDiff, debt: usize, exit_code: bool) -> Self {
+        if exit_code && (!diff.is_empty() || debt > 0) {
             Self::Findings
         } else {
             Self::Clean
@@ -74,6 +75,7 @@ mod tests {
                     message: String::new(),
                     hint: None,
                     test_only: false,
+                    key: String::new(),
                 })
                 .collect(),
         }
@@ -150,15 +152,22 @@ mod tests {
             added_nodes: vec![NodeId::new("a").unwrap()],
             ..ContractDiff::default()
         };
-        assert_eq!(Outcome::of_diff(&changed, false), Outcome::Clean);
-        assert_eq!(Outcome::of_diff(&changed, true), Outcome::Findings);
+        assert_eq!(Outcome::of_diff(&changed, 0, false), Outcome::Clean);
+        assert_eq!(Outcome::of_diff(&changed, 0, true), Outcome::Findings);
+    }
+
+    #[test]
+    fn added_debt_is_a_finding_with_exit_code_even_when_the_contract_is_unchanged() {
+        let same = ContractDiff::default();
+        assert_eq!(Outcome::of_diff(&same, 1, false), Outcome::Clean);
+        assert_eq!(Outcome::of_diff(&same, 1, true), Outcome::Findings);
     }
 
     #[test]
     fn an_unchanged_contract_is_always_clean() {
         let same = ContractDiff::default();
-        assert_eq!(Outcome::of_diff(&same, false), Outcome::Clean);
-        assert_eq!(Outcome::of_diff(&same, true), Outcome::Clean);
+        assert_eq!(Outcome::of_diff(&same, 0, false), Outcome::Clean);
+        assert_eq!(Outcome::of_diff(&same, 0, true), Outcome::Clean);
     }
 
     #[test]

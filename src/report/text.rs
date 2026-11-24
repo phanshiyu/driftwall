@@ -2,13 +2,24 @@
 
 use std::fmt::Write as _;
 
-use crate::model::LintReport;
+use crate::model::{BaselineOutcome, LintReport};
 
 use super::common::{counts, kind_str, plural, severity_str, slash_path};
 
 /// Renders `report` as uncoloured text, one block per violation plus a summary line.
 #[must_use]
 pub fn render_text(report: &LintReport) -> String {
+    text(report, None)
+}
+
+/// Like [`render_text`] for a report a baseline was applied to: the summary line says how many
+/// findings the baseline suppressed.
+#[must_use]
+pub fn render_text_baselined(report: &LintReport, baseline: &BaselineOutcome) -> String {
+    text(report, Some(baseline.suppressed.len()))
+}
+
+fn text(report: &LintReport, baselined: Option<usize>) -> String {
     let mut out = String::new();
     for v in &report.violations {
         // why: fmt::Write into a String is infallible, so the discarded Result carries no error.
@@ -27,21 +38,27 @@ pub fn render_text(report: &LintReport) -> String {
             let _ = writeln!(out, "  hint: {hint}");
         }
     }
-    out.push_str(&summary(report));
+    out.push_str(&summary(report, baselined));
     out.push('\n');
     out
 }
 
-fn summary(report: &LintReport) -> String {
-    if report.violations.is_empty() {
-        return "driftwall: clean".to_owned();
+fn summary(report: &LintReport, baselined: Option<usize>) -> String {
+    let mut line = if report.violations.is_empty() {
+        "driftwall: clean".to_owned()
+    } else {
+        let (errors, warnings) = counts(report);
+        format!(
+            "driftwall: {}, {}",
+            plural(errors, "error"),
+            plural(warnings, "warning")
+        )
+    };
+    if let Some(count) = baselined {
+        // why: fmt::Write into a String is infallible, so the discarded Result carries no error.
+        let _ = write!(line, ", {count} baselined");
     }
-    let (errors, warnings) = counts(report);
-    format!(
-        "driftwall: {}, {}",
-        plural(errors, "error"),
-        plural(warnings, "warning")
-    )
+    line
 }
 
 #[cfg(test)]
@@ -82,6 +99,23 @@ src/a.test.ts:3: error[undeclared-edge] (test code): a imports b
 driftwall: 1 error, 0 warnings
 ";
         assert_eq!(render_text(&report), expected);
+    }
+
+    #[test]
+    fn a_baseline_adds_its_count_to_the_summary() {
+        let outcome = BaselineOutcome {
+            file: "debt.txt".into(),
+            suppressed: mixed().violations,
+            stale: 0,
+        };
+        let clean = render_text_baselined(&LintReport::default(), &outcome);
+        assert_eq!(clean, "driftwall: clean, 4 baselined\n");
+        let one = LintReport {
+            violations: mixed().violations[..1].to_vec(),
+        };
+        assert!(
+            render_text_baselined(&one, &outcome).ends_with("1 error, 0 warnings, 4 baselined\n")
+        );
     }
 
     #[test]

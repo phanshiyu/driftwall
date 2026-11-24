@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use crate::imports::FileImports;
-use crate::model::{Contract, Violation, ViolationKind};
+use crate::model::{Contract, Violation, ViolationKind, path_key};
 
 use super::rules::violation;
 
@@ -40,6 +40,11 @@ pub(super) fn findings(
                     import.target.display(),
                 ),
             )
+            .keyed(format!(
+                "{} --> {}",
+                path_key(&import.at.file),
+                path_key(&import.target)
+            ))
         })
         .collect()
 }

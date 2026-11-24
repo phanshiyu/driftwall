@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 
 use serde_json::{Value, json};
 
-use crate::model::{LintReport, Violation};
+use crate::model::{BaselineOutcome, LintReport, Violation};
 
 use super::ReportError;
 use super::common::{kind_str, severity_str, slash_path};
@@ -18,9 +18,33 @@ const SCHEMA_URI: &str = "https://json.schemastore.org/sarif-2.1.0.json";
 /// # Errors
 /// Returns [`ReportError::Serialize`] when the log cannot be serialised.
 pub fn render_sarif(report: &LintReport) -> Result<String, ReportError> {
-    let rule_ids: BTreeSet<&str> = report.violations.iter().map(|v| kind_str(v.kind)).collect();
+    sarif(report, None)
+}
+
+/// Like [`render_sarif`] for a report a baseline was applied to: the findings the baseline
+/// suppressed are results too, each with `"suppressions": [{"kind": "external"}]`.
+///
+/// # Errors
+/// Returns [`ReportError::Serialize`] when the log cannot be serialised.
+pub fn render_sarif_baselined(
+    report: &LintReport,
+    baseline: &BaselineOutcome,
+) -> Result<String, ReportError> {
+    sarif(report, Some(baseline))
+}
+
+fn sarif(report: &LintReport, baseline: Option<&BaselineOutcome>) -> Result<String, ReportError> {
+    let mut all: Vec<(&Violation, bool)> = report.violations.iter().map(|v| (v, false)).collect();
+    if let Some(outcome) = baseline {
+        all.extend(outcome.suppressed.iter().map(|v| (v, true)));
+        all.sort();
+    }
+    let rule_ids: BTreeSet<&str> = all.iter().map(|(v, _)| kind_str(v.kind)).collect();
     let rules: Vec<Value> = rule_ids.into_iter().map(|id| json!({ "id": id })).collect();
-    let results: Vec<Value> = report.violations.iter().map(result).collect();
+    let results: Vec<Value> = all
+        .iter()
+        .map(|&(v, suppressed)| result(v, suppressed))
+        .collect();
 
     let log = json!({
         "$schema": SCHEMA_URI,
@@ -35,7 +59,7 @@ pub fn render_sarif(report: &LintReport) -> Result<String, ReportError> {
     Ok(out)
 }
 
-fn result(v: &Violation) -> Value {
+fn result(v: &Violation, suppressed: bool) -> Value {
     let text = v.hint.as_ref().map_or_else(
         || v.message.clone(),
         |hint| format!("{}\n{hint}", v.message),
@@ -45,6 +69,9 @@ fn result(v: &Violation) -> Value {
         "level": severity_str(v.severity),
         "message": { "text": text },
     });
+    if let (true, Some(map)) = (suppressed, result.as_object_mut()) {
+        map.insert("suppressions".to_owned(), json!([{ "kind": "external" }]));
+    }
     if let (true, Some(map)) = (v.test_only, result.as_object_mut()) {
         map.insert("properties".to_owned(), json!({ "testOnly": true }));
     }
@@ -82,6 +109,28 @@ mod tests {
             value["runs"][0]["tool"]["driver"]["name"],
             json!("driftwall")
         );
+    }
+
+    #[test]
+    fn suppressed_findings_are_results_marked_external() {
+        let outcome = BaselineOutcome {
+            file: "debt.txt".into(),
+            suppressed: mixed().violations[..1].to_vec(),
+            stale: 0,
+        };
+        let rest = LintReport {
+            violations: mixed().violations[1..].to_vec(),
+        };
+        let value: Value =
+            serde_json::from_str(&render_sarif_baselined(&rest, &outcome).unwrap()).unwrap();
+        let results = value["runs"][0]["results"].as_array().unwrap();
+        assert_eq!(results.len(), 4);
+        let marked = results
+            .iter()
+            .filter(|r| r.get("suppressions").is_some())
+            .count();
+        assert_eq!(marked, 1);
+        assert_eq!(results[0]["suppressions"], json!([{ "kind": "external" }]));
     }
 
     #[test]
@@ -195,6 +244,7 @@ mod tests {
                 "private-symbol",
                 "production-imports-test",
                 "redundant-edge",
+                "stale-baseline",
                 "stale-edge",
                 "stale-facade",
                 "stale-isolation",
@@ -208,7 +258,7 @@ mod tests {
                 "upward-edge",
             ]
         );
-        assert_eq!(value["runs"][0]["results"].as_array().unwrap().len(), 19);
+        assert_eq!(value["runs"][0]["results"].as_array().unwrap().len(), 20);
     }
 
     #[test]

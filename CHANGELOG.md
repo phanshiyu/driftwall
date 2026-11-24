@@ -10,6 +10,13 @@
   the existing `over-budget` warning. `brief` and `neighbors` show `interface 9/5 over` and the JSON
   `budget.interface`; `neighbors` also lists the entries with their users in an `interface:` block
   (JSON `interface`) for a node with the limit, or with `--all-sites`.
+- Debt baseline: `driftwall lint --write-baseline FILE` records today's findings as `<kind> <count>
+  <key>` lines, and `--baseline FILE` then fails only on new debt. Keys hold no line numbers, a key
+  with more findings than recorded reports all of them ("the baseline allows N, found M"), and fixing
+  debt never fails. An entry with room to spare is the warning `stale-baseline`, so `--strict` makes
+  the file shrink. Suppressed findings are counted in the text summary, in a JSON `baseline` object,
+  and emitted in SARIF with `suppressions`. `driftwall diff --base REF --baseline FILE` reports
+  debt added, which `--exit-code` fails on. See "Debt baseline" in `docs/DESIGN.md`.
 
 ## 0.1.1 - 2026-11-25
 

@@ -46,6 +46,7 @@ pub(super) fn findings(
                     "`%% facade {node}` on line {line} names a node whose files re-export nothing"
                 ),
             )
+            .keyed(node.to_string())
         })
         .collect()
 }

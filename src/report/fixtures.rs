@@ -21,6 +21,7 @@ pub fn violation(
         message: message.to_owned(),
         hint: hint.map(str::to_owned),
         test_only: false,
+        key: String::new(),
     }
 }
 
@@ -61,7 +62,7 @@ pub fn mixed() -> LintReport {
 }
 
 /// Every kind, in declaration order, so the list can be checked against [`ordinal`].
-pub const ALL_KINDS: [ViolationKind; 19] = [
+pub const ALL_KINDS: [ViolationKind; 20] = [
     ViolationKind::UnmappedFile,
     ViolationKind::UnknownNode,
     ViolationKind::UndeclaredEdge,
@@ -81,6 +82,7 @@ pub const ALL_KINDS: [ViolationKind; 19] = [
     ViolationKind::StaleFacade,
     ViolationKind::IsolationBreach,
     ViolationKind::StaleIsolation,
+    ViolationKind::StaleBaseline,
 ];
 
 /// Position of a kind in [`ALL_KINDS`]. Exhaustive, so a new variant fails to compile here and
@@ -106,6 +108,7 @@ pub const fn ordinal(kind: ViolationKind) -> usize {
         ViolationKind::StaleFacade => 16,
         ViolationKind::IsolationBreach => 17,
         ViolationKind::StaleIsolation => 18,
+        ViolationKind::StaleBaseline => 19,
     }
 }
 

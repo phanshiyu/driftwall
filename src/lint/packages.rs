@@ -114,7 +114,7 @@ fn forbidden(
                 "`{node}` imports `{name}` ({kind}) but {file}:{} `%% forbid-packages {node}` forbids it",
                 rule.line
             ),
-        ));
+        ).keyed(format!("{node} {name}")));
     }
     let allowed: Vec<&PackageRule> = rules(PackageRuleKind::Allow).collect();
     let first = allowed.first()?;
@@ -130,14 +130,17 @@ fn forbidden(
     } else {
         format!("lists only: {}", listed.join(", "))
     };
-    Some(violation(
-        ViolationKind::ForbiddenPackage,
-        Some(used.at.clone()),
-        format!(
-            "`{node}` imports `{name}` ({kind}) but {file}:{} `%% packages {node}` {lists}",
-            first.line
-        ),
-    ))
+    Some(
+        violation(
+            ViolationKind::ForbiddenPackage,
+            Some(used.at.clone()),
+            format!(
+                "`{node}` imports `{name}` ({kind}) but {file}:{} `%% packages {node}` {lists}",
+                first.line
+            ),
+        )
+        .keyed(format!("{node} {name}")),
+    )
 }
 
 /// A `stale-package` per entry of the allow-list `rule` that none of `uses` matches.
@@ -158,6 +161,7 @@ fn stale_entries(rule: &PackageRule, uses: &[&PackageUse], contract_file: &Path)
                     rule.node, rule.node
                 ),
             )
+            .keyed(format!("{} {entry}", rule.node))
         })
         .collect()
 }

@@ -36,7 +36,7 @@ pub(super) fn findings(
                         "one child".to_owned()
                     },
                 ),
-            ));
+            ).keyed(boundary.as_str()));
         }
         for (edge, import) in crossings {
             let Some((first, second)) =
@@ -53,7 +53,7 @@ pub(super) fn findings(
                     from = edge.from,
                     to = edge.to,
                 ),
-            ));
+            ).keyed(format!("{boundary}: {} --> {}", edge.from, edge.to)));
         }
     }
     found

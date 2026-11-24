@@ -21,7 +21,9 @@ mod witness {
     use driftwall::imports::ImportsError;
     use driftwall::init::InitError;
     use driftwall::lint::LintError;
-    use driftwall::model::{Endpoint, GlobError, Location, MapSite, ModelError, NodeId};
+    use driftwall::model::{
+        BaselineError, Endpoint, GlobError, Location, MapSite, ModelError, NodeId,
+    };
     use driftwall::ownership::{ArchProblem, OwnershipError};
     use driftwall::report::ReportError;
 
@@ -55,6 +57,7 @@ mod witness {
     }
 
     witness!(ModelError: InvalidNodeId, InvalidPrefix);
+    witness!(BaselineError: Malformed, UnknownKind, BadCount, NoKey, Duplicate);
     witness!(GlobError: Empty, Negated, ParentDir, Unsupported, DoubleStar);
     witness!(
         ArchProblem: MissingNode,
@@ -122,6 +125,7 @@ mod witness {
     /// the source tree.
     const COVERED: &[&str] = &[
         ModelError::TYPE,
+        BaselineError::TYPE,
         GlobError::TYPE,
         ArchProblem::TYPE,
         DiagramError::TYPE,
@@ -172,6 +176,24 @@ mod witness {
     impl Build for ModelError {
         fn build() -> Vec<Self> {
             vec![model_error(), Self::InvalidPrefix("1".to_owned())]
+        }
+    }
+
+    impl Build for BaselineError {
+        fn build() -> Vec<Self> {
+            vec![
+                Self::Malformed { line: 1 },
+                Self::UnknownKind {
+                    line: 1,
+                    kind: "x".to_owned(),
+                },
+                Self::BadCount {
+                    line: 1,
+                    count: "x".to_owned(),
+                },
+                Self::NoKey { line: 1 },
+                Self::Duplicate { line: 1 },
+            ]
         }
     }
 
@@ -471,6 +493,11 @@ mod witness {
     #[test]
     fn model_error_does_not_repeat_its_cause() {
         check::<ModelError>();
+    }
+
+    #[test]
+    fn baseline_error_does_not_repeat_its_cause() {
+        check::<BaselineError>();
     }
 
     #[test]

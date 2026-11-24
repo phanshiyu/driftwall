@@ -5,10 +5,10 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Context, Result, anyhow, bail};
 use driftwall::init::{self, InitOptions, InitSummary, WriteOptions};
 use driftwall::lint::{self, LintOptions};
-use driftwall::model::BlindSummary;
+use driftwall::model::{Applied, Baseline, BlindSummary};
 use driftwall::report;
 
 use crate::args::{Command, InitArgs, LintArgs, LintFormat};
@@ -54,14 +54,64 @@ fn run_lint(args: &LintArgs) -> Result<Run> {
     let observation = lint::observe(&args.path, &options)?;
     let lint_report = &observation.report;
     let blind = observation.blind_spots.summary();
+    if let Some(file) = &args.write_baseline {
+        return write_baseline(&args.path, file, &Baseline::from_report(lint_report));
+    }
+    let Some(file) = &args.baseline else {
+        let stdout = match args.format {
+            LintFormat::Text => with_note(report::render_text(lint_report), &blind),
+            LintFormat::Json => report::render_json(lint_report, &blind)?,
+            LintFormat::Sarif => report::render_sarif(lint_report)?,
+        };
+        return Ok(Run {
+            stdout,
+            outcome: Outcome::of_lint(lint_report, args.strict),
+        });
+    };
+    let baseline = read_baseline(&args.path.join(file), file)?;
+    let Applied { report, outcome } = baseline.apply(lint_report.clone(), file);
     let stdout = match args.format {
-        LintFormat::Text => with_note(report::render_text(lint_report), &blind),
-        LintFormat::Json => report::render_json(lint_report, &blind)?,
-        LintFormat::Sarif => report::render_sarif(lint_report)?,
+        LintFormat::Text => with_note(report::render_text_baselined(&report, &outcome), &blind),
+        LintFormat::Json => report::render_json_baselined(&report, &blind, &outcome)?,
+        LintFormat::Sarif => report::render_sarif_baselined(&report, &outcome)?,
     };
     Ok(Run {
         stdout,
-        outcome: Outcome::of_lint(lint_report, args.strict),
+        outcome: Outcome::of_lint(&report, args.strict),
+    })
+}
+
+/// Reads and parses the baseline at `path`; `shown` is the name errors give it.
+///
+/// # Errors
+/// The file cannot be read, or a line of it is malformed.
+pub fn read_baseline(path: &Path, shown: &Path) -> Result<Baseline> {
+    let text = fs::read_to_string(path)
+        .with_context(|| format!("cannot read baseline {}", shown.display()))?;
+    parse_baseline(&text, shown)
+}
+
+/// Parses baseline `text`; `shown` is the name errors give the file.
+///
+/// # Errors
+/// A line is malformed; the message names the file and the line.
+pub fn parse_baseline(text: &str, shown: &Path) -> Result<Baseline> {
+    Baseline::parse(text).with_context(|| format!("baseline {}", shown.display()))
+}
+
+/// Writes `baseline` to `file` under `root` and says what it holds.
+fn write_baseline(root: &Path, file: &Path, baseline: &Baseline) -> Result<Run> {
+    let path = root.join(file);
+    fs::write(&path, baseline.render())
+        .with_context(|| format!("cannot write baseline {}", file.display()))?;
+    Ok(Run {
+        stdout: format!(
+            "driftwall: wrote {} ({}, {})\n",
+            file.display(),
+            entries(baseline.len()),
+            counted(baseline.total(), "finding"),
+        ),
+        outcome: Outcome::Clean,
     })
 }
 
@@ -106,6 +156,15 @@ fn render_init_summary(summary: &InitSummary) -> String {
         counted(summary.nodes, "node"),
         counted(summary.edges, "edge"),
     )
+}
+
+/// `1 entry`, `2 entries`.
+fn entries(n: usize) -> String {
+    if n == 1 {
+        "1 entry".to_owned()
+    } else {
+        format!("{n} entries")
+    }
 }
 
 /// `1 node`, `2 nodes`: `noun` with an `s` unless `n` is one.

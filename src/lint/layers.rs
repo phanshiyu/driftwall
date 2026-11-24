@@ -40,6 +40,7 @@ pub(super) fn upward_findings(
                         to = edge.to,
                     ),
                 )
+                .keyed(format!("{} --> {}", edge.from, edge.to))
             })
         })
         .collect()

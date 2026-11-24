@@ -109,6 +109,22 @@ has. That is a snapshot, not a design. Open the file, then:
 Add `driftwall lint .` to CI or a pre-commit hook. Exit codes: `0` clean, `1` violations, `2` the
 tool itself failed (bad diagram syntax, unreadable file, bad arguments).
 
+### Adopting on a repo with existing debt
+
+A contract that leaves existing debt undeclared makes `lint` fail until it is all fixed. Record the
+debt once, then fail CI only on new debt:
+
+```sh
+driftwall lint . --write-baseline driftwall-baseline.txt
+driftwall lint . --baseline driftwall-baseline.txt --strict
+```
+
+The baseline counts findings per key, so debt cannot grow inside an entry that is already recorded.
+Fixing debt never fails; with `--strict`, an entry that has room to spare is a `stale-baseline`
+warning until you shrink the file by writing it again. `driftwall diff --base main --baseline
+driftwall-baseline.txt --exit-code` lets a reviewer see, and CI require approval for, debt added.
+See [Debt baseline](docs/DESIGN.md#debt-baseline).
+
 ## Languages
 
 driftwall reads imports in TypeScript, JavaScript, Python, Rust, Swift, shell, Svelte and HTML
@@ -119,12 +135,12 @@ files that have a `<script>` element. Other files are not read. The exact file e
 
 | Command | What it does |
 | --- | --- |
-| `driftwall lint [PATH]` | Check the code against the contract. Flags: `--contract FILE`, `--format text\|json\|sarif`, `--strict` (warnings fail too). |
+| `driftwall lint [PATH]` | Check the code against the contract. Flags: `--contract FILE`, `--format text\|json\|sarif`, `--strict` (warnings fail too), `--baseline FILE`, `--write-baseline FILE`. |
 | `driftwall init [PATH]` | Write a first contract for an existing repository. Flags: `--depth N`, `--contract FILE`, `--map`, `--no-tags`, `--force`. |
 | `driftwall where FILE` | Show which component owns a file, and why. Flags: `--root DIR`, `--contract FILE`, `--format text\|json`. |
 | `driftwall brief [PATH]` | Print the whole architecture and its current state. Made for agents. Flags: `--contract FILE`, `--format text\|json`. |
 | `driftwall neighbors NODE [PATH]` | Print one component with every edge in or out, and the file and line of each import. Flags: `--contract FILE`, `--format text\|json`, `--files`, `--all-sites`. |
-| `driftwall diff --base REF [PATH]` | Show how the contract changed since a git ref, so a human can review it. Flags: `--contract FILE`, `--format text\|json`, `--exit-code` (exit 1 on any change). |
+| `driftwall diff --base REF [PATH]` | Show how the contract changed since a git ref, so a human can review it. Flags: `--contract FILE`, `--format text\|json`, `--exit-code` (exit 1 on any change), `--baseline FILE` (also report debt added). |
 
 Run `driftwall <command> --help` for the details. Output for the example above:
 

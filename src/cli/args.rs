@@ -106,9 +106,12 @@ pub struct DiffArgs {
     /// Output format.
     #[arg(long, value_enum, default_value_t = ViewFormat::Text)]
     pub format: ViewFormat,
-    /// Exit 1 when the contract changed, so CI can require approval.
+    /// Exit 1 when the contract changed or debt was added, so CI can require approval.
     #[arg(long)]
     pub exit_code: bool,
+    /// Debt baseline, relative to PATH: also report entries added since REF.
+    #[arg(long, value_name = "FILE")]
+    pub baseline: Option<PathBuf>,
 }
 
 /// Arguments of `driftwall where`.
@@ -153,6 +156,12 @@ pub struct LintArgs {
     /// Fail on warnings too.
     #[arg(long)]
     pub strict: bool,
+    /// Accept the findings a debt baseline records, relative to PATH. Fails only on new debt.
+    #[arg(long, value_name = "FILE", conflicts_with = "write_baseline")]
+    pub baseline: Option<PathBuf>,
+    /// Write a debt baseline of the current findings, relative to PATH, and exit 0.
+    #[arg(long, value_name = "FILE")]
+    pub write_baseline: Option<PathBuf>,
 }
 
 /// Output formats of `driftwall lint`.

@@ -2189,7 +2189,7 @@ a name is added to an existing import.
   and they decide neither the exit code nor `--strict`.
 - A key with more findings than recorded is reported in full, every finding of it, with
   `; the baseline allows <N>, found <M>` appended to the message: the tool cannot tell which site is
-  new, and naming all of them is honest. A key the file lacks is allowed zero.
+  new, and naming all of them is honest. A key the file lacks is reported as it is, with no suffix.
 - The text summary gains `, K baselined` (`driftwall: clean, 9 baselined`,
   `driftwall: 1 error, 0 warnings, 9 baselined`); without `--baseline` it is unchanged.
 - JSON omits suppressed findings from `violations` and has a top-level `baseline` object

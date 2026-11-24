@@ -375,6 +375,7 @@ mod tests {
                     message: String::new(),
                     hint: None,
                     test_only: false,
+                    key: String::new(),
                 })
                 .collect(),
         }

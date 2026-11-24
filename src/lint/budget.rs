@@ -87,6 +87,7 @@ pub(super) fn findings(
                             measure.actual, measure.limit
                         ),
                     )
+                    .keyed(format!("{node} {name}"))
                 })
         })
         .collect()

@@ -10,6 +10,7 @@ use std::path::PathBuf;
 use serde::{Serialize, Serializer};
 use thiserror::Error;
 
+mod baseline;
 mod blind;
 mod boundary;
 mod map;
@@ -17,6 +18,7 @@ mod open_order;
 mod package_rule;
 mod rules;
 
+pub use baseline::{Applied, Baseline, BaselineError, BaselineOutcome, DebtAdded, path_key};
 pub use boundary::{
     BoundaryEdge, Cover, Declared, EdgeEnds, Endpoint, Template, child_of, children, children_apart,
 };
@@ -748,6 +750,8 @@ pub enum ViolationKind {
     IsolationBreach,
     /// A `%% isolated` boundary has fewer than two children.
     StaleIsolation,
+    /// A debt baseline entry records more findings than exist now, see "Debt baseline".
+    StaleBaseline,
 }
 
 /// How serious a violation is.
@@ -776,6 +780,23 @@ pub struct Violation {
     /// Whether the finding is at an import site written in test code. Serialized only when true.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub test_only: bool,
+    /// What a debt baseline records the finding as, see "Debt baseline" in `docs/DESIGN.md`.
+    /// Empty for a finding no baseline can hold. Never serialized.
+    #[serde(skip)]
+    pub key: String,
+}
+
+impl Violation {
+    /// The finding with its baseline key. A finding at a test-only site gets ` (test)` appended,
+    /// so test debt and production debt are separate entries.
+    #[must_use]
+    pub fn keyed(mut self, key: impl Into<String>) -> Self {
+        self.key = key.into();
+        if self.test_only {
+            self.key.push_str(" (test)");
+        }
+        self
+    }
 }
 
 /// The complete result of a lint run.
@@ -1072,6 +1093,7 @@ mod tests {
             message: String::new(),
             hint: None,
             test_only: false,
+            key: String::new(),
         };
         let report = LintReport {
             violations: vec![
@@ -1351,6 +1373,7 @@ mod tests {
                 message: String::new(),
                 hint: None,
                 test_only: false,
+                key: String::new(),
             }],
         };
         assert!(!report.failed(false));

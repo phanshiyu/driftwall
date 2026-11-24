@@ -6,7 +6,7 @@ use serde::Serialize;
 
 use std::fmt::Display;
 
-use crate::model::{ContractDiff, Edge, EdgeEnds, EdgeKind, NodeId};
+use crate::model::{ContractDiff, DebtAdded, Edge, EdgeEnds, EdgeKind, NodeId};
 
 use super::ReportError;
 use super::common::{arrow, edge_kind_str};
@@ -20,7 +20,15 @@ use super::json::SCHEMA_VERSION;
 /// loses every name (and with that its surface) shows only `-` lines.
 #[must_use]
 pub fn render_diff_text(diff: &ContractDiff) -> String {
-    if diff.is_empty() {
+    render_diff_text_with_debt(diff, &[])
+}
+
+/// Like [`render_diff_text`], and a `debt added:` section after the contract changes, one
+/// `  <kind> <key>: <old> -> <new>` line per baseline entry that is new or grew (see "Debt
+/// baseline" in `docs/DESIGN.md`).
+#[must_use]
+pub fn render_diff_text_with_debt(diff: &ContractDiff, debt: &[DebtAdded]) -> String {
+    if diff.is_empty() && debt.is_empty() {
         return "driftwall: no contract changes\n".to_owned();
     }
     let mut out = String::new();
@@ -69,6 +77,16 @@ pub fn render_diff_text(diff: &ContractDiff) -> String {
     for (node, name) in &diff.removed_exports {
         let _ = writeln!(out, "- exports {node}: {name}");
     }
+    if !debt.is_empty() {
+        out.push_str("debt added:\n");
+    }
+    for added in debt {
+        let _ = writeln!(
+            out,
+            "  {} {}: {} -> {}",
+            added.kind, added.key, added.old, added.new
+        );
+    }
     out
 }
 
@@ -77,7 +95,24 @@ pub fn render_diff_text(diff: &ContractDiff) -> String {
 /// # Errors
 /// Returns [`ReportError::Serialize`] when a value cannot be serialised.
 pub fn render_diff_json(diff: &ContractDiff) -> Result<String, ReportError> {
+    diff_json(diff, None)
+}
+
+/// Like [`render_diff_json`], and `debt_added`, the baseline entries that are new or grew, as
+/// `{kind, key, old, new}`, last.
+///
+/// # Errors
+/// Returns [`ReportError::Serialize`] when a value cannot be serialised.
+pub fn render_diff_json_with_debt(
+    diff: &ContractDiff,
+    debt: &[DebtAdded],
+) -> Result<String, ReportError> {
+    diff_json(diff, Some(debt))
+}
+
+fn diff_json(diff: &ContractDiff, debt: Option<&[DebtAdded]>) -> Result<String, ReportError> {
     let document = Document {
+        debt_added: debt,
         version: SCHEMA_VERSION,
         added_nodes: &diff.added_nodes,
         removed_nodes: &diff.removed_nodes,
@@ -129,6 +164,8 @@ struct Document<'a> {
     changed_boundary_edges: Vec<ChangedEnds<'a>>,
     added_exports: Vec<Exported<'a>>,
     removed_exports: Vec<Exported<'a>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    debt_added: Option<&'a [DebtAdded]>,
 }
 
 #[derive(Serialize)]

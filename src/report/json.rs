@@ -2,7 +2,7 @@
 
 use serde::Serialize;
 
-use crate::model::{BlindSummary, LintReport, Violation};
+use crate::model::{BaselineOutcome, BlindSummary, LintReport, Violation};
 
 use super::ReportError;
 use super::common::counts;
@@ -14,8 +14,18 @@ pub(super) const SCHEMA_VERSION: u32 = 1;
 struct Document<'a> {
     version: u32,
     summary: Summary,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    baseline: Option<BaselineDoc>,
     violations: &'a [Violation],
     blind_spots: &'a BlindSummary,
+}
+
+/// The `baseline` object: the file, how many findings it suppressed and how many entries are stale.
+#[derive(Serialize)]
+struct BaselineDoc {
+    file: String,
+    suppressed: usize,
+    stale: usize,
 }
 
 #[derive(Serialize)]
@@ -31,10 +41,36 @@ struct Summary {
 /// Returns [`ReportError::Serialize`] when a value cannot be serialised, such as a path that is
 /// not valid UTF-8.
 pub fn render_json(report: &LintReport, blind_spots: &BlindSummary) -> Result<String, ReportError> {
+    json(report, blind_spots, None)
+}
+
+/// Like [`render_json`] for a report a baseline was applied to: it adds the `baseline` object,
+/// `{file, suppressed, stale}`, after `summary`. The suppressed findings are not in `violations`.
+///
+/// # Errors
+/// Returns [`ReportError::Serialize`] when a value cannot be serialised.
+pub fn render_json_baselined(
+    report: &LintReport,
+    blind_spots: &BlindSummary,
+    baseline: &BaselineOutcome,
+) -> Result<String, ReportError> {
+    json(report, blind_spots, Some(baseline))
+}
+
+fn json(
+    report: &LintReport,
+    blind_spots: &BlindSummary,
+    baseline: Option<&BaselineOutcome>,
+) -> Result<String, ReportError> {
     let (errors, warnings) = counts(report);
     let document = Document {
         version: SCHEMA_VERSION,
         summary: Summary { errors, warnings },
+        baseline: baseline.map(|outcome| BaselineDoc {
+            file: super::common::slash_path(&outcome.file),
+            suppressed: outcome.suppressed.len(),
+            stale: outcome.stale,
+        }),
         violations: &report.violations,
         blind_spots,
     };
@@ -141,6 +177,25 @@ mod tests {
     }
 
     #[test]
+    fn a_baseline_adds_its_object_and_only_then() {
+        let outcome = BaselineOutcome {
+            file: "debt.txt".into(),
+            suppressed: mixed().violations[..3].to_vec(),
+            stale: 1,
+        };
+        let text =
+            render_json_baselined(&LintReport::default(), &BlindSummary::default(), &outcome)
+                .unwrap();
+        let value: Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(
+            value["baseline"],
+            json!({ "file": "debt.txt", "suppressed": 3, "stale": 1 })
+        );
+        assert!(text.find("\"summary\"") < text.find("\"baseline\""));
+        assert!(parse(&mixed()).get("baseline").is_none());
+    }
+
+    #[test]
     fn every_kind_renders() {
         let value = parse(&all_kinds());
         let kinds: Vec<&str> = value["violations"]
@@ -171,6 +226,7 @@ mod tests {
                 "stale-facade",
                 "isolation-breach",
                 "stale-isolation",
+                "stale-baseline",
             ]
         );
     }

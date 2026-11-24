@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use crate::imports::FileImports;
 use crate::model::{
     BoundaryEdge, Contract, Cover, Declared, Edge, EdgeKind, LintReport, Location, OpenAccess,
-    Ownership, ResolvedImport, Symbol, Violation, ViolationKind,
+    Ownership, ResolvedImport, Symbol, Violation, ViolationKind, path_key,
 };
 
 use super::isolation;
@@ -39,38 +39,7 @@ pub fn reconcile(
     imports: &BTreeMap<PathBuf, FileImports>,
     contract_file: &Path,
 ) -> LintReport {
-    let mut violations = Vec::new();
-
-    for (at, name) in &ownership.tags {
-        if !declared(contract, name) {
-            let source = if at.file == contract_file {
-                "`%% map` derives"
-            } else {
-                "`.arch` tags"
-            };
-            violations.push(violation(
-                ViolationKind::UnknownNode,
-                Some(at.clone()),
-                format!(
-                    "{source} `{name}` but {} declares no such node",
-                    contract_file.display()
-                ),
-            ));
-        }
-    }
-
-    violations.extend(map_findings(ownership, contract_file));
-
-    for file in &ownership.unmapped {
-        violations.push(violation(
-            ViolationKind::UnmappedFile,
-            Some(Location {
-                file: file.clone(),
-                line: 1,
-            }),
-            format!("`{}` has no owning node", file.display()),
-        ));
-    }
+    let mut violations = ownership_findings(contract, ownership, contract_file);
 
     let crossings = crossings(contract, ownership, imports);
     for (edge, import) in &crossings {
@@ -79,11 +48,14 @@ pub fn reconcile(
             // why: an open chain allows the pair as a solid edge would, until an arrow narrows it.
             None => match contract.open_access(edge) {
                 Some(OpenAccess::Allowed(_)) => {}
-                access => violations.push(site_violation(
-                    ViolationKind::UndeclaredEdge,
-                    import,
-                    undeclared_message(access, edge, import, contract_file),
-                )),
+                access => violations.push(
+                    site_violation(
+                        ViolationKind::UndeclaredEdge,
+                        import,
+                        undeclared_message(access, edge, import, contract_file),
+                    )
+                    .keyed(format!("{} --> {}", edge.from, edge.to)),
+                ),
             },
             // why: each covering edge is judged alone, so one that allows the site is enough.
             Some(winner)
@@ -91,11 +63,20 @@ pub fn reconcile(
                     .iter()
                     .any(|cover| cover.kind.allows(import.kind, import.test_only)) =>
             {
-                violations.push(site_violation(
-                    ViolationKind::UndeclaredEdge,
-                    import,
-                    restricted_site_message(winner, covers.len() - 1, edge, import, contract_file),
-                ));
+                violations.push(
+                    site_violation(
+                        ViolationKind::UndeclaredEdge,
+                        import,
+                        restricted_site_message(
+                            winner,
+                            covers.len() - 1,
+                            edge,
+                            import,
+                            contract_file,
+                        ),
+                    )
+                    .keyed(format!("{} --> {}", edge.from, edge.to)),
+                );
             }
             Some(_) => {}
         }
@@ -103,11 +84,18 @@ pub fn reconcile(
     }
     for file_imports in imports.values() {
         for import in &file_imports.unresolved {
-            violations.push(violation(
-                ViolationKind::UnresolvedImport,
-                Some(import.at.clone()),
-                format!("import `{}` resolves to no file", import.specifier),
-            ));
+            violations.push(
+                violation(
+                    ViolationKind::UnresolvedImport,
+                    Some(import.at.clone()),
+                    format!("import `{}` resolves to no file", import.specifier),
+                )
+                .keyed(format!(
+                    "{} {}",
+                    path_key(&import.at.file),
+                    import.specifier
+                )),
+            );
         }
     }
 
@@ -196,8 +184,13 @@ fn restricted_site_message(
 const PLANNED_TEST_ONLY_HINT: &str = "if tests alone should use it, declare `-.->|test|` or `-->|test|`; otherwise leave the edge dotted until the app uses it";
 
 /// A finding about a declared edge of `edge_kind`. A planned edge only tests use gets its own hint.
-fn edge_violation(kind: ViolationKind, edge_kind: EdgeKind, message: String) -> Violation {
-    let mut found = violation(kind, None, message);
+fn edge_violation(
+    kind: ViolationKind,
+    edge_kind: EdgeKind,
+    message: String,
+    key: String,
+) -> Violation {
+    let mut found = violation(kind, None, message).keyed(key);
     if kind == ViolationKind::TestOnlyEdge && edge_kind.is_planned() {
         found.hint = Some(PLANNED_TEST_ONLY_HINT.to_owned());
     }
@@ -232,7 +225,8 @@ fn edge_findings(contract: &Contract, crossings: &[(Edge, &ResolvedImport)]) -> 
         };
         let ends = (edge.from.as_str(), edge.to.as_str());
         if let Some((found, message)) = declared_edge_finding(*kind, ends, seen) {
-            violations.push(edge_violation(found, *kind, message));
+            let key = format!("{} {} {}", edge.from, kind.arrow(), edge.to);
+            violations.push(edge_violation(found, *kind, message, key));
         }
     }
     violations
@@ -338,10 +332,16 @@ fn boundary_edge_findings(
             let (from, to) = finding_ends(declared);
             let (kind, message) =
                 declared_edge_finding(declared.kind, (from.as_str(), to.as_str()), seen)?;
+            let ends = format!("{from} {} {to}", declared.kind.arrow());
+            let key = declared.template.as_ref().map_or_else(
+                || ends.clone(),
+                |template| format!("each {}: {ends}", template.boundary),
+            );
             Some(edge_violation(
                 kind,
                 declared.kind,
                 template_message(declared, message),
+                key,
             ))
         })
         .collect()
@@ -382,18 +382,21 @@ fn redundant_findings(contract: &Contract) -> Vec<Violation> {
                 let wide = declared.kind.at_least_as_wide_as(*kind);
                 (wide && (kind.is_planned() || !declared.kind.is_planned())).then_some(declared)
             })?;
-            Some(violation(
-                ViolationKind::RedundantEdge,
-                None,
-                format!(
-                    "edge {from} {arrow} {to} is redundant: {} (line {}) already covers it",
-                    covering.text(),
-                    covering.line,
-                    from = edge.from,
-                    arrow = kind.arrow(),
-                    to = edge.to,
-                ),
-            ))
+            Some(
+                violation(
+                    ViolationKind::RedundantEdge,
+                    None,
+                    format!(
+                        "edge {from} {arrow} {to} is redundant: {} (line {}) already covers it",
+                        covering.text(),
+                        covering.line,
+                        from = edge.from,
+                        arrow = kind.arrow(),
+                        to = edge.to,
+                    ),
+                )
+                .keyed(format!("{} {} {}", edge.from, kind.arrow(), edge.to)),
+            )
         })
         .collect()
 }
@@ -431,6 +434,7 @@ fn private_symbols(
                     to = edge.to,
                 ),
             )
+            .keyed(format!("{} --> {} {symbol}", edge.from, edge.to))
         })
         .collect()
 }
@@ -439,14 +443,17 @@ fn private_symbols(
 fn map_findings(ownership: &Ownership, contract_file: &Path) -> Vec<Violation> {
     let mut violations = Vec::new();
     for site in &ownership.stale_maps {
-        violations.push(violation(
-            ViolationKind::StaleMap,
-            Some(Location {
-                file: contract_file.to_path_buf(),
-                line: site.line,
-            }),
-            format!("map glob `{}` matches no file", site.glob),
-        ));
+        violations.push(
+            violation(
+                ViolationKind::StaleMap,
+                Some(Location {
+                    file: contract_file.to_path_buf(),
+                    line: site.line,
+                }),
+                format!("map glob `{}` matches no file", site.glob),
+            )
+            .keyed(site.glob.clone()),
+        );
     }
     if !ownership.ignored_tags.is_empty() {
         let shown: Vec<String> = ownership
@@ -461,16 +468,67 @@ fn map_findings(ownership: &Ownership, contract_file: &Path) -> Vec<Violation> {
         } else {
             format!(" and {more} more")
         };
-        violations.push(violation(
-            ViolationKind::IgnoredTagFiles,
-            None,
-            format!(
-                "{} has `%% map` lines, so {} `.arch` files are not read: {}{rest}",
-                contract_file.display(),
-                ownership.ignored_tags.len(),
-                shown.join(", ")
-            ),
-        ));
+        violations.push(
+            violation(
+                ViolationKind::IgnoredTagFiles,
+                None,
+                format!(
+                    "{} has `%% map` lines, so {} `.arch` files are not read: {}{rest}",
+                    contract_file.display(),
+                    ownership.ignored_tags.len(),
+                    shown.join(", ")
+                ),
+            )
+            .keyed(path_key(contract_file)),
+        );
+    }
+    violations
+}
+
+/// The findings about who owns what: tags naming undeclared nodes, `%% map` problems and files no
+/// node owns.
+fn ownership_findings(
+    contract: &Contract,
+    ownership: &Ownership,
+    contract_file: &Path,
+) -> Vec<Violation> {
+    let mut violations = Vec::new();
+
+    for (at, name) in &ownership.tags {
+        if !declared(contract, name) {
+            let source = if at.file == contract_file {
+                "`%% map` derives"
+            } else {
+                "`.arch` tags"
+            };
+            violations.push(
+                violation(
+                    ViolationKind::UnknownNode,
+                    Some(at.clone()),
+                    format!(
+                        "{source} `{name}` but {} declares no such node",
+                        contract_file.display()
+                    ),
+                )
+                .keyed(format!("{} {name}", path_key(&at.file))),
+            );
+        }
+    }
+
+    violations.extend(map_findings(ownership, contract_file));
+
+    for file in &ownership.unmapped {
+        violations.push(
+            violation(
+                ViolationKind::UnmappedFile,
+                Some(Location {
+                    file: file.clone(),
+                    line: 1,
+                }),
+                format!("`{}` has no owning node", file.display()),
+            )
+            .keyed(path_key(file)),
+        );
     }
     violations
 }

@@ -1,14 +1,15 @@
 //! `driftwall diff`: what changed in the contract since a git ref.
 
 use std::fs;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use driftwall::lint::{self, EMPTY_CONTRACT};
-use driftwall::model::DEFAULT_CONTRACT;
+use driftwall::model::{Baseline, DEFAULT_CONTRACT, DebtAdded};
 use driftwall::report;
 
 use crate::args::{DiffArgs, ViewFormat};
-use crate::commands::{Run, require_directory};
+use crate::commands::{Run, parse_baseline, read_baseline, require_directory};
 use crate::git;
 use crate::outcome::Outcome;
 
@@ -30,12 +31,37 @@ pub fn run(args: &DiffArgs) -> Result<Run> {
         .with_context(|| format!("cannot read {}", contract.display()))?;
     let old_src = git::contract_at(&args.path, &args.base, &contract)?;
     let diff = lint::contract_diff(old_src.as_deref().unwrap_or(EMPTY_CONTRACT), &new_src)?;
+    let Some(file) = &args.baseline else {
+        let stdout = match args.format {
+            ViewFormat::Text => report::render_diff_text(&diff),
+            ViewFormat::Json => report::render_diff_json(&diff)?,
+        };
+        return Ok(Run {
+            stdout,
+            outcome: Outcome::of_diff(&diff, 0, args.exit_code),
+        });
+    };
+    let debt = debt_added(args, file)?;
     let stdout = match args.format {
-        ViewFormat::Text => report::render_diff_text(&diff),
-        ViewFormat::Json => report::render_diff_json(&diff)?,
+        ViewFormat::Text => report::render_diff_text_with_debt(&diff, &debt),
+        ViewFormat::Json => report::render_diff_json_with_debt(&diff, &debt)?,
     };
     Ok(Run {
         stdout,
-        outcome: Outcome::of_diff(&diff, args.exit_code),
+        outcome: Outcome::of_diff(&diff, debt.len(), args.exit_code),
     })
+}
+
+/// The entries of the working-tree baseline `file` that are new or larger than at the base ref.
+/// A baseline absent at the ref counts as empty, so every entry is added.
+fn debt_added(args: &DiffArgs, file: &Path) -> Result<Vec<DebtAdded>> {
+    let new = read_baseline(&args.path.join(file), file)?;
+    let old = match git::contract_at(&args.path, &args.base, file)? {
+        Some(text) => parse_baseline(
+            &text,
+            &PathBuf::from(format!("{}:{}", args.base, file.display())),
+        )?,
+        None => Baseline::default(),
+    };
+    Ok(new.added_since(&old))
 }

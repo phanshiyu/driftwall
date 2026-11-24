@@ -26,6 +26,7 @@ pub(super) const fn severity(kind: ViolationKind) -> Severity {
         | ViolationKind::OverBudget
         | ViolationKind::StalePackage
         | ViolationKind::StaleIsolation
+        | ViolationKind::StaleBaseline
         | ViolationKind::StaleFacade => Severity::Warning,
     }
 }
@@ -83,6 +84,9 @@ pub(super) const fn hint(kind: ViolationKind) -> &'static str {
         ViolationKind::StaleFacade => {
             "remove the node from the `%% facade` line, or restore the re-exports in code"
         }
+        ViolationKind::StaleBaseline => {
+            "run `driftwall lint --write-baseline <file>` to shrink the baseline"
+        }
         ViolationKind::PrivateSymbol => {
             "import a name the node exports, or ask the user to approve extending its `%% exports` line in the contract"
         }
@@ -98,6 +102,7 @@ pub(super) fn violation(kind: ViolationKind, at: Option<Location>, message: Stri
         message,
         hint: Some(hint(kind).to_owned()),
         test_only: false,
+        key: String::new(),
     }
 }
 

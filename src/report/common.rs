@@ -4,29 +4,9 @@ use std::path::Path;
 
 use crate::model::{EdgeKind, LintReport, Location, Severity, SkipReason, ViolationKind};
 
-/// The kebab-case name of a kind. An exhaustive match so a new variant fails to compile here.
+/// The kebab-case name of a kind, as the model spells it.
 pub(super) const fn kind_str(kind: ViolationKind) -> &'static str {
-    match kind {
-        ViolationKind::UnmappedFile => "unmapped-file",
-        ViolationKind::UnknownNode => "unknown-node",
-        ViolationKind::UndeclaredEdge => "undeclared-edge",
-        ViolationKind::StaleEdge => "stale-edge",
-        ViolationKind::PlannedRealized => "planned-realized",
-        ViolationKind::TestOnlyEdge => "test-only-edge",
-        ViolationKind::RedundantEdge => "redundant-edge",
-        ViolationKind::UnresolvedImport => "unresolved-import",
-        ViolationKind::PrivateSymbol => "private-symbol",
-        ViolationKind::StaleMap => "stale-map",
-        ViolationKind::IgnoredTagFiles => "ignored-tag-files",
-        ViolationKind::UpwardEdge => "upward-edge",
-        ViolationKind::OverBudget => "over-budget",
-        ViolationKind::ProductionImportsTest => "production-imports-test",
-        ViolationKind::ForbiddenPackage => "forbidden-package",
-        ViolationKind::StalePackage => "stale-package",
-        ViolationKind::StaleFacade => "stale-facade",
-        ViolationKind::IsolationBreach => "isolation-breach",
-        ViolationKind::StaleIsolation => "stale-isolation",
-    }
+    kind.name()
 }
 
 /// The kebab-case name of a severity. Also the SARIF `level`, which uses the same words.
