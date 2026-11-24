@@ -94,7 +94,12 @@ pub fn render_overview_text(overview: &Overview) -> String {
     if !overview.rules.is_empty() {
         out.push_str("rules:\n");
         for chain in &overview.rules.order {
-            let _ = writeln!(out, "  order: {}", chain.join(" > "));
+            let open = if overview.rules.open_order.contains(chain) {
+                " open"
+            } else {
+                ""
+            };
+            let _ = writeln!(out, "  order{open}: {}", chain.join(" > "));
         }
         if overview.rules.no_cycles {
             out.push_str("  no-cycles\n");

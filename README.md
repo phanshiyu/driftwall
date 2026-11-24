@@ -178,6 +178,7 @@ syntax and behaviour are in [docs/DESIGN.md](docs/DESIGN.md).
 | `%% map ui: src/ui/` | Map files to a component, with no extra files. (`.arch` tag files still work.) | [Contract map](docs/DESIGN.md#contract-map--map) |
 | `%% exports api: post` | Only these names of `api` may be imported from outside. | [Symbols and public surfaces](docs/DESIGN.md#symbols-and-public-surfaces) |
 | `%% order: entry > engine > shared` | Layers, top to bottom. Imports may not point upward, even with no arrow drawn. | [Layer order](docs/DESIGN.md#layer-order) |
+| `%% order open: app > features > core` | Open layers: each layer may use any layer below with no arrow. An arrow from a layer to a lower one limits that pair of layers to the arrows you draw. | [Open order](docs/DESIGN.md#open-order) |
 | `%% no-cycles` | The declared arrows may not form a cycle. | [No cycles](docs/DESIGN.md#no-cycles) |
 | `%% budget lint: fan-out 5, files 20` | Warn when a component grows past a limit (`fan-out`, `files`, `lines`). | [Budgets](docs/DESIGN.md#budgets) |
 | `%% tests: isolated` | Production code may not import test files. | [Test isolation](docs/DESIGN.md#test-isolation) |

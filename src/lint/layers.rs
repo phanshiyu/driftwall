@@ -79,6 +79,7 @@ mod tests {
         }
         contract.rules.order = vec![LayerOrder {
             line: 9,
+            open: false,
             boundaries: vec!["up".to_owned(), "down".to_owned()],
         }];
         contract
@@ -173,6 +174,7 @@ mod tests {
         let mut contract = layered(&[]);
         contract.rules.order.push(LayerOrder {
             line: 10,
+            open: false,
             boundaries: vec!["e".to_owned(), "w".to_owned()],
         });
         let upward = found(&contract, "west", "east", false);
@@ -194,6 +196,7 @@ mod tests {
         let mut contract = layered(&[]);
         contract.rules.order.push(LayerOrder {
             line: 10,
+            open: false,
             boundaries: vec!["up".to_owned(), "down".to_owned()],
         });
         assert_eq!(found(&contract, "low", "top", false).len(), 1);

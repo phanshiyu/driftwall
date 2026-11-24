@@ -12,6 +12,8 @@ use crate::model::{
 pub(super) enum Directive<'a> {
     /// `%% order: <boundary> > <boundary>`
     Order(&'a str),
+    /// `%% order open: <boundary> > <boundary>`
+    OpenOrder(&'a str),
     /// `%% no-cycles` or `%% no-cycles: boundaries`: the text after the keyword.
     NoCycles(&'a str),
     /// `%% budget <node>: fan-out <n>, ...`: the text after the keyword.
@@ -28,6 +30,9 @@ pub(super) enum Directive<'a> {
 /// so a comment such as `%% orders of magnitude` stays plain.
 pub(super) fn directive(text: &str) -> Option<Directive<'_>> {
     let body = text.strip_prefix("%%")?.trim_start();
+    if let Some(rest) = body.strip_prefix("order open:") {
+        return Some(Directive::OpenOrder(rest.trim()));
+    }
     if let Some(rest) = body.strip_prefix("order:") {
         return Some(Directive::Order(rest.trim()));
     }
@@ -53,7 +58,11 @@ pub(super) fn directive(text: &str) -> Option<Directive<'_>> {
 pub(super) fn render(rules: &Rules) -> Vec<String> {
     let mut lines = Vec::new();
     for order in &rules.order {
-        lines.push(format!("  %% order: {}", order.boundaries.join(" > ")));
+        let open = if order.open { " open" } else { "" };
+        lines.push(format!(
+            "  %% order{open}: {}",
+            order.boundaries.join(" > ")
+        ));
     }
     if rules.no_cycles.is_some() {
         lines.push("  %% no-cycles".to_owned());
@@ -97,7 +106,8 @@ impl RuleParser {
     /// Records `found`, which is on `line`.
     pub(super) fn record(&mut self, found: &Directive<'_>, line: u32) -> Result<(), DiagramError> {
         match *found {
-            Directive::Order(rest) => self.order(rest, line),
+            Directive::Order(rest) => self.order(rest, line, false),
+            Directive::OpenOrder(rest) => self.order(rest, line, true),
             Directive::NoCycles(rest) => self.no_cycles(rest, line),
             Directive::Budget(rest) => self.budget(rest, line),
             Directive::Tests(rest) => self.tests(rest, line),
@@ -222,7 +232,7 @@ impl RuleParser {
         Ok(())
     }
 
-    fn order(&mut self, rest: &str, line: u32) -> Result<(), DiagramError> {
+    fn order(&mut self, rest: &str, line: u32, open: bool) -> Result<(), DiagramError> {
         let malformed = |reason: &str| DiagramError::MalformedRule {
             line,
             rule: "order".to_owned(),
@@ -243,7 +253,11 @@ impl RuleParser {
         if boundaries.len() < 2 {
             return Err(malformed("a layer order lists at least two boundaries"));
         }
-        let chain = LayerOrder { line, boundaries };
+        let chain = LayerOrder {
+            line,
+            open,
+            boundaries,
+        };
         if let Some(reason) = self
             .order
             .iter()

@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Open layer order: `%% order open: app > features > shared > core` marks a chain in which every
+  layer may depend on any layer below it with no arrow, so seven layers need no layer-to-layer
+  arrows. Upward imports stay `upward-edge`, and imports inside one layer still need arrows. Any
+  declared edge of any kind (solid, dotted, `test`, `type`, boundary) from inside an upper layer to
+  inside a lower one narrows that pair of layers to the declared edges; `undeclared-edge` then says
+  that narrowing arrows exist and the pair is not among them. A plain `%% order:` is unchanged. The
+  implicit allowance is ignored by `%% no-cycles`, is never stale, and does not make an arrow
+  `redundant-edge`. `brief` and `neighbors` show `via order open: <chain>, line N` (JSON `via`) and
+  `rules.open_order`; `diff` does not report rule directives, so a plain/open change is not shown.
+
 - Boundary edges: an edge endpoint may be a `subgraph` id, so `features --> core` allows every node
   of `features` to depend on every node of `core` (and `a --> sub`, `sub --> a`, `sub --> sub` work
   too, with every arrow and label: dotted, `|test|`, `|type|`, `|type, test|`). `features --> features`

@@ -25,6 +25,8 @@ mod excluded_tests;
 #[cfg(test)]
 mod fixtures;
 #[cfg(test)]
+mod open_order_tests;
+#[cfg(test)]
 mod package_tests;
 #[cfg(test)]
 mod resolution_tests;

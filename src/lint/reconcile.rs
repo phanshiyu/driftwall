@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 
 use crate::imports::FileImports;
 use crate::model::{
-    Contract, Cover, Declared, Edge, EdgeKind, LintReport, Location, Ownership, ResolvedImport,
-    Symbol, Violation, ViolationKind,
+    Contract, Cover, Declared, Edge, EdgeKind, LintReport, Location, OpenAccess, Ownership,
+    ResolvedImport, Symbol, Violation, ViolationKind,
 };
 
 use super::isolation;
@@ -75,17 +75,15 @@ pub fn reconcile(
     for (edge, import) in &crossings {
         let covers = contract.covers(edge);
         match covers.first() {
-            None => violations.push(site_violation(
-                ViolationKind::UndeclaredEdge,
-                import,
-                format!(
-                    "`{from}` imports `{to}` ({}) but {} declares no edge {from} --> {to}",
-                    import.target.display(),
-                    contract_file.display(),
-                    from = edge.from,
-                    to = edge.to,
-                ),
-            )),
+            // why: an open chain allows the pair as a solid edge would, until an arrow narrows it.
+            None => match contract.open_access(edge) {
+                Some(OpenAccess::Allowed(_)) => {}
+                access => violations.push(site_violation(
+                    ViolationKind::UndeclaredEdge,
+                    import,
+                    undeclared_message(access, edge, import, contract_file),
+                )),
+            },
             // why: each covering edge is judged alone, so one that allows the site is enough.
             Some(winner)
                 if !covers
@@ -127,6 +125,33 @@ pub fn reconcile(
     violations.sort();
     violations.dedup();
     LintReport { violations }
+}
+
+/// The message of a pair nothing covers. `access` says whether an open chain narrowed the pair.
+fn undeclared_message(
+    access: Option<OpenAccess<'_>>,
+    edge: &Edge,
+    import: &ResolvedImport,
+    contract_file: &Path,
+) -> String {
+    let (from, to) = (&edge.from, &edge.to);
+    let base = format!(
+        "`{from}` imports `{to}` ({}) but {} declares no edge {from} --> {to}",
+        import.target.display(),
+        contract_file.display(),
+    );
+    match access {
+        Some(OpenAccess::Narrowed {
+            order,
+            from: upper,
+            to: lower,
+            arrows,
+        }) => format!(
+            "{base}; the `%% order open` on line {} limits `{upper}` to the edges it declares towards `{lower}` ({arrows} declared) and this pair is not among them",
+            order.line
+        ),
+        _ => base,
+    }
 }
 
 /// The message of a site `edge` does not allow: the pair has an edge, but only of a restricted

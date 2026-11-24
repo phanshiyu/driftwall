@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 
 use crate::model::{
     BlindSpots, BoundaryEdgeSummary, Contract, Declared, DirTag, Edge, EdgeKind, EdgeSummary,
-    ImportKind, LintReport, MapTarget, NodeBudget, NodeId, NodeSummary, NodeView, Overview,
-    Ownership, PackageSummary, Scope, Site, Symbol, Tag, ViaEdge,
+    ImportKind, LintReport, MapTarget, NodeBudget, NodeId, NodeSummary, NodeView, OpenAccess,
+    Overview, Ownership, PackageSummary, Scope, Site, Symbol, Tag, ViaEdge,
 };
 
 /// Combines the contract, ownership, observed edges, the symbols they use and the lint report
@@ -122,7 +122,21 @@ fn edge_summaries(
             let sites = observed.get(edge).map_or(&[][..], Vec::as_slice);
             // why: the winner of the precedence of "Boundary edges" speaks for the pair.
             let winner = contract.covers(edge).into_iter().next();
-            let kind = winner.map(|cover| cover.kind);
+            // why: an open chain allows the pair as a solid edge, named by its line, not declared.
+            let open = winner
+                .is_none()
+                .then(|| contract.open_access(edge))
+                .flatten()
+                .and_then(|access| match access {
+                    OpenAccess::Allowed(order) => Some(ViaEdge {
+                        edge: format!("order open: {}", order.boundaries.join(" > ")),
+                        line: order.line,
+                    }),
+                    OpenAccess::Narrowed { .. } => None,
+                });
+            let kind = winner
+                .map(|cover| cover.kind)
+                .or_else(|| open.as_ref().map(|_| EdgeKind::Implemented));
             EdgeSummary {
                 from: edge.from.clone(),
                 to: edge.to.clone(),
@@ -131,16 +145,19 @@ fn edge_summaries(
                 sites: sites.to_vec(),
                 symbols: symbols.get(edge).cloned().unwrap_or_default(),
                 module: sites.iter().any(|site| site.module),
-                type_candidate: kind == Some(EdgeKind::Implemented)
+                type_candidate: winner.is_some()
+                    && kind == Some(EdgeKind::Implemented)
                     && !sites.is_empty()
                     && sites.iter().all(|site| site.kind == ImportKind::TypeOnly),
-                via: winner.and_then(|cover| match cover.by {
-                    Declared::Boundary(declared) => Some(ViaEdge {
-                        edge: declared.text(),
-                        line: declared.line,
-                    }),
-                    Declared::Node => None,
-                }),
+                via: winner
+                    .and_then(|cover| match cover.by {
+                        Declared::Boundary(declared) => Some(ViaEdge {
+                            edge: declared.text(),
+                            line: declared.line,
+                        }),
+                        Declared::Node => None,
+                    })
+                    .or(open),
             }
         })
         .collect()

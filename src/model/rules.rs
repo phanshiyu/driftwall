@@ -11,6 +11,9 @@ use super::NodeId;
 pub struct LayerOrder {
     /// Line of the directive.
     pub line: u32,
+    /// Whether the chain is `%% order open:`, which allows downward imports implicitly, see "Open
+    /// order" in `docs/DESIGN.md`.
+    pub open: bool,
     /// Boundary ids, top first.
     pub boundaries: Vec<String>,
 }
@@ -41,6 +44,10 @@ pub struct RulesSummary {
     /// Empty, and omitted from JSON, without one.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub order: Vec<Vec<String>>,
+    /// The chains of the `%% order open:` lines, each with its boundaries top first. They are in
+    /// `order` too. Empty, and omitted from JSON, without one.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub open_order: Vec<Vec<String>>,
     /// Whether the contract has `%% no-cycles`. Omitted from JSON when false.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub no_cycles: bool,
@@ -75,6 +82,12 @@ impl Rules {
             order: self
                 .order
                 .iter()
+                .map(|order| order.boundaries.clone())
+                .collect(),
+            open_order: self
+                .order
+                .iter()
+                .filter(|order| order.open)
                 .map(|order| order.boundaries.clone())
                 .collect(),
             no_cycles: self.no_cycles.is_some(),

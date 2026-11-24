@@ -13,11 +13,13 @@ use thiserror::Error;
 mod blind;
 mod boundary;
 mod map;
+mod open_order;
 mod package_rule;
 mod rules;
 
 pub use boundary::{BoundaryEdge, Cover, Declared, EdgeEnds, Endpoint};
 pub use map::{GlobError, MapGlob, MapRule, MapSite, MapTarget, Specificity};
+pub use open_order::OpenAccess;
 pub use package_rule::{PackagePattern, PackageRule, PackageRuleKind};
 pub use rules::{Budget, Layer, LayerOrder, Measure, NodeBudget, Rules, RulesSummary};
 
