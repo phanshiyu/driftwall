@@ -71,15 +71,23 @@ driftwall: clean
 
 ## Install
 
-You need a Rust toolchain, version 1.90 or newer. driftwall is not published yet, so install it
-from this repository:
+With npm:
+
+```sh
+npm install --global driftwall
+```
+
+Or run it once without installing: `npx driftwall lint .`
+
+Prebuilt binaries for macOS and Linux (x86_64 and arm64) are on the
+[releases page](https://github.com/phanshiyu/driftwall/releases), along with a shell installer.
+To build from source you need Rust 1.90 or newer:
 
 ```sh
 cargo install --git https://github.com/phanshiyu/driftwall
 ```
 
-macOS and Linux are supported. Windows is untested. See [docs/RELEASING.md](docs/RELEASING.md) for
-how releases will ship.
+Windows is untested. See [docs/RELEASING.md](docs/RELEASING.md) for how releases are made.
 
 ## Quick start
 

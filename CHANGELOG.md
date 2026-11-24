@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.1 - 2026-11-25
+
+- Published to npm: `npm install --global driftwall`. This is the first release published by CI
+  through npm trusted publishing; the README install section now leads with npm and the release
+  binaries.
+
 ## 0.1.0 - 2026-11-24
 
 - Edge templates: `%% each features: controller --> service, controller -.-> view` declares the same

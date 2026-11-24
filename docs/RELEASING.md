@@ -12,10 +12,10 @@ macOS and Linux binaries (arm64 and x86_64), creates a GitHub release, and publi
 2. npm publishes through trusted publishing (GitHub's OIDC id-token); no npm token exists anywhere.
    On npmjs.com, add a trusted publisher for the package `driftwall`: GitHub Actions, repository
    `phanshiyu/driftwall`, workflow filename `release.yml` (the workflow the tag starts; it calls
-   `publish-npm.yml`). If npm rejects the first publish, the setting may need `publish-npm.yml`
-   instead. A pending trusted publisher expires if no publish succeeds within two days, so add it
-   just before the first release.
-3. Confirm the name is still free: `npm view driftwall` should 404 before the first publish.
+   `publish-npm.yml`). If npm rejects a publish, the setting may need `publish-npm.yml` instead. A
+   trusted publisher can only be added to a package that exists, so 0.1.0 was published by hand
+   (`npm publish driftwall-npm-package.tar.gz --access public` with the tarball from the release);
+   every later version goes through CI.
 
 ## Each release
 
