@@ -573,8 +573,8 @@ lines.
 
 #### Budgets
 
-`%% budget <node>: fan-out <n>, files <n>, lines <n>` limits a node's size and reach. Any non-empty
-subset of the three measures, in any order, each at most once, each with a whole number from 0; one
+`%% budget <node>: fan-out <n>, files <n>, lines <n>, interface <n>` limits a node's size, reach and
+the width of what others use of it. Any non-empty subset of the four measures, in any order, each at most once, each with a whole number from 0; one
 line per node, which must be declared. Anything else is a contract error.
 
 - `fan-out`: the number of distinct nodes the node depends on in production code: the observed
@@ -587,15 +587,49 @@ line per node, which must be declared. Anything else is a contract error.
   files are not source and do not.
 - `lines`: the sum of the line counts (newline bytes, plus one when the last line has none) of those
   same source files, the count `brief` already prints for unread files.
+- `interface`: the number of distinct symbols defined in the node that code outside the node uses in
+  production code, so that a node stays deep: a narrow interface behind a lot of code. An import
+  site counts when its importer is owned by another node and it is not test-only; an import within
+  the node and a test-only site do not. A site of an undeclared edge counts, as for `fan-out`, and
+  so do type-only sites. An entry is identified by the file that defines the symbol and its name.
+  The file is the one the import is attributed to, so a re-export is followed to the definition
+  (see "Re-exports") and, for a node marked `%% facade`, the facade file is the definer (see
+  "Facades"). The same symbol used by ten importers is one entry. Embed and asset sites name no
+  code and add nothing.
+  - *Imports that name no symbol.* An import that uses no symbol, or uses `*`, must not let a
+    caller escape the budget by changing import style. Where the extraction records the members
+    reached through the import, those members are the entries. Otherwise the import counts as one
+    entry for its target file, shown as `<file> (whole module)`, however many importers or sites
+    there are (the entry is per file, not per site). Per language:
+    - Rust: a module binding (`use crate::store;`, `as s`, `self` in a group) is covered by the
+      items used through its name, which are recorded at their own sites. It counts as a whole-module
+      entry only when the importing file uses no named symbol of that same target file. A glob
+      (`use crate::store::*;`) is a whole-module entry.
+    - TypeScript and JavaScript: members of a namespace import (`import * as s`), of
+      `require('x')` bound to a name and of `export *` are not recorded, so each is a whole-module
+      entry, and so is a side-effect import (`import './x'`).
+    - Python: `import a.b`, `from a import submodule`, `from a import *`,
+      `importlib.import_module("a.b")` are whole-module entries (no member access is recorded).
+  - A node that nothing outside imports has interface 0.
 - Exceeding a limit is the warning `over-budget`, one per measure, at the budget line of the
   contract, with a message naming the node, the measure, the limit and the actual value:
   "node `lint` is over its budget: fan-out 7 exceeds the limit 5". Equal to the limit is within it.
+  Its hint suggests narrowing the interface behind fewer entry points for `interface`, or raising
+  the limit in the contract, which is the user's call.
   `--strict` fails on it like on any warning. It is a warning because a budget is a guideline that
   a contract may accept while a refactor is planned; the contract is where a limit is raised.
 - `brief` and `neighbors` show the budget of a node with its current values, `budget: fan-out 3/5,
   files 21/20 over`, one `actual/limit` per measure, `over` after one that exceeds. In JSON the node
   has `budget` with, per measure that has a limit, `{"limit": n, "actual": n}` (a node without a
   budget line has no `budget` key).
+- `neighbors <node>` also lists the interface entries in an `interface:` block, one per entry as
+  `store/db.rs open  (3 sites: api 2, cli 1)`, or `<file> (whole module)` for a whole-module entry,
+  sorted by site count (most first), then by file and name. A site is one import location of an
+  importer outside the node; the users are the nodes of those importers with their site counts. The
+  block is shown only when the node has an `interface` limit or `--all-sites` is given, so a node
+  without the budget does not get the extra lines by default. In JSON the block is `interface`, a
+  list of `{file, symbol, sites, users: {node: n}}` (`symbol` is absent for a whole-module entry),
+  present under the same condition.
 
 #### Test isolation
 
