@@ -60,7 +60,7 @@ flowchart LR
 - A comment whose first word is `exports` is the surface directive (see "Symbols and public
   surfaces"), and one whose first word is `map` is the mapping directive (see "Contract map").
   The comments whose first word is `order:` or `order open:` (see "Layer order"), `isolated:` (see
-  "Isolated boundaries"), `no-cycles` or `no-cycles:` (see "No cycles"), `budget` (see "Budgets") `tests:` (see "Test isolation") or `facade` (see "Re-exports") are the rule directives
+  "Isolated boundaries"), `each` (see "Edge templates"), `no-cycles` or `no-cycles:` (see "No cycles"), `budget` (see "Budgets") `tests:` (see "Test isolation") or `facade` (see "Re-exports") are the rule directives
   of "Contract rules". The colon must follow the word directly, so a comment such as `%% tests -->
   ...` stays plain. The comments whose first word is `packages` or `forbid-packages` are package rules (see
   "Package rules"). Every other comment is plain.
@@ -481,6 +481,87 @@ meets the lint error can add an arrow between two features; with it the arrow is
   boundary a node is in, so a move between boundaries or a change of nesting is not a `diff` change:
   it compares nodes, edges and boundary edges only. What such a change does to coverage shows in
   the lint.
+
+#### Edge templates
+
+`%% each <boundary>: <arrow>[, <arrow>...]` declares the same internal arrows for every feature of a
+feature-module layout, once. It is for the layout of "Isolated boundaries": `features` holds one
+boundary per feature, and each feature has the same parts.
+
+```
+subgraph features["Features"]
+  subgraph billing["Billing"]
+    billing-controller
+    billing-service
+    billing-store
+  end
+  subgraph search["Search"]
+    search-controller
+    search-service
+  end
+end
+%% each features: controller --> service, controller -.-> view, service -->|type, test| store
+```
+
+An arrow is `<role> <arrow> <role>`, where the arrow is any form of an ordinary edge, parsed by the
+same code: `-->`, `-.->`, `-->|test|`, `-->|type|`, `-->|type, test|` and the dotted forms (a comma
+inside the `|...|` label does not end the arrow). A role is a node id suffix, `[A-Za-z][A-Za-z0-9_-]*`.
+
+- Children. `<boundary>` must be a declared boundary that has child boundaries (a direct child
+  boundary with a node at some depth, as in "Isolated boundaries"). The template applies to each
+  such child `C`. Nodes written directly in `<boundary>` are not children here, and neither are
+  boundaries nested deeper: a template reaches one level.
+- Roles. Inside child `C`, the role `r` is the node with the id `C-r` that is a member of `C`, at
+  any depth. Nothing else resolves: a node `billing-service` that sits outside `billing` is not the
+  role `service` of `billing`.
+- Expansion. The arrow `a --> b` expands, for each child `C`, to the declared edge `C-a --> C-b`,
+  with the kind of the arrow. If `C` has no `C-a` or no `C-b` the expansion is skipped without a
+  word: a feature may have no view. An expansion is a node edge for every rule (see below), written
+  nowhere: `render` writes the template back, never its expansions.
+- Contract errors, each with the line of the `%% each`, exit 2: `<boundary>` not a declared
+  boundary (a node id, an undeclared id) or a boundary with no child boundary; a malformed list
+  (empty, an empty arrow, an arrow that is not `<role> <arrow> <role>`, a role twice the same on
+  both ends, a role that is not an id); a role that resolves in no child (`role `servce` resolves in
+  no child of `features`: no node `billing-servce` in `billing`, ...`), which catches a typo; an
+  arrow listed twice in one line, and two expansions of one pair of nodes (two arrows or two lines
+  that expand to the same edge), which is the duplicate-edge error naming both lines. A comment
+  whose first word is `each` and that does not have this form is a contract error, never a plain
+  comment.
+
+Lint treats an expansion as a declared edge of its kind:
+
+- Allowed, kinds, planned and the other findings follow "Boundary edges" and "Test edges" and "Type
+  edges", with the expansion as a covering edge between two nodes. `undeclared-edge` messages name
+  it as `each features: controller --> service` (line 12).
+- Stale. A template arrow is stale (`stale-edge`) only when no child realises it by a site its kind
+  allows: one warning for the arrow, without a source location like every `stale-edge`, naming the
+  `%% each` line and the arrow, not one per child. `planned-realized` and `test-only-edge` are judged
+  the same way, over all the children of the arrow.
+- Redundant. An explicit node edge `billing-controller --> billing-service` that an expansion
+  covers with a kind at least as wide is `redundant-edge` (a warning), naming the template: `edge
+  billing-controller --> billing-service is redundant: each features: controller --> service (line
+  12) already covers it`.
+- Isolation. An expansion joins two nodes of one child, so it never joins two children of an
+  isolated boundary: a template never trips `%% isolated`.
+- Open order. An expansion joins two nodes of one child. The nodes of a child lie in the same layer
+  of a chain unless the child itself holds nested layers, so it narrows no pair of layers in the
+  ordinary layout, and where it does hold two layers it is a declared edge between them like any
+  other (see "Open order").
+- Order and no-cycles see the expansions as node edges: an upward expansion is a contract error of
+  `%% order`, and a template that closes a cycle is a `%% no-cycles` error. Their messages name the
+  expansion `each features: controller --> service` and the `%% each` line.
+
+`brief` and `neighbors` show a pair that only an expansion allows annotated `via each features:
+controller --> service, line 12` (the winner of the precedence of "Boundary edges", the same form as
+`via features --> core, line 31`); in JSON `via` is `{"edge": "each features: controller --> service",
+"line": 12}` and `kind` is the expansion's. Expansions are not listed in the `boundary edges:` block
+and not counted in the summary line. The `rules:` block prints the line: `each features: controller
+--> service, controller -.-> view`, and JSON `rules.each` is a list of `{"boundary": "features",
+"line": 12, "arrows": ["controller --> service", ...]}` in file order, absent when there is none.
+
+`diff` does not model rules, so a template, its change, and the expansions it adds or removes are
+not diffed, like every other directive; only the explicit edges and nodes are. A new feature folder
+is the diff of its nodes, which a template does not hide.
 
 #### Budgets
 
