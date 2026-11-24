@@ -311,6 +311,7 @@ mod tests {
                 NodeInfo {
                     label: Some(format!("{name}: x")),
                     boundary: boundary.map(str::to_owned),
+                    outer: Vec::new(),
                 },
             );
         }

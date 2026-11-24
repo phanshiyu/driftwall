@@ -118,6 +118,7 @@ pub fn plan(
             NodeInfo {
                 label: Some(label),
                 boundary: None,
+                outer: Vec::new(),
             },
         );
     }
@@ -142,6 +143,7 @@ pub fn plan(
                 .or_insert_with(|| NodeInfo {
                     label: Some(asset_label(&all_tags, asset)),
                     boundary: None,
+                    outer: Vec::new(),
                 });
             owners.insert(asset.clone(), owner);
         }

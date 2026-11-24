@@ -42,9 +42,7 @@ impl Endpoint {
     pub fn contains(&self, nodes: &BTreeMap<NodeId, NodeInfo>, node: &NodeId) -> bool {
         match self {
             Self::Node(id) => id == node,
-            Self::Boundary(boundary) => nodes
-                .get(node)
-                .is_some_and(|info| info.boundary.as_deref() == Some(boundary.as_str())),
+            Self::Boundary(boundary) => nodes.get(node).is_some_and(|info| info.within(boundary)),
         }
     }
 }
@@ -59,6 +57,45 @@ impl Serialize for Endpoint {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         serializer.serialize_str(self.as_str())
     }
+}
+
+/// The child of `boundary` that `node` is in, or `None` when it is not a member of `boundary`.
+///
+/// The child is the node itself when it is written directly in `boundary`, else the boundary
+/// written directly in `boundary` that holds it. See "Isolated boundaries" in `docs/DESIGN.md`.
+#[must_use]
+pub fn child_of<'a>(node: &'a NodeId, info: &'a NodeInfo, boundary: &str) -> Option<&'a str> {
+    let mut chain = info.boundaries().skip_while(|id| *id != boundary);
+    chain.next()?;
+    Some(chain.next().unwrap_or_else(|| node.as_str()))
+}
+
+/// The children of `boundary` that hold something: the ids of its direct child boundaries that
+/// have a node at some depth, and of the nodes written directly in it. Sorted.
+#[must_use]
+pub fn children(nodes: &BTreeMap<NodeId, NodeInfo>, boundary: &str) -> Vec<String> {
+    let mut found: Vec<String> = nodes
+        .iter()
+        .filter_map(|(id, info)| child_of(id, info, boundary))
+        .map(str::to_owned)
+        .collect();
+    found.sort();
+    found.dedup();
+    found
+}
+
+/// The two different children of `boundary` that `a` and `b` are in, when both are members of
+/// `boundary` and in different children.
+#[must_use]
+pub fn children_apart<'a>(
+    nodes: &'a BTreeMap<NodeId, NodeInfo>,
+    boundary: &str,
+    a: &'a NodeId,
+    b: &'a NodeId,
+) -> Option<(&'a str, &'a str)> {
+    let of = |id| child_of(id, nodes.get(id)?, boundary);
+    let (first, second) = (of(a)?, of(b)?);
+    (first != second).then_some((first, second))
 }
 
 /// The two ends of an edge that has a boundary at one of them: what identifies it in a diff.
@@ -203,6 +240,7 @@ mod tests {
         let info = |boundary: Option<&str>| NodeInfo {
             label: None,
             boundary: boundary.map(str::to_owned),
+            outer: Vec::new(),
         };
         let mut contract = Contract::default();
         for (id, boundary) in [

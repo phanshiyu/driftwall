@@ -15,6 +15,7 @@ mod overview;
 mod packages;
 mod reconcile;
 mod rules;
+mod siblings;
 
 #[cfg(test)]
 mod alias_tests;

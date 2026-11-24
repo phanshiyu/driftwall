@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use serde::Serialize;
 
-use super::NodeId;
+use super::{NodeId, NodeInfo, children};
 
 /// `%% order: a > b > c`: boundaries from the top (entry points) to the bottom (foundations).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
@@ -23,6 +23,14 @@ impl LayerOrder {
     #[must_use]
     pub fn rank(&self, boundary: &str) -> Option<usize> {
         self.boundaries.iter().position(|listed| listed == boundary)
+    }
+
+    /// The boundary of the chain that holds the node, with its rank. A chain never lists a
+    /// boundary together with one nested in it, so there is at most one.
+    #[must_use]
+    pub fn place<'a>(&self, info: &'a NodeInfo) -> Option<(&'a str, usize)> {
+        info.boundaries()
+            .find_map(|boundary| Some((boundary, self.rank(boundary)?)))
     }
 }
 
@@ -54,12 +62,25 @@ pub struct RulesSummary {
     /// Whether the contract has `%% no-cycles: boundaries`. Omitted from JSON when false.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub no_cycles_boundaries: bool,
+    /// The `%% isolated` boundaries with their children, by boundary id. Empty, and omitted from
+    /// JSON, without one.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub isolated: Vec<IsolatedSummary>,
     /// Whether the contract has `%% tests: isolated`. Omitted from JSON when false.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub tests_isolated: bool,
     /// The nodes of the `%% facade` lines, sorted. Empty, and omitted from JSON, without one.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub facades: Vec<String>,
+}
+
+/// An `%% isolated` boundary with the children that may not use each other.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct IsolatedSummary {
+    /// The isolated boundary.
+    pub boundary: String,
+    /// Its children in id order: child boundaries and nodes written directly in it.
+    pub children: Vec<String>,
 }
 
 impl RulesSummary {
@@ -70,6 +91,7 @@ impl RulesSummary {
             && !self.no_cycles
             && !self.no_cycles_boundaries
             && !self.tests_isolated
+            && self.isolated.is_empty()
             && self.facades.is_empty()
     }
 }
@@ -77,7 +99,7 @@ impl RulesSummary {
 impl Rules {
     /// The directives as the overview presents them.
     #[must_use]
-    pub fn summary(&self) -> RulesSummary {
+    pub fn summary(&self, nodes: &BTreeMap<NodeId, NodeInfo>) -> RulesSummary {
         RulesSummary {
             order: self
                 .order
@@ -93,19 +115,27 @@ impl Rules {
             no_cycles: self.no_cycles.is_some(),
             no_cycles_boundaries: self.no_cycles_boundaries.is_some(),
             tests_isolated: self.tests_isolated.is_some(),
+            isolated: self
+                .isolated
+                .keys()
+                .map(|boundary| IsolatedSummary {
+                    boundary: boundary.clone(),
+                    children: children(nodes, boundary),
+                })
+                .collect(),
             facades: self.facades.keys().map(ToString::to_string).collect(),
         }
     }
 
-    /// Where a node declared in `boundary` sits in the layer order: its place in the first chain
-    /// that lists the boundary, if any does.
+    /// Where a node sits in the layer order: its place in the first chain that lists a boundary
+    /// around it, if any does.
     #[must_use]
-    pub fn layer(&self, boundary: Option<&str>) -> Option<Layer> {
-        let boundary = boundary?;
+    pub fn layer(&self, info: &NodeInfo) -> Option<Layer> {
         self.order.iter().find_map(|order| {
+            let (boundary, rank) = order.place(info)?;
             Some(Layer {
                 boundary: boundary.to_owned(),
-                rank: order.rank(boundary)?,
+                rank,
                 of: order.boundaries.len(),
             })
         })
@@ -188,6 +218,8 @@ pub struct Rules {
     pub budgets: BTreeMap<NodeId, Budget>,
     /// The line of `%% tests: isolated`, see "Test isolation".
     pub tests_isolated: Option<u32>,
+    /// The boundaries of the `%% isolated` lines with the line of each, see "Isolated boundaries".
+    pub isolated: BTreeMap<String, u32>,
     /// The nodes of the `%% facade` lines with the line of each, see "Re-exports".
     pub facades: BTreeMap<NodeId, u32>,
 }
@@ -201,6 +233,7 @@ impl Rules {
             && self.no_cycles_boundaries.is_none()
             && self.budgets.is_empty()
             && self.tests_isolated.is_none()
+            && self.isolated.is_empty()
             && self.facades.is_empty()
     }
 }

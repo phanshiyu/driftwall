@@ -29,28 +29,23 @@ const PREAMBLE: [&str; 4] = [
 pub fn render(contract: &Contract) -> String {
     let mut lines: Vec<String> = PREAMBLE.iter().map(|line| (*line).to_owned()).collect();
 
-    let mut by_boundary: BTreeMap<&str, Vec<(&NodeId, &NodeInfo)>> = BTreeMap::new();
-    let mut loose: Vec<(&NodeId, &NodeInfo)> = Vec::new();
+    // why: a boundary is written where its nodes' chains put it, so nesting comes from the nodes.
+    let mut tree = Tree::default();
     for (id, info) in &contract.nodes {
-        match &info.boundary {
-            Some(boundary) => by_boundary
-                .entry(boundary.as_str())
-                .or_default()
-                .push((id, info)),
-            None => loose.push((id, info)),
-        }
+        let chain: Vec<&str> = info.boundaries().collect();
+        tree.place(&chain, (id, info));
     }
-
-    for (boundary, members) in &by_boundary {
+    for (boundary, inner) in &tree.inner {
         lines.push(String::new());
-        lines.push(format!("  subgraph {boundary}[\"{}\"]", sanitize(boundary)));
-        lines.extend(members.iter().map(|(id, info)| node_line(id, info, "    ")));
-        lines.push("  end".to_owned());
+        inner.write(boundary, 1, &mut lines);
     }
-
-    if !loose.is_empty() {
+    if !tree.nodes.is_empty() {
         lines.push(String::new());
-        lines.extend(loose.iter().map(|(id, info)| node_line(id, info, "  ")));
+        lines.extend(
+            tree.nodes
+                .iter()
+                .map(|(id, info)| node_line(id, info, "  ")),
+        );
     }
 
     if !contract.edges.is_empty() || !contract.boundary_edges.is_empty() {
@@ -116,6 +111,40 @@ pub fn render(contract: &Contract) -> String {
     out
 }
 
+/// The boundaries and nodes at one level of the nesting.
+#[derive(Default)]
+struct Tree<'a> {
+    inner: BTreeMap<&'a str, Self>,
+    nodes: Vec<(&'a NodeId, &'a NodeInfo)>,
+}
+
+impl<'a> Tree<'a> {
+    fn place(&mut self, chain: &[&'a str], node: (&'a NodeId, &'a NodeInfo)) {
+        match chain.split_first() {
+            None => self.nodes.push(node),
+            Some((first, rest)) => self.inner.entry(first).or_default().place(rest, node),
+        }
+    }
+
+    fn write(&self, boundary: &str, depth: usize, lines: &mut Vec<String>) {
+        let pad = "  ".repeat(depth);
+        lines.push(format!(
+            "{pad}subgraph {boundary}[\"{}\"]",
+            sanitize(boundary)
+        ));
+        for (name, inner) in &self.inner {
+            inner.write(name, depth + 1, lines);
+        }
+        let node_pad = "  ".repeat(depth + 1);
+        lines.extend(
+            self.nodes
+                .iter()
+                .map(|(id, info)| node_line(id, info, &node_pad)),
+        );
+        lines.push(format!("{pad}end"));
+    }
+}
+
 fn node_line(id: &NodeId, info: &NodeInfo, indent: &str) -> String {
     info.label.as_ref().map_or_else(
         || format!("{indent}{id}"),
@@ -148,6 +177,7 @@ mod tests {
         NodeInfo {
             label: label.map(str::to_owned),
             boundary: boundary.map(str::to_owned),
+            outer: Vec::new(),
         }
     }
 

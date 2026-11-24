@@ -166,12 +166,6 @@ fn overlapping_edges_with_different_ends_are_allowed() {
 }
 
 #[test]
-fn nesting_is_still_a_contract_error_so_membership_is_one_level() {
-    let src = "flowchart LR\n  subgraph outer\n    subgraph inner\n      a\n    end\n  end\n";
-    assert!(matches!(error(src), DiagramError::NestedSubgraph { .. }));
-}
-
-#[test]
 fn boundary_edges_survive_a_render_round_trip_and_render_the_same_every_time() {
     let src = with(
         "  f1 --> c1\n  solo -.-> core\n  features -->|type, test| core\n  core --> features\n  features --> features\n",

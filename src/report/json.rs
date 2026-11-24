@@ -169,6 +169,8 @@ mod tests {
                 "stale-package",
                 "redundant-edge",
                 "stale-facade",
+                "isolation-breach",
+                "stale-isolation",
             ]
         );
     }

@@ -25,7 +25,10 @@ fn nodes_are_comma_separated_and_may_span_several_lines() {
             ("c".to_owned(), 6)
         ]
     );
-    assert_eq!(contract.rules.summary().facades, ["a", "b", "c"]);
+    assert_eq!(
+        contract.rules.summary(&contract.nodes).facades,
+        ["a", "b", "c"]
+    );
 }
 
 #[test]
@@ -55,5 +58,5 @@ fn facades_survive_a_render_round_trip_on_one_line() {
     let rendered = render(&contract);
     assert!(rendered.contains("  %% facade a, c\n"), "{rendered}");
     let again = parse(&rendered).unwrap();
-    assert_eq!(again.rules.summary().facades, ["a", "c"]);
+    assert_eq!(again.rules.summary(&again.nodes).facades, ["a", "c"]);
 }

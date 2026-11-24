@@ -18,10 +18,7 @@ pub(super) fn upward_findings(
         .filter_map(|(edge, import)| {
             let (order, from_boundary, to_boundary) =
                 contract.rules.order.iter().find_map(|order| {
-                    let layer = |node| {
-                        let boundary = contract.nodes.get(node)?.boundary.as_deref()?;
-                        Some((boundary, order.rank(boundary)?))
-                    };
+                    let layer = |node| order.place(contract.nodes.get(node)?);
                     let (from_boundary, from_rank) = layer(&edge.from)?;
                     let (to_boundary, to_rank) = layer(&edge.to)?;
                     (from_rank > to_rank).then_some((order, from_boundary, to_boundary))
@@ -62,6 +59,7 @@ mod tests {
         let boundary = |name: Option<&str>| NodeInfo {
             label: None,
             boundary: name.map(str::to_owned),
+            outer: Vec::new(),
         };
         let mut contract = Contract::default();
         for (id, boundary_of) in [

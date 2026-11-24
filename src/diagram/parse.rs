@@ -95,7 +95,8 @@ struct Parser {
     nodes: BTreeMap<NodeId, NodeInfo>,
     node_lines: BTreeMap<NodeId, u32>,
     boundaries: BTreeMap<String, u32>,
-    open: Option<(String, u32)>,
+    /// The `subgraph`s still open, outermost first, with their lines.
+    open: Vec<(String, u32)>,
     edges: Vec<PendingEdge>,
     exports: Vec<PendingExports>,
     exports_lines: BTreeMap<NodeId, u32>,
@@ -116,7 +117,7 @@ impl Parser {
         if text == "end" {
             return self
                 .open
-                .take()
+                .pop()
                 .map(|_| ())
                 .ok_or(DiagramError::StrayEnd { line });
         }
@@ -137,13 +138,6 @@ impl Parser {
         if !tail.is_empty() && !matches!(parse_label(tail), Some((_, ""))) {
             return Err(unsupported(text, line));
         }
-        if let Some((open, open_line)) = &self.open {
-            return Err(DiagramError::NestedSubgraph {
-                line,
-                open: open.clone(),
-                open_line: *open_line,
-            });
-        }
         if let Some(first_line) = self.boundaries.get(id.as_str()) {
             return Err(DiagramError::DuplicateBoundary {
                 line,
@@ -160,7 +154,7 @@ impl Parser {
             });
         }
         self.boundaries.insert(id.to_string(), line);
-        self.open = Some((id.to_string(), line));
+        self.open.push((id.to_string(), line));
         Ok(())
     }
 
@@ -378,11 +372,14 @@ impl Parser {
             });
         }
         self.node_lines.insert(id.clone(), line);
+        let mut around: Vec<String> = self.open.iter().map(|(open, _)| open.clone()).collect();
+        let boundary = around.pop();
         self.nodes.insert(
             id,
             NodeInfo {
                 label: label.map(str::to_owned),
-                boundary: self.open.as_ref().map(|(boundary, _)| boundary.clone()),
+                boundary,
+                outer: around,
             },
         );
         Ok(())
@@ -417,10 +414,7 @@ impl Parser {
             let (Endpoint::Node(from), Endpoint::Node(to)) = (&from, &to) else {
                 for end in [&from, &to] {
                     if let Endpoint::Boundary(id) = end
-                        && !self
-                            .nodes
-                            .values()
-                            .any(|info| info.boundary.as_deref() == Some(id.as_str()))
+                        && !self.nodes.values().any(|info| info.within(id))
                     {
                         return Err(DiagramError::EmptyBoundary {
                             line: pending.line,
@@ -473,7 +467,7 @@ impl Parser {
         if !self.header_seen {
             return Err(DiagramError::MissingHeader);
         }
-        if let Some((id, line)) = self.open {
+        if let Some((id, line)) = self.open.last().cloned() {
             return Err(DiagramError::UnclosedSubgraph { line, id });
         }
         let DeclaredEdges {
@@ -616,6 +610,7 @@ mod tests {
             NodeInfo {
                 label: Some("model: ids".to_owned()),
                 boundary: Some("shared".to_owned()),
+                outer: Vec::new(),
             }
         );
         assert_eq!(
@@ -623,6 +618,7 @@ mod tests {
             NodeInfo {
                 label: None,
                 boundary: None,
+                outer: Vec::new(),
             }
         );
         assert_eq!(
@@ -959,17 +955,35 @@ mod tests {
     }
 
     #[test]
-    fn nested_subgraph_is_rejected_on_the_inner_line() {
-        let (err, line) = err_line("flowchart LR\nsubgraph outer\n\nsubgraph inner\nend\nend\n");
+    fn nested_subgraphs_record_every_boundary_around_a_node() {
+        let contract =
+            parse("flowchart LR\nsubgraph a\nsubgraph b\nsubgraph c\nn\nend\nend\nend\n").unwrap();
+        let info = &contract.nodes[&id("n")];
+        assert_eq!(info.boundary.as_deref(), Some("c"));
+        assert_eq!(info.outer, ["a", "b"]);
+        assert!(info.within("a") && info.within("b") && info.within("c"));
+        assert!(!info.within("d"));
+    }
+
+    #[test]
+    fn an_unclosed_inner_subgraph_is_reported_at_the_innermost_open_one() {
+        let (err, line) = err_line("flowchart LR\nsubgraph a\nsubgraph b\nn\nend\n");
         assert_eq!(
             err,
-            DiagramError::NestedSubgraph {
-                line: 4,
-                open: "outer".to_owned(),
-                open_line: 2
+            DiagramError::UnclosedSubgraph {
+                line: 2,
+                id: "a".to_owned()
             }
         );
-        assert_eq!(line, Some(4));
+        assert_eq!(line, Some(2));
+        let (err, _) = err_line("flowchart LR\nsubgraph a\nsubgraph b\nn\n");
+        assert_eq!(
+            err,
+            DiagramError::UnclosedSubgraph {
+                line: 3,
+                id: "b".to_owned()
+            }
+        );
     }
 
     #[test]

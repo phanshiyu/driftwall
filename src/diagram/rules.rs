@@ -6,6 +6,7 @@ use super::cycles::find_cycle;
 use super::error::DiagramError;
 use crate::model::{
     BoundaryEdge, Budget, Edge, EdgeKind, Endpoint, LayerOrder, NodeId, NodeInfo, Rules,
+    children_apart,
 };
 
 /// A rule directive found on a comment line, with the text after its keyword.
@@ -14,6 +15,8 @@ pub(super) enum Directive<'a> {
     Order(&'a str),
     /// `%% order open: <boundary> > <boundary>`
     OpenOrder(&'a str),
+    /// `%% isolated: <boundary>, <boundary>`: the text after the colon.
+    Isolated(&'a str),
     /// `%% no-cycles` or `%% no-cycles: boundaries`: the text after the keyword.
     NoCycles(&'a str),
     /// `%% budget <node>: fan-out <n>, ...`: the text after the keyword.
@@ -35,6 +38,9 @@ pub(super) fn directive(text: &str) -> Option<Directive<'_>> {
     }
     if let Some(rest) = body.strip_prefix("order:") {
         return Some(Directive::Order(rest.trim()));
+    }
+    if let Some(rest) = body.strip_prefix("isolated:") {
+        return Some(Directive::Isolated(rest.trim()));
     }
     if let Some(rest) = body.strip_prefix("tests:") {
         return Some(Directive::Tests(rest.trim()));
@@ -63,6 +69,10 @@ pub(super) fn render(rules: &Rules) -> Vec<String> {
             "  %% order{open}: {}",
             order.boundaries.join(" > ")
         ));
+    }
+    if !rules.isolated.is_empty() {
+        let listed: Vec<&str> = rules.isolated.keys().map(String::as_str).collect();
+        lines.push(format!("  %% isolated: {}", listed.join(", ")));
     }
     if rules.no_cycles.is_some() {
         lines.push("  %% no-cycles".to_owned());
@@ -99,6 +109,7 @@ pub(super) struct RuleParser {
     no_cycles_boundaries: Option<u32>,
     budgets: BTreeMap<NodeId, Budget>,
     tests_isolated: Option<u32>,
+    isolated: BTreeMap<String, u32>,
     facades: BTreeMap<NodeId, u32>,
 }
 
@@ -111,8 +122,33 @@ impl RuleParser {
             Directive::NoCycles(rest) => self.no_cycles(rest, line),
             Directive::Budget(rest) => self.budget(rest, line),
             Directive::Tests(rest) => self.tests(rest, line),
+            Directive::Isolated(rest) => self.isolated(rest, line),
             Directive::Facade(rest) => self.facade(rest, line),
         }
+    }
+
+    fn isolated(&mut self, rest: &str, line: u32) -> Result<(), DiagramError> {
+        let malformed = |reason: String| DiagramError::MalformedRule {
+            line,
+            rule: "isolated".to_owned(),
+            reason,
+        };
+        if rest.is_empty() {
+            return Err(malformed(
+                "expected `%% isolated: <boundary>, <boundary>`".to_owned(),
+            ));
+        }
+        for raw in rest.split(',') {
+            let id = NodeId::new(raw.trim())
+                .map_err(|source| DiagramError::InvalidId { line, source })?;
+            if let Some(first) = self.isolated.get(id.as_str()) {
+                return Err(malformed(format!(
+                    "`{id}` is already isolated on line {first}"
+                )));
+            }
+            self.isolated.insert(id.to_string(), line);
+        }
+        Ok(())
     }
 
     fn facade(&mut self, rest: &str, line: u32) -> Result<(), DiagramError> {
@@ -283,6 +319,12 @@ impl RuleParser {
         for order in &self.order {
             check_order(order, nodes, boundaries, edges, edge_lines, boundary_edges)?;
         }
+        for (id, line) in &self.isolated {
+            if !boundaries.contains_key(id) {
+                return Err(not_a_boundary(*line, "isolated", id, nodes));
+            }
+        }
+        check_isolated(&self.isolated, nodes, edges, edge_lines, boundary_edges)?;
         for (node, budget) in &self.budgets {
             if !nodes.contains_key(node) {
                 return Err(DiagramError::MalformedRule {
@@ -313,6 +355,7 @@ impl RuleParser {
             no_cycles_boundaries: self.no_cycles_boundaries,
             budgets: self.budgets,
             tests_isolated: self.tests_isolated,
+            isolated: self.isolated,
             facades: self.facades,
         })
     }
@@ -352,24 +395,22 @@ fn check_order(
         if boundaries.contains_key(listed) {
             continue;
         }
-        let is_node = nodes.keys().any(|id| id.as_str() == listed);
-        let reason = if is_node {
-            format!("`{listed}` is a node, not a boundary")
-        } else {
-            format!("`{listed}` is not a declared boundary")
-        };
-        return Err(DiagramError::MalformedRule {
-            line: order.line,
-            rule: "order".to_owned(),
-            reason,
-        });
+        return Err(not_a_boundary(order.line, "order", listed, nodes));
     }
-    let rank_of = |id: &NodeId| {
-        nodes
-            .get(id)
-            .and_then(|info| info.boundary.as_deref())
-            .and_then(|boundary| order.rank(boundary).map(|rank| (boundary, rank)))
-    };
+    // why: a node's layer comes from the one boundary the chain lists around it, so two nested ones
+    // why: listed together would give it two.
+    for outer in &order.boundaries {
+        for inner in &order.boundaries {
+            if contains(nodes, outer, inner) {
+                return Err(DiagramError::MalformedRule {
+                    line: order.line,
+                    rule: "order".to_owned(),
+                    reason: format!("`{outer}` contains `{inner}`, and a chain may not list both"),
+                });
+            }
+        }
+    }
+    let rank_of = |id: &NodeId| nodes.get(id).and_then(|info| order.place(info));
     let upward_pair = |edge: &Edge| {
         let (from_boundary, from_rank) = rank_of(&edge.from)?;
         let (to_boundary, to_rank) = rank_of(&edge.to)?;
@@ -413,6 +454,80 @@ fn check_order(
         }),
         None => Ok(()),
     }
+}
+
+/// The error for a directive that names `id` as a boundary when it is not one.
+fn not_a_boundary(
+    line: u32,
+    rule: &str,
+    id: &str,
+    nodes: &BTreeMap<NodeId, NodeInfo>,
+) -> DiagramError {
+    let reason = if nodes.keys().any(|node| node.as_str() == id) {
+        format!("`{id}` is a node, not a boundary")
+    } else {
+        format!("`{id}` is not a declared boundary")
+    };
+    DiagramError::MalformedRule {
+        line,
+        rule: rule.to_owned(),
+        reason,
+    }
+}
+
+/// Whether boundary `outer` has boundary `inner` nested inside it, at any depth.
+fn contains(nodes: &BTreeMap<NodeId, NodeInfo>, outer: &str, inner: &str) -> bool {
+    nodes.values().any(|info| {
+        let chain: Vec<&str> = info.boundaries().collect();
+        let at = |id: &str| chain.iter().position(|member| *member == id);
+        matches!((at(outer), at(inner)), (Some(a), Some(b)) if a < b)
+    })
+}
+
+/// No declared edge may join two children of an isolated boundary (see "Isolated boundaries"): the
+/// first such edge by line is the error.
+fn check_isolated(
+    isolated: &BTreeMap<String, u32>,
+    nodes: &BTreeMap<NodeId, NodeInfo>,
+    edges: &BTreeMap<Edge, EdgeKind>,
+    edge_lines: &BTreeMap<Edge, u32>,
+    boundary_edges: &[BoundaryEdge],
+) -> Result<(), DiagramError> {
+    let joins = |boundary: &str, pair: &Edge| {
+        children_apart(nodes, boundary, &pair.from, &pair.to)
+            .map(|(first, second)| (first.to_owned(), second.to_owned()))
+    };
+    let mut found: Vec<DiagramError> = Vec::new();
+    for (boundary, isolated_line) in isolated {
+        let from_nodes = edges.iter().filter_map(|(edge, kind)| {
+            let (first, second) = joins(boundary, edge)?;
+            Some((
+                edge_lines.get(edge).copied().unwrap_or(*isolated_line),
+                format!("{} {} {}", edge.from, kind.arrow(), edge.to),
+                (first, second),
+            ))
+        });
+        let from_boundaries = boundary_edges.iter().filter_map(|declared| {
+            let (first, second) = declared
+                .pairs(nodes)
+                .iter()
+                .find_map(|pair| joins(boundary, pair))?;
+            Some((declared.line, declared.text(), (first, second)))
+        });
+        found.extend(
+            from_nodes
+                .chain(from_boundaries)
+                .map(|(line, edge, apart)| DiagramError::IsolatedArrow {
+                    line,
+                    edge,
+                    boundary: boundary.clone(),
+                    apart: Box::new(apart),
+                    isolated_line: *isolated_line,
+                }),
+        );
+    }
+    found.sort_by_key(DiagramError::line);
+    found.into_iter().next().map_or(Ok(()), Err)
 }
 
 /// Whether `kind` counts for `%% no-cycles`: every edge but a pure test edge.
@@ -480,7 +595,6 @@ fn check_boundary_cycles(
     edges: &BTreeMap<Edge, EdgeKind>,
     boundary_edges: &[BoundaryEdge],
 ) -> Result<(), DiagramError> {
-    let boundary = |id: &NodeId| nodes.get(id)?.boundary.clone();
     let pairs: Vec<Edge> = edges
         .iter()
         .filter(|(_, kind)| counts_for_cycles(**kind))
@@ -494,15 +608,20 @@ fn check_boundary_cycles(
         .collect();
     let mut graph: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     for info in nodes.values() {
-        if let Some(name) = &info.boundary {
-            graph.entry(name.clone()).or_default();
+        for name in info.boundaries() {
+            graph.entry(name.to_owned()).or_default();
         }
     }
+    // why: only boundaries that hold one node and not the other are joined, so a boundary and one
+    // why: around it never are, and two nested features meet at the feature level.
     for edge in &pairs {
-        if let (Some(from), Some(to)) = (boundary(&edge.from), boundary(&edge.to))
-            && from != to
-        {
-            graph.entry(from).or_default().insert(to);
+        let (Some(from), Some(to)) = (nodes.get(&edge.from), nodes.get(&edge.to)) else {
+            continue;
+        };
+        for x in from.boundaries().filter(|name| !to.within(name)) {
+            for y in to.boundaries().filter(|name| !from.within(name)) {
+                graph.entry(x.to_owned()).or_default().insert(y.to_owned());
+            }
         }
     }
     let Some(cycle) = find_cycle(&graph) else {

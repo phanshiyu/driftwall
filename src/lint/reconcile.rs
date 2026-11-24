@@ -14,6 +14,7 @@ use super::layers;
 use super::observe::crossings;
 use super::packages::package_findings;
 use super::rules::{site_violation, violation};
+use super::siblings;
 
 /// Reconciles the contract, ownership and import graph into a sorted, duplicate-free report.
 ///
@@ -115,6 +116,7 @@ pub fn reconcile(
     violations.extend(redundant_findings(contract));
     violations.extend(layers::upward_findings(contract, &crossings));
     violations.extend(isolation::findings(contract, imports));
+    violations.extend(siblings::findings(contract, &crossings, contract_file));
     violations.extend(package_findings(
         contract,
         ownership,
@@ -467,6 +469,7 @@ mod tests {
                         NodeInfo {
                             label: None,
                             boundary: None,
+                            outer: Vec::new(),
                         },
                     )
                 })

@@ -189,6 +189,7 @@ mod tests {
             [
                 "forbidden-package",
                 "ignored-tag-files",
+                "isolation-breach",
                 "over-budget",
                 "planned-realized",
                 "private-symbol",
@@ -196,6 +197,7 @@ mod tests {
                 "redundant-edge",
                 "stale-edge",
                 "stale-facade",
+                "stale-isolation",
                 "stale-map",
                 "stale-package",
                 "test-only-edge",
@@ -206,7 +208,7 @@ mod tests {
                 "upward-edge",
             ]
         );
-        assert_eq!(value["runs"][0]["results"].as_array().unwrap().len(), 17);
+        assert_eq!(value["runs"][0]["results"].as_array().unwrap().len(), 19);
     }
 
     #[test]

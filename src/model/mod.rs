@@ -17,11 +17,15 @@ mod open_order;
 mod package_rule;
 mod rules;
 
-pub use boundary::{BoundaryEdge, Cover, Declared, EdgeEnds, Endpoint};
+pub use boundary::{
+    BoundaryEdge, Cover, Declared, EdgeEnds, Endpoint, child_of, children, children_apart,
+};
 pub use map::{GlobError, MapGlob, MapRule, MapSite, MapTarget, Specificity};
 pub use open_order::OpenAccess;
 pub use package_rule::{PackagePattern, PackageRule, PackageRuleKind};
-pub use rules::{Budget, Layer, LayerOrder, Measure, NodeBudget, Rules, RulesSummary};
+pub use rules::{
+    Budget, IsolatedSummary, Layer, LayerOrder, Measure, NodeBudget, Rules, RulesSummary,
+};
 
 pub use blind::{
     BlindFile, BlindRef, BlindSpots, BlindSummary, BlindTally, UnreadGroup, UnreadTotal,
@@ -261,8 +265,28 @@ pub struct Edge {
 pub struct NodeInfo {
     /// Human readable label, if the diagram gave one.
     pub label: Option<String>,
-    /// Enclosing boundary (`subgraph`) id, if any. Grouping only, never semantic.
+    /// Innermost enclosing boundary (`subgraph`) id, if any.
     pub boundary: Option<String>,
+    /// The boundaries around `boundary`, outermost first: the rest of the nesting of "Nested
+    /// boundaries" in `docs/DESIGN.md`. Empty for a node in at most one boundary.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub outer: Vec<String>,
+}
+
+impl NodeInfo {
+    /// Every boundary the node is a member of, outermost first, the innermost last.
+    pub fn boundaries(&self) -> impl Iterator<Item = &str> {
+        self.outer
+            .iter()
+            .map(String::as_str)
+            .chain(self.boundary.as_deref())
+    }
+
+    /// Whether the node is a member of `boundary`, written directly in it or at any depth below.
+    #[must_use]
+    pub fn within(&self, boundary: &str) -> bool {
+        self.boundaries().any(|id| id == boundary)
+    }
 }
 
 /// The parsed architecture contract: the source of truth.
@@ -719,6 +743,10 @@ pub enum ViolationKind {
     StalePackage,
     /// A node named by `%% facade` owns no file that re-exports anything.
     StaleFacade,
+    /// An import goes between two children of a `%% isolated` boundary.
+    IsolationBreach,
+    /// A `%% isolated` boundary has fewer than two children.
+    StaleIsolation,
 }
 
 /// How serious a violation is.

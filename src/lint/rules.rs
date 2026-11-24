@@ -13,6 +13,7 @@ pub(super) const fn severity(kind: ViolationKind) -> Severity {
         | ViolationKind::UndeclaredEdge
         | ViolationKind::PrivateSymbol
         | ViolationKind::UpwardEdge
+        | ViolationKind::IsolationBreach
         | ViolationKind::ProductionImportsTest
         | ViolationKind::ForbiddenPackage => Severity::Error,
         ViolationKind::StaleEdge
@@ -24,6 +25,7 @@ pub(super) const fn severity(kind: ViolationKind) -> Severity {
         | ViolationKind::IgnoredTagFiles
         | ViolationKind::OverBudget
         | ViolationKind::StalePackage
+        | ViolationKind::StaleIsolation
         | ViolationKind::StaleFacade => Severity::Warning,
     }
 }
@@ -65,6 +67,12 @@ pub(super) const fn hint(kind: ViolationKind) -> &'static str {
         }
         ViolationKind::UpwardEdge => {
             "remove the import or move the code to a node in the same or a lower layer; the `%% order` line is the user's to change"
+        }
+        ViolationKind::IsolationBreach => {
+            "remove the import, or move the shared code to a node outside the isolated boundary; an arrow between the children is a contract error, and the `%% isolated` line is the user's to change"
+        }
+        ViolationKind::StaleIsolation => {
+            "remove the boundary from the `%% isolated` line, or give it a second child"
         }
         ViolationKind::ForbiddenPackage => {
             "remove the import, or ask the user to approve changing the node's `%% packages` or `%% forbid-packages` line in the contract"

@@ -24,6 +24,8 @@ pub(super) const fn kind_str(kind: ViolationKind) -> &'static str {
         ViolationKind::ForbiddenPackage => "forbidden-package",
         ViolationKind::StalePackage => "stale-package",
         ViolationKind::StaleFacade => "stale-facade",
+        ViolationKind::IsolationBreach => "isolation-breach",
+        ViolationKind::StaleIsolation => "stale-isolation",
     }
 }
 

@@ -178,6 +178,7 @@ mod tests {
                 NodeInfo {
                     label: None,
                     boundary: None,
+                    outer: Vec::new(),
                 },
             );
         }

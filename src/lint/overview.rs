@@ -84,7 +84,7 @@ pub fn overview(
                 excluded: excluded.get(id).map_or(0, BTreeSet::len),
                 exports: contract.surfaces.get(id).cloned(),
                 blind_spots: blind.tally(Some(id)),
-                layer: contract.rules.layer(info.boundary.as_deref()),
+                layer: contract.rules.layer(info),
                 budget: None,
                 packages: Vec::new(),
             }
@@ -105,7 +105,7 @@ pub fn overview(
         unmapped: blind.tally(None),
         unmapped_items: blind.of_unowned(),
         skipped_references: blind.skipped.clone(),
-        rules: contract.rules.summary(),
+        rules: contract.rules.summary(&contract.nodes),
     }
 }
 

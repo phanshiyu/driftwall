@@ -125,19 +125,7 @@ pub enum DiagramError {
         /// Whether the first declaration was the `subgraph` (else the node).
         first_is_boundary: bool,
     },
-    /// A `subgraph` opened while another was still open.
-    #[error(
-        "line {line}: nested subgraph (boundary `{open}` opened on line {open_line} is still open)"
-    )]
-    NestedSubgraph {
-        /// Line of the inner `subgraph`.
-        line: u32,
-        /// The boundary that is still open.
-        open: String,
-        /// Line where it opened.
-        open_line: u32,
-    },
-    /// A `subgraph` was never closed with `end`.
+    /// A `subgraph` was never closed with `end`: the innermost one that is still open.
     #[error("line {line}: subgraph `{id}` is never closed with `end`")]
     UnclosedSubgraph {
         /// Line of the `subgraph`.
@@ -234,6 +222,24 @@ pub enum DiagramError {
         /// Line of the `%% order` directive.
         order_line: u32,
     },
+    /// A declared edge that joins two children of a `%% isolated` boundary.
+    #[error(
+        "line {line}: edge `{edge}` joins `{}` and `{}`, children of `{boundary}`, which `%% isolated` on line {isolated_line} keeps apart",
+        apart.0, apart.1
+    )]
+    IsolatedArrow {
+        /// Line of the edge.
+        line: u32,
+        /// The edge as written, `a --> b`, label included.
+        edge: String,
+        /// The isolated boundary.
+        boundary: String,
+        /// The two children the edge joins.
+        // why: boxed so the largest variant stays small; clippy flags every `Result` otherwise.
+        apart: Box<(String, String)>,
+        /// Line of the `%% isolated` directive.
+        isolated_line: u32,
+    },
     /// A `%% packages` or `%% forbid-packages` line that is not `%% packages <node>: <name>, <name>`.
     #[error("line {line}: malformed `%% {directive}` line: {reason}")]
     MalformedPackages {
@@ -300,7 +306,6 @@ impl DiagramError {
             | Self::SelfEdge { line, .. }
             | Self::DuplicateBoundary { line, .. }
             | Self::IdClash { line, .. }
-            | Self::NestedSubgraph { line, .. }
             | Self::UnclosedSubgraph { line, .. }
             | Self::StrayEnd { line }
             | Self::MalformedExports { line, .. }
@@ -314,6 +319,7 @@ impl DiagramError {
             | Self::MalformedRule { line, .. }
             | Self::DuplicateRule { line, .. }
             | Self::UpwardArrow { line, .. }
+            | Self::IsolatedArrow { line, .. }
             | Self::DeclaredCycle { line, .. }
             | Self::UndeclaredMapNode { line, .. } => Some(*line),
         }

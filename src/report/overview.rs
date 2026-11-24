@@ -110,6 +110,14 @@ pub fn render_overview_text(overview: &Overview) -> String {
         if overview.rules.tests_isolated {
             out.push_str("  tests: isolated\n");
         }
+        for isolated in &overview.rules.isolated {
+            let _ = writeln!(
+                out,
+                "  isolated: {} ({})",
+                isolated.boundary,
+                isolated.children.join(", ")
+            );
+        }
         if !overview.rules.facades.is_empty() {
             let _ = writeln!(out, "  facade: {}", overview.rules.facades.join(", "));
         }

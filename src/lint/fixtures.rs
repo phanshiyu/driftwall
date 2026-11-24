@@ -36,6 +36,7 @@ pub fn contract(nodes: &[&str], edges: &[(&str, &str, EdgeKind)]) -> Contract {
                     NodeInfo {
                         label: Some(format!("{n} label")),
                         boundary: None,
+                        outer: Vec::new(),
                     },
                 )
             })
