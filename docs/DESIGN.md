@@ -403,9 +403,8 @@ layer-to-layer arrows. In an open chain they are implicit and arrows only narrow
   covered by a boundary edge is not. A pair nothing allows stays `UNDECLARED`. The `rules:` block
   writes an open chain as `order open: ...`, and JSON `rules` adds `open_order`, the open chains as
   boundary lists (`order` keeps every chain, open or plain, in file order).
-- `diff` does not report rule directives today, so a chain changing between plain and open is not
-  reported either. That is a known limit: loosening a contract this way is a review event, and
-  reporting directives in `diff` is a separate change for all of them.
+- `diff` reports a chain changing between plain and open as the directive line removed and added
+  (see "Diff beyond the contract").
 - `render` writes `%% order open: ...` back.
 
 #### No cycles
@@ -477,10 +476,8 @@ meets the lint error can add an arrow between two features; with it the arrow is
 - `brief` and `neighbors` show the rule in the `rules:` block, `isolated: features (billing, search,
   features-shell)`, the children in id order, and JSON has `rules.isolated`, a list of `{"boundary": "features",
   "children": ["billing", "search", "features-shell"]}` in boundary id order, absent when the
-  contract has none. `diff` does not report rule directives (so not this one) and does not model which
-  boundary a node is in, so a move between boundaries or a change of nesting is not a `diff` change:
-  it compares nodes, edges and boundary edges only. What such a change does to coverage shows in
-  the lint.
+  contract has none. `diff` reports the directive line and a node moving between boundaries or a change of
+  nesting (see "Diff beyond the contract").
 
 #### Edge templates
 
@@ -559,9 +556,9 @@ and not counted in the summary line. The `rules:` block prints the line: `each f
 --> service, controller -.-> view`, and JSON `rules.each` is a list of `{"boundary": "features",
 "line": 12, "arrows": ["controller --> service", ...]}` in file order, absent when there is none.
 
-`diff` does not model rules, so a template, its change, and the expansions it adds or removes are
-not diffed, like every other directive; only the explicit edges and nodes are. A new feature folder
-is the diff of its nodes, which a template does not hide.
+`diff` reports a template's change as its directive line added or removed (see "Diff beyond the
+contract"), not the expansions it adds or removes. A new feature folder is the diff of its nodes,
+which a template does not hide.
 
 A template declares edges, never nodes or ownership, so a new feature does not become covered by
 appearing on disk. With the module form of `%% map` (`%% map billing-*: src/features/billing/`) a new
@@ -1762,8 +1759,8 @@ language's section, then each name it uses is followed.
   declaration is not left behind. A node that is not declared is a contract error with the line.
   A node listed twice is also an error. `render` writes the directive back as one line, nodes
   sorted. `brief` shows `  facade: ui-lib` in its `rules:` block and the JSON `rules` has
-  `facades`, a sorted list of node ids, absent when empty. `diff` compares nodes, edges and
-  surfaces only and does not report rule directives, so it does not report facades either.
+  `facades`, a sorted list of node ids, absent when empty. `diff` reports the `%% facade`
+  line like every rule directive.
 - **Symbols and surfaces.** The recorded symbol of a followed name is its name at the definition,
   and the edge, the `exports` check (`private-symbol`) and `brief` all see the defining file's node
   and that name. The public surface is judged at the definition, not at the re-exporting module: with
@@ -2534,6 +2531,58 @@ labels, order, cycles), with the `%% map` lines last.
   again therefore needs `--force` only for the contract, and rewrites it to the same contents,
   because every file is then owned by an existing tag.
 
+## Diff beyond the contract
+
+Contract edges are not the only way to make a finding disappear. An agent can move the imported
+file into the importing node, or edit a `%% map` glob so a file changes owner, and lint sees a
+clean tree. `diff --base <REF>` therefore also reports what changed besides nodes and edges. Every
+section below is empty, and then absent from text, when nothing of its kind changed.
+
+**Rules changed.** A `rules changed:` section lists each rule directive line the new contract
+renders and the old one does not (`  + %% order: app > core`) and the reverse (`  - ...`). The text
+is the line as `render` writes it, so spacing, the order of nodes inside a line and the order of
+lines are not changes; a directive whose content changed is a removed line and an added line. The
+directives are `%% order`, `%% order open`, `%% isolated`, `%% each`, `%% budget`, `%% tests`,
+`%% packages`, `%% forbid-packages`, `%% facade` and `%% no-cycles` (both forms). `%% exports` keeps
+its own `+ exports` lines and `%% map` lines are reported through the files they move (below), so
+neither is repeated here. The same section lists a node whose boundaries changed, one line each,
+`  node billing moved from boundary shared to features`. A boundary is written as the chain that
+encloses the node, outermost first, joined by `/` (`app/features`), so a change of nesting moves
+every node inside; `(none)` stands for no boundary. JSON: `rules_added` and `rules_removed`, lists
+of the lines (trimmed), and `boundary_moves`, a list of `{node, from, to}` with `from` and `to`
+strings or `null`.
+
+**Moved between nodes.** A `moved between nodes:` section lists every source file whose owning
+node differs between `REF` and the working tree, `  <file>: <old node> -> <new node>` plus a
+cause, with `(none)` for no owner (a file that became unmapped, or newly mapped):
+
+- `(mapping changed)`: the path exists on both sides and its owner changed because the mapping
+  did: `%% map` lines, module-form maps or `.arch` tag files.
+- `(renamed from <old path>)`: git's rename detection (`-M`, between `REF` and the working tree
+  including untracked files) pairs the file with a path at `REF`, and the owner of the new path
+  differs from the owner of the old.
+- `(renamed from <old path>, mapping changed)`: both, which is when the new path would have had
+  a different owner under the mapping at `REF` as well.
+
+A file added or deleted outright is not a move and is not listed. Only source files are
+compared (assets, excluded and ignored files are not), and a folded entry file has no owner.
+
+The owner at `REF` is computed exactly like lint computes it: the tree at `REF` is exported to a
+temporary directory and scanned with the contract found there (`%% map` lines when it has any,
+`.arch` files otherwise, a missing contract counting as empty), with the same walk, ignores and
+module rules as the working tree. An `.arch` file or contract at `REF` that cannot be read or
+parsed is a tool error, exit `2`. Rename detection adds the working tree to a temporary git index,
+never the real one, which writes the content of untracked files into the object database as
+unreferenced objects.
+
+Text and JSON are sorted by file. JSON: `moved`, a list of `{file, from_node, to_node,
+renamed_from, mapping_changed}`; `from_node` and `to_node` are `null` for no owner, `renamed_from`
+is absent unless renamed, and `mapping_changed` is a boolean.
+
+**Exit code.** `--exit-code` already fails on any reported change; a rule change, a boundary move
+and a moved file are reported changes, so each fails it. There is no flag to allow a move: the
+change is reported and the human approves it in review.
+
 ## Exit codes
 
 `0` clean. `1` violations. `2` tool error (bad diagram syntax, IO failure, bad arguments).
@@ -2741,6 +2790,8 @@ needs a valid contract: with none, `where` answers as before and lists nothing.
   a contract absent at that ref counts as empty, any other git failure is exit `2`. Exit `0`
   normally; with `--exit-code`, `1` when anything changed, so CI can require approval.
   With `--baseline <FILE>` it also reports debt added to the baseline, see "Debt baseline".
+  It also reports rule directive changes, boundary moves and files that changed owner, see "Diff
+  beyond the contract".
 
 `lint` text output ends with the note line of "Blind spots" when any blind spot exists, after the
 summary line, and its JSON gains a `blind_spots` object (the summary of `brief`, without `unmapped`)
