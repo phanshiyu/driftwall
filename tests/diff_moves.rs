@@ -83,6 +83,24 @@ mod support {
         String::from_utf8(output.stdout.clone()).unwrap()
     }
 
+    /// Every file below `dir`, sorted, with its length: a snapshot to compare before and after.
+    pub fn files_under(dir: &Path) -> Vec<(std::path::PathBuf, u64)> {
+        let mut found = Vec::new();
+        let mut pending = vec![dir.to_path_buf()];
+        while let Some(next) = pending.pop() {
+            for entry in fs::read_dir(next).unwrap().flatten() {
+                let meta = entry.metadata().unwrap();
+                if meta.is_dir() {
+                    pending.push(entry.path());
+                } else {
+                    found.push((entry.path(), meta.len()));
+                }
+            }
+        }
+        found.sort();
+        found
+    }
+
     pub fn json_of(output: &Output) -> serde_json::Value {
         serde_json::from_str(&stdout(output)).unwrap()
     }
@@ -250,6 +268,24 @@ fn a_rename_inside_one_node_is_not_a_move() {
         stdout(&diff(dir.path(), &[])),
         "driftwall: no contract changes\n"
     );
+}
+
+#[test]
+fn diff_writes_nothing_into_the_repository() {
+    let dir = tagged();
+    write(
+        dir.path(),
+        &[("beta/fresh.ts", "export const fresh = 5;\n")],
+    );
+    std::fs::rename(
+        dir.path().join("alpha/widget.ts"),
+        dir.path().join("beta/widget.ts"),
+    )
+    .unwrap();
+    let before = support::files_under(&dir.path().join(".git"));
+    let output = diff(dir.path(), &[]);
+    assert!(stdout(&output).contains("renamed from alpha/widget.ts"));
+    assert_eq!(support::files_under(&dir.path().join(".git")), before);
 }
 
 #[test]

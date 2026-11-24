@@ -85,11 +85,30 @@ pub fn export_tree(root: &Path, git_ref: &str, dest: &Path) -> Result<()> {
 pub fn renames(root: &Path, git_ref: &str, scratch: &Path) -> Result<Vec<(PathBuf, PathBuf)>> {
     object_spec(git_ref, Path::new("."))?;
     let index = scratch.join("index");
+    // why: `git add` writes a blob per file; they go to the scratch dir so the repository is
+    // why: untouched, and the real objects are still readable as an alternate.
+    let objects = scratch.join("objects");
+    std::fs::create_dir_all(&objects).context("cannot create a temporary object directory")?;
+    let real = git(
+        root,
+        &[
+            "rev-parse",
+            "--path-format=absolute",
+            "--git-path",
+            "objects",
+        ],
+    )?;
+    if !real.status.success() {
+        bail!("git rev-parse --git-path objects: {}", message(&real));
+    }
+    let real = String::from_utf8_lossy(&real.stdout).trim().to_owned();
     let run = |args: &[&str]| -> Result<Output> {
         let output = Command::new("git")
             .arg("-C")
             .arg(root)
             .env("GIT_INDEX_FILE", &index)
+            .env("GIT_OBJECT_DIRECTORY", &objects)
+            .env("GIT_ALTERNATE_OBJECT_DIRECTORIES", &real)
             .args(args)
             .output()
             .context("cannot run git")?;

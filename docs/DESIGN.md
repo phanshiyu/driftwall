@@ -2571,9 +2571,9 @@ The owner at `REF` is computed exactly like lint computes it: the tree at `REF` 
 temporary directory and scanned with the contract found there (`%% map` lines when it has any,
 `.arch` files otherwise, a missing contract counting as empty), with the same walk, ignores and
 module rules as the working tree. An `.arch` file or contract at `REF` that cannot be read or
-parsed is a tool error, exit `2`. Rename detection adds the working tree to a temporary git index,
-never the real one, which writes the content of untracked files into the object database as
-unreferenced objects.
+parsed is a tool error, exit `2`. Rename detection adds the working tree to a temporary git index whose objects go to a temporary
+directory, with the repository's own objects as an alternate, so `diff` writes nothing into the
+repository.
 
 Text and JSON are sorted by file. JSON: `moved`, a list of `{file, from_node, to_node,
 renamed_from, mapping_changed}`; `from_node` and `to_node` are `null` for no owner, `renamed_from`
