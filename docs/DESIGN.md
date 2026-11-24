@@ -2100,11 +2100,121 @@ module and no symbol and adds nothing to `uses:`.
 | `stale-map` | warning | a `%% map` glob matches no file, see "Contract map" |
 | `stale-package` | warning | an entry of a `%% packages` line that no non-test package use of the node matches |
 | `ignored-tag-files` | warning | the contract has `%% map` lines and `.arch` files exist, which are not read |
+| `stale-baseline` | warning | a debt baseline entry records more findings than exist now, or a key that no longer occurs, see "Debt baseline" |
 
 A boundary edge permits the import of every pair it covers, by the rules of its kind (see "Boundary
 edges"). A dotted edge permits the import. `--strict` turns every warning into a failure. A test edge permits
 only test-only imports (see "Test edges"): a production import on it is `undeclared-edge`. A type edge
 permits only type-only imports (see "Type edges"): a runtime import on it is `undeclared-edge`.
+
+## Debt baseline
+
+A designed contract leaves existing debt undeclared, so `lint` shows it. A repository that starts
+with nine errors cannot run `lint` in CI until all nine are fixed. The debt baseline records today's
+findings once, so CI fails only on new debt, fixing debt never fails, and the record can only
+shrink unless a human deliberately grows it.
+
+```
+driftwall lint [PATH] --write-baseline <FILE>
+driftwall lint [PATH] --baseline <FILE> [--strict]
+driftwall diff --base <REF> [PATH] --baseline <FILE> [--exit-code]
+```
+
+`--write-baseline` and `--baseline` are mutually exclusive on `lint`: passing both is a usage
+error, exit `2`. Both paths are relative to `PATH`, like `--contract`.
+
+### File format
+
+Plain text, written by `--write-baseline`:
+
+```
+# driftwall debt baseline. Each line is one kind of existing finding: <kind> <count> <key>.
+# CI fails when a key has more findings than recorded, or a new key appears.
+# Fixing an entry never fails CI; `lint --strict` then asks to shrink the file with
+# `driftwall lint --write-baseline <file>`.
+undeclared-edge 2 billing-service --> search-service
+undeclared-edge 1 billing-service --> search-service (test)
+unmapped-file 1 src/legacy/tool.rs
+```
+
+- One entry per line, `<kind> <count> <key>`, separated by single spaces; the key is the rest of
+  the line. `count` is a positive integer. Blank lines and lines starting with `#` are ignored.
+- Entries are sorted by kind name, then by key (byte order), so writing is deterministic and
+  idempotent: the same findings give byte-identical output. The header is fixed text.
+- A malformed line (an unknown kind, a count that is not a positive integer, a missing key, a
+  duplicate `<kind> <key>`) is a tool error, exit `2`, naming the file and the line.
+- Writing prints `driftwall: wrote <FILE> (<n> entries, <m> findings)` and exits `0`, whatever the
+  findings were. Contract errors (a contract that does not parse) are tool errors and are never
+  baselined. `stale-baseline` is never recorded.
+
+### Keys
+
+A key holds nothing that changes when unrelated code is edited: no line numbers, no message text, no
+counts. A per-site kind counts its sites: the count of an entry is the number of findings with that
+key. A finding at a test-only import site (see "Import kind") has ` (test)` appended to its key, so
+test debt and production debt are separate entries. Paths use `/`.
+
+| Kind | Key | Count is |
+| --- | --- | --- |
+| `unmapped-file` | `<file>` | 1 |
+| `unknown-node` | `<tag file> <node>` | tags in that file naming it |
+| `undeclared-edge` | `<from> --> <to>` | import sites |
+| `stale-edge` | `<from> <arrow> <to>`, arrow as declared | 1 |
+| `planned-realized` | `<from> <arrow> <to>` | 1 |
+| `test-only-edge` | `<from> <arrow> <to>` | 1 |
+| `redundant-edge` | `<from> <arrow> <to>` | 1 |
+| `unresolved-import` | `<file> <specifier>` | import sites |
+| `private-symbol` | `<from> --> <to> <symbol>` (`*` for a glob import) | import sites |
+| `stale-map` | `<glob>` | 1 |
+| `ignored-tag-files` | `<contract file>` | 1 |
+| `upward-edge` | `<from> --> <to>` | import sites |
+| `over-budget` | `<node> <measure>` | 1: the limit is in the contract, not the baseline |
+| `production-imports-test` | `<file> --> <test file>` | import sites |
+| `forbidden-package` | `<node> <package>` | uses |
+| `stale-package` | `<node> <entry>` | 1 |
+| `stale-facade` | `<node>` | 1 |
+| `isolation-breach` | `<boundary>: <from> --> <to>` | import sites |
+| `stale-isolation` | `<boundary>` | 1 |
+
+An edge finding of an `%% each` template uses the template's roles and starts with
+`each <boundary>: `. `stale-baseline` has no key. `upward-edge` is keyed by the edge, without a
+symbol: one import is one finding however many names it brings, so a key per name would change when
+a name is added to an existing import.
+
+### Applying a baseline
+
+`lint --baseline <FILE>` compares the findings with the file by key:
+
+- A key with at most the recorded count of findings is suppressed: its findings are not printed,
+  and they decide neither the exit code nor `--strict`.
+- A key with more findings than recorded is reported in full, every finding of it, with
+  `; the baseline allows <N>, found <M>` appended to the message: the tool cannot tell which site is
+  new, and naming all of them is honest. A key the file lacks is allowed zero.
+- The text summary gains `, K baselined` (`driftwall: clean, 9 baselined`,
+  `driftwall: 1 error, 0 warnings, 9 baselined`); without `--baseline` it is unchanged.
+- JSON omits suppressed findings from `violations` and has a top-level `baseline` object
+  `{"file", "suppressed", "stale"}` after `summary`; it is absent without `--baseline`. SARIF emits
+  suppressed findings too, each with `"suppressions": [{"kind": "external"}]`, the SARIF way to say a
+  tool-external file accepted it.
+- A missing or unreadable baseline file is a tool error (exit `2`), like a missing contract.
+
+### The ratchet
+
+An entry whose recorded count is above the number of findings now, or whose key no longer occurs, is
+the warning `stale-baseline`, located at the baseline file and the entry's line, with the hint to
+run `driftwall lint --write-baseline <FILE>` to shrink it. It is a warning, so a plain run still
+passes and `--strict` fails until the file shrinks. The file therefore never silently keeps room for
+debt to return.
+
+### Growth is visible
+
+`driftwall diff --base <REF> --baseline <FILE>` also compares the baseline at `REF` with the working
+tree one (read like the contract: `git show REF:./<FILE>`). An entry that is new, or whose count
+went up, is `debt added`; one that went down or vanished is not reported. A file absent at `REF`
+counts as empty, so every entry is added. The text output has a `debt added:` section, one
+`<kind> <key>: <old> -> <new>` line per entry, after the contract changes; the JSON has `debt_added`,
+a list of `{kind, key, old, new}`, present only with `--baseline`. `--exit-code` exits `1` when the
+contract changed or debt was added. A baseline file missing in the working tree is a tool error.
 
 ## init
 
@@ -2432,12 +2542,12 @@ A failing lint is not an error, so `anyhow` is used only at the entry point and 
 ## CLI surface
 
 ```
-driftwall lint [PATH] [--contract FILE] [--format text|json|sarif] [--strict]
+driftwall lint [PATH] [--contract FILE] [--format text|json|sarif] [--strict] [--baseline FILE | --write-baseline FILE]
 driftwall init [PATH] [--depth N] [--contract FILE] [--no-tags | --map] [--force]
 driftwall where <FILE> [--root DIR] [--contract FILE] [--format text|json]
 driftwall brief [PATH] [--contract FILE] [--format text|json]
 driftwall neighbors <NODE> [PATH] [--contract FILE] [--format text|json] [--files] [--all-sites]
-driftwall diff --base <REF> [PATH] [--contract FILE] [--format text|json] [--exit-code]
+driftwall diff --base <REF> [PATH] [--contract FILE] [--format text|json] [--exit-code] [--baseline FILE]
 ```
 
 `--format json` is the agent interface. Every violation carries `kind`, `severity`, `at`
@@ -2586,6 +2696,7 @@ needs a valid contract: with none, `where` answers as before and lists nothing.
   kinds, boundary edges included, see "Boundary edges"; labels and boundaries are ignored). The old text comes from `git show REF:./<contract>`;
   a contract absent at that ref counts as empty, any other git failure is exit `2`. Exit `0`
   normally; with `--exit-code`, `1` when anything changed, so CI can require approval.
+  With `--baseline <FILE>` it also reports debt added to the baseline, see "Debt baseline".
 
 `lint` text output ends with the note line of "Blind spots" when any blind spot exists, after the
 summary line, and its JSON gains a `blind_spots` object (the summary of `brief`, without `unmapped`)
