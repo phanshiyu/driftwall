@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.0 - 2026-11-24
 
 - Edge templates: `%% each features: controller --> service, controller -.-> view` declares the same
   internal arrows for every child boundary of `features`, so a feature-module layout no longer
