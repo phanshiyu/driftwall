@@ -48,6 +48,12 @@ mod support {
                 "commit.gpgsign=false",
                 "-c",
                 "core.hooksPath=/dev/null",
+                // why: newer git starts detached maintenance after a commit; its lock file in
+                // `.git/objects` came and went during the "diff writes nothing" snapshot.
+                "-c",
+                "maintenance.auto=false",
+                "-c",
+                "gc.auto=0",
             ])
             .args(args)
             .output()
