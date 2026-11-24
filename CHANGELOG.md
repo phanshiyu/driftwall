@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Edge templates: `%% each features: controller --> service, controller -.-> view` declares the same
+  internal arrows for every child boundary of `features`, so a feature-module layout no longer
+  repeats them or falls back on `billing --> billing`. Role `r` of child `billing` is the node
+  `billing-r` inside it; a part a feature lacks is skipped, a role no feature has is a contract
+  error with the line, and every arrow form of an edge works (`-.->`, `|test|`, `|type|`,
+  `|type, test|`). An expansion lints like a declared edge: one `stale-edge` per template arrow (only
+  when no child realises it, pointing at the `%% each` line), `redundant-edge` for an explicit edge
+  it covers, never an `isolation-breach` arrow, and no narrowing of an `%% order open` pair. `brief`
+  and `neighbors` show `via each features: controller --> service, line N` (JSON `via`) and the
+  template in `rules:` (`rules.each`); `render` writes the template back. `diff` does not report
+  templates, like the other directives.
 - Open layer order: `%% order open: app > features > shared > core` marks a chain in which every
   layer may depend on any layer below it with no arrow, so seven layers need no layer-to-layer
   arrows. Upward imports stay `upward-edge`, and imports inside one layer still need arrows. Any

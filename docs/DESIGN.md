@@ -563,6 +563,14 @@ and not counted in the summary line. The `rules:` block prints the line: `each f
 not diffed, like every other directive; only the explicit edges and nodes are. A new feature folder
 is the diff of its nodes, which a template does not hide.
 
+A template declares edges, never nodes or ownership, so a new feature does not become covered by
+appearing on disk. With the module form of `%% map` (`%% map billing-*: src/features/billing/`) a new
+source file in a mapped feature derives a node the contract does not declare, `unknown-node` at the
+map line, and a new feature folder that no `%% map` line covers is `unmapped-file` on each of its
+source files. Both are errors, so the contract has to name the feature (its boundary and its nodes)
+before the template applies to it, and the feature then gets the template's arrows with no more
+lines.
+
 #### Budgets
 
 `%% budget <node>: fan-out <n>, files <n>, lines <n>` limits a node's size and reach. Any non-empty
