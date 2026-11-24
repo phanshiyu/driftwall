@@ -39,9 +39,10 @@ fn an_open_order_line_is_a_chain_marked_open_and_renders_back() {
         rendered.contains("  %% order open: entry > engine > shared\n  %% order: entry > engine\n"),
         "{rendered}"
     );
-    let again = parse(&rendered).unwrap().rules.summary();
-    assert_eq!(again, contract.rules.summary());
-    let summary = contract.rules.summary();
+    let reparsed = parse(&rendered).unwrap();
+    let again = reparsed.rules.summary(&reparsed.nodes);
+    assert_eq!(again, contract.rules.summary(&contract.nodes));
+    let summary = contract.rules.summary(&contract.nodes);
     assert_eq!(summary.order.len(), 2);
     assert_eq!(summary.open_order, [["entry", "engine", "shared"]]);
 }

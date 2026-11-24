@@ -11,6 +11,19 @@
   implicit allowance is ignored by `%% no-cycles`, is never stale, and does not make an arrow
   `redundant-edge`. `brief` and `neighbors` show `via order open: <chain>, line N` (JSON `via`) and
   `rules.open_order`; `diff` does not report rule directives, so a plain/open change is not shown.
+- Nested boundaries: a `subgraph` may contain `subgraph`s, to any depth. A boundary's members are the
+  nodes inside it at any depth, and every rule uses them: `features --> shared` covers the nodes of
+  every feature inside `features`, `%% order` lists an outer boundary as one layer (listing a
+  boundary with one nested in it, in one chain, is a contract error), and `%% no-cycles: boundaries`
+  checks every boundary at every level. A boundary edge between nested ends is allowed. `render`
+  writes the nesting back. An `end` closes the innermost `subgraph`; an unclosed one is reported at
+  the innermost.
+- Isolation: `%% isolated: <boundary>[, <boundary>]` keeps the children of a boundary (each child
+  boundary, and each node written directly in it) from depending on each other. An import from one
+  child to another is the error `isolation-breach`, test and type-only sites included, and no arrow
+  can allow it: a declared edge between two children, node or boundary edge of any kind, is a
+  contract error with its line. An isolated boundary with fewer than two children is the warning
+  `stale-isolation`. `brief` shows `isolated: features (a, b, c)` in `rules:` (JSON `rules.isolated`).
 
 - Boundary edges: an edge endpoint may be a `subgraph` id, so `features --> core` allows every node
   of `features` to depend on every node of `core` (and `a --> sub`, `sub --> a`, `sub --> sub` work

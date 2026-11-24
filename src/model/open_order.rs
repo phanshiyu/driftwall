@@ -46,11 +46,13 @@ impl Contract {
     /// allows the pair speaks; narrowing is a property of the two boundaries, so chains agree on it.
     #[must_use]
     pub fn open_access(&self, edge: &Edge) -> Option<OpenAccess<'_>> {
-        let boundary = |node| self.nodes.get(node)?.boundary.as_deref();
-        let (from, to) = (boundary(&edge.from)?, boundary(&edge.to)?);
+        let (from_info, to_info) = (self.nodes.get(&edge.from)?, self.nodes.get(&edge.to)?);
         let mut narrowed = None;
         for order in self.rules.order.iter().filter(|order| order.open) {
-            let (Some(upper), Some(lower)) = (order.rank(from), order.rank(to)) else {
+            // why: a node counts as in the boundary the chain lists around it, at any depth.
+            let (Some((from, upper)), Some((to, lower))) =
+                (order.place(from_info), order.place(to_info))
+            else {
                 continue;
             };
             if upper >= lower {
@@ -105,6 +107,7 @@ mod tests {
                 NodeInfo {
                     label: None,
                     boundary: boundary.map(str::to_owned),
+                    outer: Vec::new(),
                 },
             );
         }
@@ -139,6 +142,54 @@ mod tests {
         assert_eq!(contract.open_access(&pair("a1", "a2")), None);
         assert_eq!(contract.open_access(&pair("x", "c1")), None);
         assert_eq!(contract.open_access(&pair("a1", "x")), None);
+    }
+
+    /// `o1` in `orders` inside `features`, which the chain lists.
+    fn nested(contract: &mut Contract) {
+        contract.nodes.insert(
+            node("o1"),
+            NodeInfo {
+                label: None,
+                boundary: Some("orders".to_owned()),
+                outer: vec!["features".to_owned()],
+            },
+        );
+    }
+
+    #[test]
+    fn a_node_in_a_boundary_inside_a_listed_one_counts_as_in_the_listed_one() {
+        let mut contract = contract();
+        nested(&mut contract);
+        let order = &contract.rules.order[0];
+        assert_eq!(
+            contract.open_access(&pair("o1", "c1")),
+            Some(OpenAccess::Allowed(order))
+        );
+        assert_eq!(
+            contract.open_access(&pair("a1", "o1")),
+            Some(OpenAccess::Allowed(order))
+        );
+        assert_eq!(contract.open_access(&pair("o1", "a1")), None);
+        assert_eq!(contract.open_access(&pair("o1", "f1")), None);
+    }
+
+    #[test]
+    fn an_arrow_from_a_nested_node_narrows_the_listed_layers() {
+        let mut contract = contract();
+        nested(&mut contract);
+        contract
+            .edges
+            .insert(pair("o1", "c2"), EdgeKind::Implemented);
+        let order = &contract.rules.order[0];
+        assert_eq!(
+            contract.open_access(&pair("f1", "c1")),
+            Some(OpenAccess::Narrowed {
+                order,
+                from: "features",
+                to: "core",
+                arrows: 1
+            })
+        );
     }
 
     #[test]

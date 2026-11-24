@@ -179,6 +179,7 @@ syntax and behaviour are in [docs/DESIGN.md](docs/DESIGN.md).
 | `%% exports api: post` | Only these names of `api` may be imported from outside. | [Symbols and public surfaces](docs/DESIGN.md#symbols-and-public-surfaces) |
 | `%% order: entry > engine > shared` | Layers, top to bottom. Imports may not point upward, even with no arrow drawn. | [Layer order](docs/DESIGN.md#layer-order) |
 | `%% order open: app > features > core` | Open layers: each layer may use any layer below with no arrow. An arrow from a layer to a lower one limits that pair of layers to the arrows you draw. | [Open order](docs/DESIGN.md#open-order) |
+| `%% isolated: features` | The children of `features` (feature boundaries nested inside it, or nodes in it) may not depend on each other, and no arrow can allow it. Subgraphs may nest. | [Isolated boundaries](docs/DESIGN.md#isolated-boundaries), [Nested boundaries](docs/DESIGN.md#nested-boundaries) |
 | `%% no-cycles` | The declared arrows may not form a cycle. | [No cycles](docs/DESIGN.md#no-cycles) |
 | `%% budget lint: fan-out 5, files 20` | Warn when a component grows past a limit (`fan-out`, `files`, `lines`). | [Budgets](docs/DESIGN.md#budgets) |
 | `%% tests: isolated` | Production code may not import test files. | [Test isolation](docs/DESIGN.md#test-isolation) |

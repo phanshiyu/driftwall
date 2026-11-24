@@ -15,6 +15,8 @@ mod boundary_tests;
 #[cfg(test)]
 mod facade_tests;
 #[cfg(test)]
+mod nested_tests;
+#[cfg(test)]
 mod open_order_tests;
 #[cfg(test)]
 mod rules_tests;

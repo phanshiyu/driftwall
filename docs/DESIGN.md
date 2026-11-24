@@ -176,7 +176,7 @@ flowchart LR
   nesting enters it.
 - Malformed nesting is a contract error at its line: an `end` with no open `subgraph` (`line 9:
   `end` without an open subgraph`), and a `subgraph` still open at the end of the file, reported at the
-  line of the innermost one that is open (`subgraph `billing` opened on line 3 is never closed`).
+  line of the innermost one that is open (`line 3: subgraph `billing` is never closed with `end``).
   What `end` closes is the innermost open `subgraph`, as in Mermaid.
 - Only the innermost boundary of a node is kept as its `boundary`; the ones around it are its outer
   boundaries. `render` writes the nesting back, so a contract round-trips. Boundary labels are still
@@ -308,7 +308,8 @@ contract need not draw every arrow to forbid the wrong direction.
   not ordered by their outer boundary's place; they are ordered only if a chain lists them. A chain may
   not list a boundary together with one nested in it (`features > billing` with `billing` inside
   `features`, or the reverse order): the node's layer would be ambiguous, so it is a contract error at
-  the directive: `line 12: `%% order` lists `billing` and `features`, which contains it`. To order the
+  the directive: `line 12: malformed `%% order` line: `features` contains `billing`, and a chain may
+  not list both`. To order the
   inner boundaries of one boundary, list them in a chain without the outer one; two chains may list a
   boundary and one nested in it, because chains are independent (a node takes its layer, in each
   chain, from the boundary that chain lists).
@@ -351,6 +352,9 @@ plain lines may be mixed in one contract. The reason for the mode: with seven la
 use any layer below, a plain chain still needs every allowed downward dependency drawn, up to 21
 layer-to-layer arrows. In an open chain they are implicit and arrows only narrow.
 
+- Nesting. As in every chain, a node is in the boundary the chain lists around it, at any depth (see
+  "Nested boundaries"): with `features` listed, a node of `features/orders` is in `features`, both for
+  the allowance and for narrowing, and "inside `U`" below means any depth.
 - Implicit allowance. A dependency from a node in boundary `U` to a node in a lower boundary `L` of
   the same open chain, with no arrow of any kind between them, is allowed as if a solid unlabelled
   edge covered the pair. It allows production, test, runtime and type-only sites alike. Upward stays
@@ -465,8 +469,8 @@ meets the lint error can add an arrow between two features; with it the arrow is
   `features --> shared` is not (its pairs leave `features`), `billing --> billing-service` is not
   (inside one child), and `features --> billing` is an error (it covers pairs from other features into
   `billing`). The first such edge by line is reported.
-- Fewer than two children is the warning `stale-isolation` ("`%% isolated` on line 12 names `features`, which has
-  one child, so there is nothing to keep apart"), without a source location, naming the line of the
+- Fewer than two children is the warning `stale-isolation` ("`%% isolated` on line 12 of architecture.mmd names
+  `features`, which has one child so there is nothing to keep apart"; "no child" for an empty one), without a source location, naming the line of the
   directive. `--strict` fails on it.
 - `brief` and `neighbors` show the rule in the `rules:` block, `isolated: features (billing, search,
   features-shell)`, the children in id order, and JSON has `rules.isolated`, a list of `{"boundary": "features",
