@@ -46,6 +46,16 @@ pub fn neighbors(args: &NeighborsArgs) -> Result<Run> {
             declared_nodes(&overview)
         );
     };
+    // why: the interface block is long for a wide node, so it shows only for a node whose contract
+    // why: limits it, or when every site is asked for.
+    let wanted = args.all_sites || view.node.budget.is_some_and(|b| b.interface.is_some());
+    let view = if wanted {
+        let none = Vec::new();
+        let entries = observation.interfaces.get(&view.node.id).unwrap_or(&none);
+        lint::with_interface(view, entries)
+    } else {
+        view
+    };
     let stdout = match args.format {
         ViewFormat::Text => {
             let options = report::NodeViewOptions {

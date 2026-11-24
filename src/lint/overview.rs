@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 
 use crate::model::{
     BlindSpots, BoundaryEdgeSummary, Contract, Declared, DirTag, Edge, EdgeKind, EdgeSummary,
-    ImportKind, LintReport, MapTarget, NodeBudget, NodeId, NodeSummary, NodeView, OpenAccess,
-    Overview, Ownership, PackageSummary, Scope, Site, Symbol, Tag, ViaEdge,
+    ImportKind, InterfaceEntry, LintReport, MapTarget, NodeBudget, NodeId, NodeSummary, NodeView,
+    OpenAccess, Overview, Ownership, PackageSummary, Scope, Site, Symbol, Tag, ViaEdge,
 };
 
 /// Combines the contract, ownership, observed edges, the symbols they use and the lint report
@@ -203,6 +203,13 @@ pub fn attach_budgets(overview: &mut Overview, budgets: &BTreeMap<NodeId, NodeBu
     }
 }
 
+/// `view` with the node's interface entries, `entries`, shown. Pure.
+#[must_use]
+pub fn with_interface(mut view: NodeView, entries: &[InterfaceEntry]) -> NodeView {
+    view.interface = Some(entries.to_vec());
+    view
+}
+
 /// `overview` with each node's `packages` set from `packages`, which [`Observation`](super::Observation)
 /// holds. A node `packages` has no entry for uses none. Pure.
 #[must_use]
@@ -247,6 +254,7 @@ pub fn node_view(
         asset_files: owned_by(&ownership.asset_owners, id),
         excluded_files: owned_by(&ownership.excluded_owners, id),
         blind_spots: blind.of_node(&node.id),
+        interface: None,
     })
 }
 

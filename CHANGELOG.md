@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- Interface budget: `%% budget store: interface 5` limits how many distinct symbols of a node code
+  outside it uses in production code, so a node stays deep behind a narrow interface. Re-exports are
+  followed to the defining file (a `%% facade` file is the definer), test-only sites and imports
+  inside the node do not count, and an import that names no symbol (a namespace, wildcard,
+  side-effect or module import) counts once per target file as `<file> (whole module)`. Going over is
+  the existing `over-budget` warning. `brief` and `neighbors` show `interface 9/5 over` and the JSON
+  `budget.interface`; `neighbors` also lists the entries with their users in an `interface:` block
+  (JSON `interface`) for a node with the limit, or with `--all-sites`.
+
 ## 0.1.1 - 2026-11-25
 
 - Published to npm: `npm install --global driftwall`. This is the first release published by CI

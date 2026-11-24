@@ -8,6 +8,7 @@
 mod budget;
 mod diff;
 mod facade;
+mod interface;
 mod isolation;
 mod layers;
 mod observe;
@@ -54,14 +55,14 @@ use thiserror::Error;
 use crate::diagram::{self, DiagramError};
 use crate::imports::{self, ImportsError};
 use crate::model::{
-    BlindSpots, Contract, DEFAULT_CONTRACT, Edge, Language, LintReport, NodeBudget, NodeId,
-    Ownership, PackageSummary, PackageUse, Site, Symbol,
+    BlindSpots, Contract, DEFAULT_CONTRACT, Edge, InterfaceEntry, Language, LintReport, NodeBudget,
+    NodeId, Ownership, PackageSummary, PackageUse, Site, Symbol,
 };
 use crate::ownership::{self, OwnershipError};
 
 pub use diff::{EMPTY_CONTRACT, contract_diff};
 pub use observe::{observed_edges, observed_symbols};
-pub use overview::{attach_budgets, node_view, overview, with_packages};
+pub use overview::{attach_budgets, node_view, overview, with_interface, with_packages};
 pub use reconcile::reconcile;
 
 /// Settings for [`run`].
@@ -131,6 +132,8 @@ pub struct Observation {
     pub observed: BTreeMap<Edge, Vec<Site>>,
     /// Every node with a `%% budget` line, with its limits and what it has now.
     pub budgets: BTreeMap<NodeId, NodeBudget>,
+    /// The interface of every node that code outside uses, see "Budgets" in the design.
+    pub interfaces: BTreeMap<NodeId, Vec<InterfaceEntry>>,
     /// The symbols the imports behind each observed edge use.
     pub symbols: BTreeMap<Edge, BTreeSet<Symbol>>,
     /// The packages each declared node's files use, see [`with_packages`].
@@ -231,7 +234,8 @@ pub fn observe(root: &Path, options: &LintOptions) -> Result<Observation, LintEr
     let mut report = reconcile(&contract, &edge_ownership, &imports, &options.contract);
     let observed = observed_edges(&contract, &edge_ownership, &imports);
     // why: budgets read line counts, which the pure core cannot, so their findings join its report here.
-    let budgets = budget::measure(&contract, &ownership, &observed, |path| {
+    let interfaces = interface::interfaces(&contract, &edge_ownership, &imports);
+    let budgets = budget::measure(&contract, &ownership, &observed, &interfaces, |path| {
         ownership::line_count(root, path)
     });
     report
@@ -268,6 +272,7 @@ pub fn observe(root: &Path, options: &LintOptions) -> Result<Observation, LintEr
         ownership,
         observed,
         budgets,
+        interfaces,
         symbols,
         packages,
         package_uses,

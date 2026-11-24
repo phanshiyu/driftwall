@@ -4,8 +4,8 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use crate::model::{
-    Contract, Edge, Location, Measure, NodeBudget, NodeId, Ownership, Site, Violation,
-    ViolationKind,
+    Contract, Edge, InterfaceEntry, Location, Measure, NodeBudget, NodeId, Ownership, Site,
+    Violation, ViolationKind,
 };
 
 use super::rules::violation;
@@ -14,12 +14,13 @@ use super::rules::violation;
 ///
 /// Fan-out is the number of observed edges leaving the node with at least one site that is not
 /// test-only. Files are the source files `ownership` gives the node, and lines the sum of
-/// `line_count` over them, read only for a node whose budget limits lines. Pure given
-/// `line_count`.
+/// `line_count` over them, read only for a node whose budget limits lines. The interface is the
+/// number of entries `interfaces` holds for the node. Pure given `line_count`.
 pub(super) fn measure(
     contract: &Contract,
     ownership: &Ownership,
     observed: &BTreeMap<Edge, Vec<Site>>,
+    interfaces: &BTreeMap<NodeId, Vec<InterfaceEntry>>,
     line_count: impl Fn(&Path) -> usize,
 ) -> BTreeMap<NodeId, NodeBudget> {
     contract
@@ -53,6 +54,9 @@ pub(super) fn measure(
                 fan_out: measure(budget.fan_out, &fan_out),
                 files: measure(budget.files, &|| owned().count()),
                 lines: measure(budget.lines, &|| owned().map(|file| line_count(file)).sum()),
+                interface: measure(budget.interface, &|| {
+                    interfaces.get(node).map_or(0, Vec::len)
+                }),
             };
             (node.clone(), used)
         })
@@ -123,6 +127,7 @@ mod tests {
             fan_out,
             files,
             lines,
+            interface: None,
         }
     }
 
@@ -138,6 +143,7 @@ mod tests {
             &contract(budget(Some(1), None, None)),
             &Ownership::default(),
             &observed,
+            &BTreeMap::new(),
             |_| 0,
         );
         let fan_out = used[&node("a")].fan_out.unwrap();
@@ -151,6 +157,7 @@ mod tests {
         let used = measure(
             &contract(budget(None, Some(2), Some(100))),
             &ownership,
+            &BTreeMap::new(),
             &BTreeMap::new(),
             |file| if file == Path::new("a/x.ts") { 60 } else { 41 },
         );
@@ -173,12 +180,39 @@ mod tests {
     }
 
     #[test]
+    fn interface_is_the_entry_count_and_equal_to_the_limit_is_within() {
+        let entry = |name: &str| InterfaceEntry {
+            file: PathBuf::from("a/x.ts"),
+            symbol: Some(name.to_owned()),
+            sites: 1,
+            users: BTreeMap::new(),
+        };
+        let interfaces = BTreeMap::from([(node("a"), vec![entry("p"), entry("q")])]);
+        let with = |limit| {
+            let mut b = budget(None, None, None);
+            b.interface = Some(limit);
+            let used = measure(
+                &contract(b),
+                &Ownership::default(),
+                &BTreeMap::new(),
+                &interfaces,
+                |_| 0,
+            );
+            used[&node("a")].interface.unwrap()
+        };
+        assert!(!with(2).over());
+        assert!(with(1).over());
+        assert_eq!(with(1).actual, 2);
+    }
+
+    #[test]
     fn lines_are_not_read_without_a_lines_limit() {
         let ownership = owned(&[("a/x.ts", "a")]);
         let reads = std::cell::Cell::new(0_usize);
         let used = measure(
             &contract(budget(None, Some(5), None)),
             &ownership,
+            &BTreeMap::new(),
             &BTreeMap::new(),
             |_| {
                 reads.set(reads.get() + 1);
@@ -207,6 +241,10 @@ mod tests {
                     limit: 10,
                     actual: 99,
                 }),
+                interface: Some(Measure {
+                    limit: 5,
+                    actual: 9,
+                }),
             },
         )]);
         let found = findings(&used, Path::new("c.mmd"));
@@ -216,6 +254,7 @@ mod tests {
             [
                 "node `a` is over its budget: files 4 exceeds the limit 3",
                 "node `a` is over its budget: lines 99 exceeds the limit 10",
+                "node `a` is over its budget: interface 9 exceeds the limit 5",
             ]
         );
         assert!(found.iter().all(|v| v.kind == ViolationKind::OverBudget));

@@ -8,8 +8,8 @@ use serde::Serialize;
 
 use crate::model::{
     BlindRef, BlindSpots, BlindSummary, BlindTally, BoundaryEdgeSummary, EdgeKind, EdgeSummary,
-    ImportKind, Layer, MAX_SITES, NodeBudget, NodeSummary, NodeView, Overview, PackageSummary,
-    RulesSummary, Site, SkipReason, Symbol,
+    ImportKind, InterfaceEntry, Layer, MAX_SITES, NodeBudget, NodeSummary, NodeView, Overview,
+    PackageSummary, RulesSummary, Site, SkipReason, Symbol,
 };
 
 use super::ReportError;
@@ -206,6 +206,7 @@ pub fn render_node_view_text(view: &NodeView, options: NodeViewOptions) -> Strin
         asset_files,
         excluded_files,
         blind_spots,
+        interface,
     } = view;
     let mut out = format!("node: {}\n", node.id);
     // why: fmt::Write into a String is infallible, so the discarded Results carry no error.
@@ -250,6 +251,9 @@ pub fn render_node_view_text(view: &NodeView, options: NodeViewOptions) -> Strin
         for package in &node.packages {
             let _ = writeln!(out, "  {}", package_str(package));
         }
+    }
+    if let Some(entries) = interface {
+        out.push_str(&interface_block(entries));
     }
     for (title, edges) in [("outgoing", outgoing), ("incoming", incoming)] {
         let _ = writeln!(out, "{title}:");
@@ -336,6 +340,8 @@ pub fn render_node_view_json(view: &NodeView) -> Result<String, ReportError> {
         asset_files: &'a [PathBuf],
         excluded_files: &'a [PathBuf],
         blind_spots: &'a BlindSpots,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        interface: &'a Option<Vec<InterfaceEntry>>,
     }
     to_json(&Document {
         version: SCHEMA_VERSION,
@@ -346,6 +352,7 @@ pub fn render_node_view_json(view: &NodeView) -> Result<String, ReportError> {
         asset_files: &view.asset_files,
         excluded_files: &view.excluded_files,
         blind_spots: &view.blind_spots,
+        interface: &view.interface,
     })
 }
 
@@ -379,6 +386,34 @@ fn package_str(package: &PackageSummary) -> String {
 
 /// The word an edge shows for a use of the target module itself, see "Symbols" in the design.
 const MODULE_USE: &str = "module";
+
+/// The `interface:` block of `neighbors`: one line per entry, `  store/db.rs open (3 sites: api 2,
+/// cli 1)`, or `<file> (whole module)` for an entry that names no symbol.
+fn interface_block(entries: &[InterfaceEntry]) -> String {
+    let mut out = String::from("interface:\n");
+    if entries.is_empty() {
+        out.push_str("  (none)\n");
+    }
+    for entry in entries {
+        let name = entry.symbol.as_ref().map_or_else(
+            || format!("{} (whole module)", slash_path(&entry.file)),
+            |symbol| format!("{} {symbol}", slash_path(&entry.file)),
+        );
+        let users: Vec<String> = entry
+            .users
+            .iter()
+            .map(|(node, sites)| format!("{node} {sites}"))
+            .collect();
+        let plural = if entry.sites == 1 { "site" } else { "sites" };
+        let _ = writeln!(
+            out,
+            "  {name} ({} {plural}: {})",
+            entry.sites,
+            users.join(", ")
+        );
+    }
+    out
+}
 
 /// `fan-out 3/5, files 21/20 over`: `actual/limit` per limited measure, `over` after one that
 /// exceeds its limit.
@@ -624,6 +659,7 @@ blind spots: none
             asset_files: Vec::new(),
             excluded_files: Vec::new(),
             blind_spots: BlindSpots::default(),
+            interface: None,
             node: node("lint", &["src/lint"], 5),
             outgoing: vec![
                 edge("lint", "model", Some(EdgeKind::Planned), &[3]),
@@ -663,6 +699,7 @@ blind spots: none
             asset_files: Vec::new(),
             excluded_files: Vec::new(),
             blind_spots: BlindSpots::default(),
+            interface: None,
             node: summary,
             outgoing: vec![],
             incoming: vec![],
@@ -771,6 +808,7 @@ nodes:
             asset_files: Vec::new(),
             excluded_files: Vec::new(),
             blind_spots: BlindSpots::default(),
+            interface: None,
             node: exporting(
                 node("b", &["src/b"], 2),
                 &["a", "b", "c", "d", "e", "f", "g", "h"],
@@ -837,6 +875,7 @@ blind spots: none
             asset_files: Vec::new(),
             excluded_files: Vec::new(),
             blind_spots: BlindSpots::default(),
+            interface: None,
             node: overview.nodes[0].clone(),
             outgoing: overview.edges.clone(),
             incoming: vec![],
@@ -966,6 +1005,7 @@ blind spots: none
             asset_files: Vec::new(),
             excluded_files: Vec::new(),
             blind_spots: BlindSpots::default(),
+            interface: None,
             node: node("a", &[], 0),
             outgoing: vec![marked(5, &[])],
             incoming: vec![],
@@ -1007,6 +1047,7 @@ blind spots: none
             asset_files: vec![PathBuf::from("src/app.css")],
             excluded_files: Vec::new(),
             blind_spots: BlindSpots::default(),
+            interface: None,
             node: app,
             outgoing: vec![],
             incoming: vec![],
@@ -1052,6 +1093,7 @@ blind spots: none
             asset_files: Vec::new(),
             excluded_files: vec![PathBuf::from("src/route-table.ts")],
             blind_spots: BlindSpots::default(),
+            interface: None,
             node: gen_only,
             outgoing: vec![],
             incoming: vec![],
@@ -1186,6 +1228,7 @@ blind spots: none
             asset_files: Vec::new(),
             excluded_files: Vec::new(),
             blind_spots: BlindSpots::default(),
+            interface: None,
             node: node("lint", &["src/lint"], 5),
             outgoing: vec![edge("lint", "model", Some(EdgeKind::Implemented), &[3])],
             incoming: vec![],

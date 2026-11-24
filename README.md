@@ -190,7 +190,7 @@ syntax and behaviour are in [docs/DESIGN.md](docs/DESIGN.md).
 | `%% isolated: features` | The children of `features` (feature boundaries nested inside it, or nodes in it) may not depend on each other, and no arrow can allow it. Subgraphs may nest. | [Isolated boundaries](docs/DESIGN.md#isolated-boundaries), [Nested boundaries](docs/DESIGN.md#nested-boundaries) |
 | `%% each features: controller --> service` | The same arrows inside every feature of `features`, written once: each child boundary `billing` gets `billing-controller --> billing-service`, skipped where it lacks a part. A role no feature has is an error. | [Edge templates](docs/DESIGN.md#edge-templates) |
 | `%% no-cycles` | The declared arrows may not form a cycle. | [No cycles](docs/DESIGN.md#no-cycles) |
-| `%% budget lint: fan-out 5, files 20` | Warn when a component grows past a limit (`fan-out`, `files`, `lines`). | [Budgets](docs/DESIGN.md#budgets) |
+| `%% budget lint: fan-out 5, files 20, interface 8` | Warn when a component grows past a limit (`fan-out`, `files`, `lines`, `interface`: how many of its symbols other components use). | [Budgets](docs/DESIGN.md#budgets) |
 | `%% tests: isolated` | Production code may not import test files. | [Test isolation](docs/DESIGN.md#test-isolation) |
 | `%% facade ui-lib` | Callers of a re-exporting module depend on it, not on what it re-exports. | [Re-exports](docs/DESIGN.md#re-exports) |
 | `%% packages db: sqlx` | A component may use only these outside packages. | [Package rules](docs/DESIGN.md#package-rules) |

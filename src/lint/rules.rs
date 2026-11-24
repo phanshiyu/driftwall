@@ -63,7 +63,7 @@ pub(super) const fn hint(kind: ViolationKind) -> &'static str {
             "move what is shared out of the test file into production code, or remove the import; the `%% tests` line is the user's to change"
         }
         ViolationKind::OverBudget => {
-            "reduce the node, or ask the user to raise its `%% budget` line in the contract"
+            "reduce the node (for `interface`, narrow it behind fewer entry points), or ask the user to raise its `%% budget` line in the contract"
         }
         ViolationKind::UpwardEdge => {
             "remove the import or move the code to a node in the same or a lower layer; the `%% order` line is the user's to change"

@@ -352,7 +352,7 @@ fn the_no_cycles_lines_survive_a_render_round_trip() {
 #[test]
 fn a_budget_line_names_a_node_and_any_subset_of_the_three_measures() {
     let src = format!(
-        "{GRAPH}  %% budget a: fan-out 3, lines 2000\n  %% budget c: files 0\n  %%   budget d: lines 5, files 6, fan-out 7\n"
+        "{GRAPH}  %% budget a: fan-out 3, lines 2000\n  %% budget c: files 0\n  %%   budget d: lines 5, files 6, fan-out 7\n  %% budget b: interface 4, files 1\n"
     );
     let budgets = parse(&src).unwrap().rules.budgets;
     let a = &budgets[&NodeId::new("a").unwrap()];
@@ -364,6 +364,11 @@ fn a_budget_line_names_a_node_and_any_subset_of_the_three_measures() {
     assert_eq!((c.fan_out, c.files, c.lines), (None, Some(0), None));
     let d = &budgets[&NodeId::new("d").unwrap()];
     assert_eq!((d.fan_out, d.files, d.lines), (Some(7), Some(6), Some(5)));
+    let b = &budgets[&NodeId::new("b").unwrap()];
+    assert_eq!(
+        (b.interface, b.files, a.interface),
+        (Some(4), Some(1), None)
+    );
 }
 
 #[test]
@@ -379,6 +384,10 @@ fn a_malformed_budget_is_a_contract_error_at_its_line() {
         "%% budget a: files 3 4\n",
         "%% budget a: files 3,\n",
         "%% budget a: files 3, files 4\n",
+        "%% budget a: interface 3, interface 4\n",
+        "%% budget a: interface x\n",
+        "%% budget a: interface -2\n",
+        "%% budget a: interface\n",
         "%% budget ghost: files 3\n",
         "%% budget 9a: files 3\n",
     ] {
@@ -425,15 +434,20 @@ fn a_comment_that_only_starts_with_budget_stays_plain() {
 
 #[test]
 fn budgets_survive_a_render_round_trip() {
-    let src = format!("{GRAPH}  %% budget b: files 4\n  %% budget a: fan-out 3, lines 2000\n");
+    let src = format!(
+        "{GRAPH}  %% budget b: files 4\n  %% budget a: fan-out 3, lines 2000, interface 5\n"
+    );
     let rendered = render(&parse(&src).unwrap());
     assert!(
-        rendered.contains("  %% budget a: fan-out 3, lines 2000\n  %% budget b: files 4\n"),
+        rendered.contains(
+            "  %% budget a: fan-out 3, lines 2000, interface 5\n  %% budget b: files 4\n"
+        ),
         "{rendered}"
     );
     let again = parse(&rendered).unwrap().rules.budgets;
     assert_eq!(again.len(), 2);
     assert_eq!(again[&NodeId::new("a").unwrap()].fan_out, Some(3));
+    assert_eq!(again[&NodeId::new("a").unwrap()].interface, Some(5));
 }
 
 #[test]

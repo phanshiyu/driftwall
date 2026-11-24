@@ -108,6 +108,7 @@ pub(super) fn render(rules: &Rules) -> Vec<String> {
             ("fan-out", budget.fan_out),
             ("files", budget.files),
             ("lines", budget.lines),
+            ("interface", budget.interface),
         ]
         .into_iter()
         .filter_map(|(name, limit)| Some(format!("{name} {}", limit?)))
@@ -225,7 +226,9 @@ impl RuleParser {
             reason,
         };
         let (raw_node, list) = rest.split_once(':').ok_or_else(|| {
-            malformed("expected `<node>: fan-out <n>, files <n>, lines <n>`".to_owned())
+            malformed(
+                "expected `<node>: fan-out <n>, files <n>, lines <n>, interface <n>`".to_owned(),
+            )
         })?;
         let node = NodeId::new(raw_node.trim())
             .map_err(|source| DiagramError::InvalidId { line, source })?;
@@ -238,7 +241,7 @@ impl RuleParser {
             let (Some(measure), Some(raw), None) = (words.next(), words.next(), words.next())
             else {
                 return Err(malformed(format!(
-                    "`{}` is not `<measure> <n>` with the measure `fan-out`, `files` or `lines`",
+                    "`{}` is not `<measure> <n>` with the measure `fan-out`, `files`, `lines` or `interface`",
                     item.trim()
                 )));
             };
@@ -246,9 +249,10 @@ impl RuleParser {
                 "fan-out" => &mut budget.fan_out,
                 "files" => &mut budget.files,
                 "lines" => &mut budget.lines,
+                "interface" => &mut budget.interface,
                 other => {
                     return Err(malformed(format!(
-                        "`{other}` is not a measure: use `fan-out`, `files` or `lines`"
+                        "`{other}` is not a measure: use `fan-out`, `files`, `lines` or `interface`"
                     )));
                 }
             };

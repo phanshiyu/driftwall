@@ -24,8 +24,8 @@ pub use map::{GlobError, MapGlob, MapRule, MapSite, MapTarget, Specificity};
 pub use open_order::OpenAccess;
 pub use package_rule::{PackagePattern, PackageRule, PackageRuleKind};
 pub use rules::{
-    Budget, EachArrow, EachRule, EachSummary, IsolatedSummary, Layer, LayerOrder, Measure,
-    NodeBudget, Rules, RulesSummary,
+    Budget, EachArrow, EachRule, EachSummary, InterfaceEntry, IsolatedSummary, Layer, LayerOrder,
+    Measure, NodeBudget, Rules, RulesSummary,
 };
 
 pub use blind::{
@@ -1010,6 +1010,10 @@ pub struct NodeView {
     pub excluded_files: Vec<PathBuf>,
     /// Every item the node is blind to.
     pub blind_spots: BlindSpots,
+    /// The node's interface entries, sorted by site count (most first), then file and symbol.
+    /// `Some` only when the view shows them: the node has an `interface` limit or the command was
+    /// given `--all-sites`.
+    pub interface: Option<Vec<InterfaceEntry>>,
 }
 
 /// What changed between two versions of the contract.

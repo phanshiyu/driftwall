@@ -1,6 +1,7 @@
 //! The rule directives of a contract (see "Contract rules" in `docs/DESIGN.md`).
 
 use std::collections::BTreeMap;
+use std::path::PathBuf;
 
 use serde::Serialize;
 
@@ -208,6 +209,8 @@ pub struct Budget {
     pub files: Option<usize>,
     /// The most lines its source files may hold together.
     pub lines: Option<usize>,
+    /// The most distinct symbols of the node that code outside it may use in production code.
+    pub interface: Option<usize>,
 }
 
 /// One measure of a node against its limit.
@@ -242,17 +245,36 @@ pub struct NodeBudget {
     /// Lines in those files.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub lines: Option<Measure>,
+    /// Distinct symbols of the node used from outside in production code.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub interface: Option<Measure>,
+}
+
+/// One entry of a node's interface: a symbol that code outside the node uses, or a whole module
+/// used without naming a symbol (see "Budgets" in `docs/DESIGN.md`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct InterfaceEntry {
+    /// The file that defines the symbol, or the module used as a whole.
+    pub file: PathBuf,
+    /// The symbol's name, or `None` for a whole-module entry.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub symbol: Option<String>,
+    /// How many import sites of other nodes use the entry.
+    pub sites: usize,
+    /// The sites per using node.
+    pub users: BTreeMap<NodeId, usize>,
 }
 
 impl NodeBudget {
     /// The measures that have a limit, as `(name, measure)` in the order `fan-out`, `files`,
-    /// `lines`.
+    /// `lines`, `interface`.
     #[must_use]
     pub fn measures(&self) -> Vec<(&'static str, Measure)> {
         [
             ("fan-out", self.fan_out),
             ("files", self.files),
             ("lines", self.lines),
+            ("interface", self.interface),
         ]
         .into_iter()
         .filter_map(|(name, measure)| Some((name, measure?)))
