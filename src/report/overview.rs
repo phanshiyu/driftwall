@@ -133,6 +133,9 @@ fn rules_block(rules: &RulesSummary) -> String {
             isolated.children.join(", ")
         );
     }
+    for each in &rules.each {
+        let _ = writeln!(out, "  each {}: {}", each.boundary, each.arrows.join(", "));
+    }
     if !rules.facades.is_empty() {
         let _ = writeln!(out, "  facade: {}", rules.facades.join(", "));
     }

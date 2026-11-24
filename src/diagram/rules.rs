@@ -3,10 +3,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::cycles::find_cycle;
+use super::each;
 use super::error::DiagramError;
 use crate::model::{
-    BoundaryEdge, Budget, Edge, EdgeKind, Endpoint, LayerOrder, NodeId, NodeInfo, Rules,
-    children_apart,
+    BoundaryEdge, Budget, EachArrow, EachRule, Edge, EdgeKind, Endpoint, LayerOrder, NodeId,
+    NodeInfo, Rules, children_apart,
 };
 
 /// A rule directive found on a comment line, with the text after its keyword.
@@ -25,6 +26,8 @@ pub(super) enum Directive<'a> {
     Tests(&'a str),
     /// `%% facade <node>, <node>`: the text after the keyword.
     Facade(&'a str),
+    /// `%% each <boundary>: <arrow>, <arrow>`: the text after the keyword.
+    Each(&'a str),
 }
 
 /// The rule directive a comment line is, or `None` for anything else.
@@ -49,6 +52,11 @@ pub(super) fn directive(text: &str) -> Option<Directive<'_>> {
         && (rest.is_empty() || rest.starts_with(char::is_whitespace))
     {
         return Some(Directive::Facade(rest.trim()));
+    }
+    if let Some(rest) = body.strip_prefix("each")
+        && rest.starts_with(char::is_whitespace)
+    {
+        return Some(Directive::Each(rest.trim()));
     }
     if let Some(rest) = body.strip_prefix("budget")
         && (rest.is_empty() || rest.starts_with(char::is_whitespace))
@@ -87,6 +95,14 @@ pub(super) fn render(rules: &Rules) -> Vec<String> {
         let nodes: Vec<String> = rules.facades.keys().map(ToString::to_string).collect();
         lines.push(format!("  %% facade {}", nodes.join(", ")));
     }
+    for rule in &rules.each {
+        let arrows: Vec<String> = rule.arrows.iter().map(EachArrow::text).collect();
+        lines.push(format!(
+            "  %% each {}: {}",
+            rule.boundary,
+            arrows.join(", ")
+        ));
+    }
     for (node, budget) in &rules.budgets {
         let limits: Vec<String> = [
             ("fan-out", budget.fan_out),
@@ -111,9 +127,15 @@ pub(super) struct RuleParser {
     tests_isolated: Option<u32>,
     isolated: BTreeMap<String, u32>,
     facades: BTreeMap<NodeId, u32>,
+    each: Vec<EachRule>,
 }
 
 impl RuleParser {
+    /// The `%% each` templates read so far, for the parser to expand once nodes are known.
+    pub(super) fn each_rules(&self) -> &[EachRule] {
+        &self.each
+    }
+
     /// Records `found`, which is on `line`.
     pub(super) fn record(&mut self, found: &Directive<'_>, line: u32) -> Result<(), DiagramError> {
         match *found {
@@ -124,6 +146,10 @@ impl RuleParser {
             Directive::Tests(rest) => self.tests(rest, line),
             Directive::Isolated(rest) => self.isolated(rest, line),
             Directive::Facade(rest) => self.facade(rest, line),
+            Directive::Each(rest) => {
+                self.each.push(each::parse(rest, line)?);
+                Ok(())
+            }
         }
     }
 
@@ -357,6 +383,7 @@ impl RuleParser {
             tests_isolated: self.tests_isolated,
             isolated: self.isolated,
             facades: self.facades,
+            each: self.each,
         })
     }
 }
@@ -457,7 +484,7 @@ fn check_order(
 }
 
 /// The error for a directive that names `id` as a boundary when it is not one.
-fn not_a_boundary(
+pub(super) fn not_a_boundary(
     line: u32,
     rule: &str,
     id: &str,

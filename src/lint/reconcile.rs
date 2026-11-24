@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 
 use crate::imports::FileImports;
 use crate::model::{
-    Contract, Cover, Declared, Edge, EdgeKind, LintReport, Location, OpenAccess, Ownership,
-    ResolvedImport, Symbol, Violation, ViolationKind,
+    BoundaryEdge, Contract, Cover, Declared, Edge, EdgeKind, LintReport, Location, OpenAccess,
+    Ownership, ResolvedImport, Symbol, Violation, ViolationKind,
 };
 
 use super::isolation;
@@ -302,31 +302,70 @@ fn boundary_edge_findings(
     contract: &Contract,
     crossings: &[(Edge, &ResolvedImport)],
 ) -> Vec<Violation> {
-    contract
-        .boundary_edges
-        .iter()
-        .filter_map(|declared| {
-            let mut seen = Seen {
-                realised: false,
-                allowed: false,
-                production: false,
-            };
-            for (_, import) in crossings
-                .iter()
-                .filter(|(edge, _)| declared.covers(&contract.nodes, edge))
-            {
-                seen.realised = true;
-                seen.allowed |= declared.kind.allows(import.kind, import.test_only);
-                seen.production |= !import.test_only;
+    let mut seen_by_edge: Vec<(&BoundaryEdge, Seen)> = Vec::new();
+    for declared in &contract.boundary_edges {
+        let mut seen = Seen {
+            realised: false,
+            allowed: false,
+            production: false,
+        };
+        for (_, import) in crossings
+            .iter()
+            .filter(|(edge, _)| declared.covers(&contract.nodes, edge))
+        {
+            seen.realised = true;
+            seen.allowed |= declared.kind.allows(import.kind, import.test_only);
+            seen.production |= !import.test_only;
+        }
+        // why: a template arrow is one declaration, so its expansions are judged together and once.
+        let same_arrow = |other: &BoundaryEdge| {
+            declared.template.is_some()
+                && other.line == declared.line
+                && other.template == declared.template
+        };
+        match seen_by_edge.iter_mut().find(|(first, _)| same_arrow(first)) {
+            Some((_, merged)) => {
+                merged.realised |= seen.realised;
+                merged.allowed |= seen.allowed;
+                merged.production |= seen.production;
             }
-            let (kind, message) = declared_edge_finding(
+            None => seen_by_edge.push((declared, seen)),
+        }
+    }
+    seen_by_edge
+        .into_iter()
+        .filter_map(|(declared, seen)| {
+            let (from, to) = finding_ends(declared);
+            let (kind, message) =
+                declared_edge_finding(declared.kind, (from.as_str(), to.as_str()), seen)?;
+            Some(edge_violation(
+                kind,
                 declared.kind,
-                (declared.from.as_str(), declared.to.as_str()),
-                seen,
-            )?;
-            Some(edge_violation(kind, declared.kind, message))
+                template_message(declared, message),
+            ))
         })
         .collect()
+}
+
+/// The ends of `declared` as its finding names them: the nodes of an edge written in the contract,
+/// the roles of a template arrow.
+fn finding_ends(declared: &BoundaryEdge) -> (String, String) {
+    declared.template.as_ref().map_or_else(
+        || (declared.from.to_string(), declared.to.to_string()),
+        |template| (template.from.clone(), template.to.clone()),
+    )
+}
+
+/// For an expansion, the finding is the template arrow's, over all the children: it names the
+/// `%% each` line (see "Edge templates").
+fn template_message(declared: &BoundaryEdge, message: String) -> String {
+    match &declared.template {
+        Some(template) => format!(
+            "`%% each {}` on line {}: {message}",
+            template.boundary, declared.line
+        ),
+        None => message,
+    }
 }
 
 /// A `redundant-edge` warning for every node edge that a boundary edge of a kind at least as wide

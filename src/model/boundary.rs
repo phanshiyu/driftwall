@@ -116,8 +116,24 @@ pub struct BoundaryEdge {
     pub to: Endpoint,
     /// What the arrow and its label say.
     pub kind: EdgeKind,
-    /// The line of the edge in the contract.
+    /// The line of the edge in the contract: of the `%% each` line for an expansion.
     pub line: u32,
+    /// The template arrow this edge expands, or `None` for an edge written in the contract. An
+    /// expansion has a node at both ends, see "Edge templates" in `docs/DESIGN.md`.
+    pub template: Option<Template>,
+}
+
+/// The `%% each` arrow that an expanded edge comes from.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Template {
+    /// The boundary the `%% each` line names.
+    pub boundary: String,
+    /// The role of the importing end in the arrow.
+    pub from: String,
+    /// The role of the imported end in the arrow.
+    pub to: String,
+    /// The arrow as written, `controller --> service`.
+    pub arrow: String,
 }
 
 impl BoundaryEdge {
@@ -133,7 +149,10 @@ impl BoundaryEdge {
     /// The edge as written, `features --> core`, label included.
     #[must_use]
     pub fn text(&self) -> String {
-        format!("{} {} {}", self.from, self.kind.arrow(), self.to)
+        self.template.as_ref().map_or_else(
+            || format!("{} {} {}", self.from, self.kind.arrow(), self.to),
+            |template| format!("each {}: {}", template.boundary, template.arrow),
+        )
     }
 
     /// Whether the edge covers the pair `edge`: its source is on the importing side, its target on
@@ -263,6 +282,7 @@ mod tests {
             to,
             kind,
             line,
+            template: None,
         }
     }
 

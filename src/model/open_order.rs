@@ -230,6 +230,7 @@ mod tests {
             to: Endpoint::Boundary("core".to_owned()),
             kind: EdgeKind::Planned,
             line: 9,
+            template: None,
         });
         assert_eq!(contract.arrows_between("app", "core"), 1);
         assert!(matches!(

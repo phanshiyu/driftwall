@@ -171,6 +171,8 @@ fn boundary_edge_summaries(
     contract
         .boundary_edges
         .iter()
+        // why: an expansion is listed with its template in `rules:`, not as a boundary edge.
+        .filter(|declared| declared.template.is_none())
         .map(|declared| {
             let pairs = declared.pairs(&contract.nodes);
             BoundaryEdgeSummary {

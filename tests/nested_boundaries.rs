@@ -13,9 +13,27 @@ mod support {
     pub const FEATURES: [&str; 3] = ["billing", "search", "account"];
     pub const PARTS: [&str; 4] = ["controller", "service", "view", "store"];
 
-    /// The contract: seven layers, `features` with three feature boundaries, the arrows of the
-    /// layout, then `extra` lines.
+    /// The arrows inside a feature, as a template.
+    pub const TEMPLATE: &str =
+        "  %% each features: controller --> service, controller --> view, service --> store\n";
+
+    /// The contract: seven layers, `features` with three feature boundaries, the template for the
+    /// arrows inside a feature, then `extra` lines.
     pub fn contract(extra: &str) -> String {
+        layout(TEMPLATE, extra)
+    }
+
+    /// The same layout with `self_edges`: each feature allows everything inside itself, the way
+    /// a boundary to itself does, instead of the template.
+    pub fn with_self_edges(extra: &str) -> String {
+        let mut arrows = String::new();
+        for feature in FEATURES {
+            let _ = writeln!(arrows, "  {feature} --> {feature}");
+        }
+        layout(&arrows, extra)
+    }
+
+    fn layout(inner: &str, extra: &str) -> String {
         let mut out = String::from("flowchart LR\n");
         out.push_str("  subgraph app[\"App\"]\n    app-shell\n  end\n");
         out.push_str("  subgraph features[\"Features\"]\n");
@@ -35,9 +53,7 @@ mod support {
         out.push_str(
             "  app --> features\n  features --> shared\n  features --> core\n  shared --> core\n  core --> domain\n  core --> platform\n  data --> platform\n",
         );
-        for feature in FEATURES {
-            let _ = writeln!(out, "  {feature} --> {feature}");
-        }
+        out.push_str(inner);
         out.push_str("  %% order: app > features > shared > core > domain > data > platform\n");
         out.push_str(extra);
         out
@@ -142,7 +158,7 @@ mod support {
     }
 }
 
-use support::{code, contract, json, kinds, repo, run, stderr, stdout};
+use support::{code, contract, json, kinds, repo, run, stderr, stdout, with_self_edges};
 
 const ISOLATED: &str = "  %% isolated: features\n";
 
@@ -210,9 +226,9 @@ fn the_arrow_error_names_the_arrow_line_the_children_and_the_isolated_line() {
         ),
         "{error}"
     );
-    // why: the arrow follows the `%% isolated` line, which follows the 50 lines of the layout.
-    assert!(error.contains("line 52: edge"), "{error}");
-    assert!(error.contains("`%% isolated` on line 51"), "{error}");
+    // why: the arrow follows the `%% isolated` line, which follows the 48 lines of the layout.
+    assert!(error.contains("line 50: edge"), "{error}");
+    assert!(error.contains("`%% isolated` on line 49"), "{error}");
 }
 
 #[test]
@@ -254,7 +270,7 @@ fn an_import_inside_one_feature_and_out_of_features_are_not_breaches() {
     let dir = repo(
         &contract(ISOLATED),
         &[(
-            "billing-view/more.ts",
+            "billing-service/more.ts",
             "import { v } from '../billing-store/v';\nimport { s } from '../shared-ui/v';\n",
         )],
     );
@@ -315,4 +331,27 @@ fn a_boundary_edge_from_features_covers_every_node_at_any_depth() {
     let dir = repo(&contract("  billing-view --> shared-ui\n"), &[]);
     let output = run(&dir, &["lint", "--format", "json"]);
     assert_eq!(kinds(&json(&output)), ["redundant-edge"]);
+}
+
+#[test]
+fn self_edges_still_allow_everything_inside_a_feature() {
+    let dir = repo(
+        &with_self_edges(ISOLATED),
+        &[(
+            "billing-store/back.ts",
+            "import { v } from '../billing-controller/v';\nexport const w = v;\n",
+        )],
+    );
+    let output = run(&dir, &["lint", "--format", "json"]);
+    assert_eq!(kinds(&json(&output)), Vec::<String>::new());
+    // why: the template allows only its arrows, so the same upward-inside-a-feature import is not allowed.
+    let templated = repo(
+        &contract(ISOLATED),
+        &[(
+            "billing-store/back.ts",
+            "import { v } from '../billing-controller/v';\nexport const w = v;\n",
+        )],
+    );
+    let output = run(&templated, &["lint", "--format", "json"]);
+    assert_eq!(kinds(&json(&output)), ["undeclared-edge"]);
 }

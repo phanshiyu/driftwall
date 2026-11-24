@@ -2,6 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use super::each;
 use super::error::DiagramError;
 use super::label;
 use super::rules::{self, RuleParser};
@@ -173,28 +174,7 @@ impl Parser {
         if rest.is_empty() {
             return self.declare(raw_id, None, line);
         }
-        let (planned, after_arrow) = if let Some(after) = rest.strip_prefix(DOTTED) {
-            (true, after)
-        } else if let Some(after) = rest.strip_prefix(SOLID) {
-            (false, after)
-        } else {
-            return Err(unsupported(text, line));
-        };
-        let mut after_arrow = after_arrow.trim_start();
-        let mut words = (false, false);
-        if let Some(labelled) = after_arrow.strip_prefix('|') {
-            let (label, after_label) = labelled
-                .split_once('|')
-                .ok_or_else(|| unsupported(text, line))?;
-            // why: `type` and `test` are the label words with a meaning; any other label stays display only.
-            words = label::restrictions(label, line)?;
-            after_arrow = after_label.trim_start();
-        }
-        let kind = EdgeKind::from_parts(planned, words.0, words.1);
-        let (raw_to, tail) = split_ident(after_arrow);
-        if raw_to.is_empty() || !tail.is_empty() {
-            return Err(unsupported(text, line));
-        }
+        let (kind, raw_to) = edge_tail(rest, text, line)?;
         let from = valid_id(raw_id, line)?;
         let to = valid_id(raw_to, line)?;
         self.edges.push(PendingEdge {
@@ -438,6 +418,7 @@ impl Parser {
                     to,
                     kind: pending.kind,
                     line: pending.line,
+                    template: None,
                 });
                 continue;
             };
@@ -495,6 +476,12 @@ impl Parser {
                 });
             }
         }
+        let mut boundary_edges = boundary_edges;
+        boundary_edges.extend(each::expand(
+            self.rules.each_rules(),
+            &self.nodes,
+            &self.boundaries,
+        )?);
         let rules = self.rules.finish(
             &self.nodes,
             &self.boundaries,
@@ -560,13 +547,45 @@ fn unsupported(text: &str, line: u32) -> DiagramError {
     }
 }
 
-fn valid_id(raw: &str, line: u32) -> Result<NodeId, DiagramError> {
+pub(super) fn valid_id(raw: &str, line: u32) -> Result<NodeId, DiagramError> {
     NodeId::new(raw).map_err(|source| DiagramError::InvalidId { line, source })
+}
+
+/// Reads what follows the source of an edge: the arrow, its optional label and the target id, which
+/// must end the text. Shared by edges and the arrows of `%% each`, so there is one arrow syntax.
+pub(super) fn edge_tail<'a>(
+    rest: &'a str,
+    text: &str,
+    line: u32,
+) -> Result<(EdgeKind, &'a str), DiagramError> {
+    let (planned, after_arrow) = if let Some(after) = rest.strip_prefix(DOTTED) {
+        (true, after)
+    } else if let Some(after) = rest.strip_prefix(SOLID) {
+        (false, after)
+    } else {
+        return Err(unsupported(text, line));
+    };
+    let mut after_arrow = after_arrow.trim_start();
+    let mut words = (false, false);
+    if let Some(labelled) = after_arrow.strip_prefix('|') {
+        let (label, after_label) = labelled
+            .split_once('|')
+            .ok_or_else(|| unsupported(text, line))?;
+        // why: `type` and `test` are the label words with a meaning; any other label stays display only.
+        words = label::restrictions(label, line)?;
+        after_arrow = after_label.trim_start();
+    }
+    let kind = EdgeKind::from_parts(planned, words.0, words.1);
+    let (raw_to, tail) = split_ident(after_arrow);
+    if raw_to.is_empty() || !tail.is_empty() {
+        return Err(unsupported(text, line));
+    }
+    Ok((kind, raw_to))
 }
 
 /// Splits a leading identifier token off `s`. The token ends at whitespace, `[`, `|` or the start
 /// of an arrow, so `a-->b` lexes as `a`, `-->`, `b` even though `-` is a legal id character.
-fn split_ident(s: &str) -> (&str, &str) {
+pub(super) fn split_ident(s: &str) -> (&str, &str) {
     let end = s
         .char_indices()
         .find(|&(i, c)| {

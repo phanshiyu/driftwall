@@ -22,6 +22,8 @@ mod alias_tests;
 #[cfg(test)]
 mod boundary_edge_tests;
 #[cfg(test)]
+mod each_tests;
+#[cfg(test)]
 mod excluded_tests;
 #[cfg(test)]
 mod fixtures;

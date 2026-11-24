@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use serde::Serialize;
 
-use super::{NodeId, NodeInfo, children};
+use super::{EdgeKind, NodeId, NodeInfo, children};
 
 /// `%% order: a > b > c`: boundaries from the top (entry points) to the bottom (foundations).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
@@ -72,6 +72,51 @@ pub struct RulesSummary {
     /// The nodes of the `%% facade` lines, sorted. Empty, and omitted from JSON, without one.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub facades: Vec<String>,
+    /// The `%% each` edge templates in file order. Empty, and omitted from JSON, without one.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub each: Vec<EachSummary>,
+}
+
+/// An `%% each` template as the overview presents it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct EachSummary {
+    /// The boundary whose children the template applies to.
+    pub boundary: String,
+    /// Line of the directive.
+    pub line: u32,
+    /// The arrows as written, `controller --> service`.
+    pub arrows: Vec<String>,
+}
+
+/// One arrow of an `%% each` template: two roles and the kind of edge between them.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct EachArrow {
+    /// The role of the importing node.
+    pub from: String,
+    /// The role of the imported node.
+    pub to: String,
+    /// What the arrow and its label say.
+    pub kind: EdgeKind,
+}
+
+impl EachArrow {
+    /// The arrow as written, `controller -->|type| service`.
+    #[must_use]
+    pub fn text(&self) -> String {
+        format!("{} {} {}", self.from, self.kind.arrow(), self.to)
+    }
+}
+
+/// `%% each <boundary>: <arrow>, ...`: edges declared for every child boundary of `boundary`, see
+/// "Edge templates" in `docs/DESIGN.md`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct EachRule {
+    /// Line of the directive.
+    pub line: u32,
+    /// The boundary whose direct child boundaries the arrows apply to.
+    pub boundary: String,
+    /// The arrows, in the order written.
+    pub arrows: Vec<EachArrow>,
 }
 
 /// An `%% isolated` boundary with the children that may not use each other.
@@ -93,6 +138,7 @@ impl RulesSummary {
             && !self.tests_isolated
             && self.isolated.is_empty()
             && self.facades.is_empty()
+            && self.each.is_empty()
     }
 }
 
@@ -124,6 +170,15 @@ impl Rules {
                 })
                 .collect(),
             facades: self.facades.keys().map(ToString::to_string).collect(),
+            each: self
+                .each
+                .iter()
+                .map(|rule| EachSummary {
+                    boundary: rule.boundary.clone(),
+                    line: rule.line,
+                    arrows: rule.arrows.iter().map(EachArrow::text).collect(),
+                })
+                .collect(),
         }
     }
 
@@ -222,6 +277,8 @@ pub struct Rules {
     pub isolated: BTreeMap<String, u32>,
     /// The nodes of the `%% facade` lines with the line of each, see "Re-exports".
     pub facades: BTreeMap<NodeId, u32>,
+    /// The `%% each` edge templates in file order, see "Edge templates".
+    pub each: Vec<EachRule>,
 }
 
 impl Rules {
@@ -235,5 +292,6 @@ impl Rules {
             && self.tests_isolated.is_none()
             && self.isolated.is_empty()
             && self.facades.is_empty()
+            && self.each.is_empty()
     }
 }

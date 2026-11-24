@@ -35,6 +35,8 @@ fn diff(old: &Contract, new: &Contract) -> ContractDiff {
         contract
             .boundary_edges
             .iter()
+            // why: templates are rules, which `diff` does not model, and so are their expansions.
+            .filter(|declared| declared.template.is_none())
             .map(|declared| (declared.ends(), declared.kind))
             .collect()
     };

@@ -48,14 +48,19 @@ pub fn render(contract: &Contract) -> String {
         );
     }
 
-    if !contract.edges.is_empty() || !contract.boundary_edges.is_empty() {
+    // why: an expansion of `%% each` is written back as its template, never as an edge.
+    let mut boundary_edges: Vec<_> = contract
+        .boundary_edges
+        .iter()
+        .filter(|declared| declared.template.is_none())
+        .collect();
+    if !contract.edges.is_empty() || !boundary_edges.is_empty() {
         lines.push(String::new());
         for (edge, kind) in &contract.edges {
             let arrow = kind.arrow();
             lines.push(format!("  {} {arrow} {}", edge.from, edge.to));
         }
         // why: sorted by ends, not by line, so equal contracts render byte-identically.
-        let mut boundary_edges: Vec<_> = contract.boundary_edges.iter().collect();
         boundary_edges.sort_by_key(|declared| declared.ends());
         lines.extend(
             boundary_edges

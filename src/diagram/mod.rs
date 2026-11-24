@@ -4,6 +4,7 @@
 //! outside it is a hard [`DiagramError`] carrying a line number.
 
 mod cycles;
+mod each;
 mod error;
 mod label;
 mod parse;
@@ -12,6 +13,8 @@ mod rules;
 
 #[cfg(test)]
 mod boundary_tests;
+#[cfg(test)]
+mod each_tests;
 #[cfg(test)]
 mod facade_tests;
 #[cfg(test)]

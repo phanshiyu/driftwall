@@ -18,13 +18,14 @@ mod package_rule;
 mod rules;
 
 pub use boundary::{
-    BoundaryEdge, Cover, Declared, EdgeEnds, Endpoint, child_of, children, children_apart,
+    BoundaryEdge, Cover, Declared, EdgeEnds, Endpoint, Template, child_of, children, children_apart,
 };
 pub use map::{GlobError, MapGlob, MapRule, MapSite, MapTarget, Specificity};
 pub use open_order::OpenAccess;
 pub use package_rule::{PackagePattern, PackageRule, PackageRuleKind};
 pub use rules::{
-    Budget, IsolatedSummary, Layer, LayerOrder, Measure, NodeBudget, Rules, RulesSummary,
+    Budget, EachArrow, EachRule, EachSummary, IsolatedSummary, Layer, LayerOrder, Measure,
+    NodeBudget, Rules, RulesSummary,
 };
 
 pub use blind::{
