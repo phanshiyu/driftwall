@@ -125,10 +125,28 @@ fn header_message(first: &Violation, count: usize) -> String {
             first.message.split_at(at)
         });
     let general = generalise(first, body, &places).unwrap_or_else(|| {
-        // why: a message the generaliser does not know still has to read as a group.
+        // why: a miss for these kinds means their message was reworded; debug builds fail loudly.
+        debug_assert!(
+            !has_rewrite(first.kind),
+            "the group header of `{}` no longer finds its anchor in: {body}",
+            first.kind.name()
+        );
         format!("{body} ({})", plural(count, "place"))
     });
     format!("{general}{note}")
+}
+
+/// Whether [`generalise`] has a rewrite for `kind`, so a message it cannot rewrite is a bug.
+const fn has_rewrite(kind: ViolationKind) -> bool {
+    matches!(
+        kind,
+        ViolationKind::UndeclaredEdge
+            | ViolationKind::PrivateSymbol
+            | ViolationKind::UpwardEdge
+            | ViolationKind::IsolationBreach
+            | ViolationKind::ProductionImportsTest
+            | ViolationKind::ForbiddenPackage
+    )
 }
 
 /// `body` with the target of `first` rewritten to `places`, per kind; `None` when the kind has no

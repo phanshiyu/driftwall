@@ -183,3 +183,119 @@ fn a_baseline_that_allows_less_names_the_counts_once() {
         "{text}"
     );
 }
+
+/// Lints a repository of `files` and returns the line of the text that is the header of the group
+/// of `kind`, after checking the kind groups once and did not fall back to the generic header.
+// why: cfg(test) so clippy's allow-*-in-tests covers it, as for the support module.
+#[cfg(test)]
+fn header(files: &[(&str, &str)], kind: &str) -> String {
+    let dir = TempDir::new().unwrap();
+    write(dir.path(), files);
+    let text = stdout(&lint(dir.path(), &[]));
+    let line = text
+        .lines()
+        .find(|line| line.contains(&format!("[{kind}]")))
+        .unwrap_or_else(|| panic!("no {kind} in:\n{text}"))
+        .to_owned();
+    assert!(
+        !line.contains("(2 places)"),
+        "fell back to the generic header: {line}"
+    );
+    assert_eq!(text.matches(&format!("[{kind}]")).count(), 1, "{text}");
+    assert!(text.contains("  at "), "{text}");
+    line
+}
+
+const IMPORT_SEARCH: &str = "import { find } from '../search/lib';\nexport const x = find;\n";
+
+#[test]
+fn private_symbol_header_is_specific() {
+    let contract = "flowchart LR\n  billing[\"billing\"]\n  search[\"search\"]\n  billing --> search\n  %% exports search: other\n";
+    let files = [
+        ("architecture.mmd", contract),
+        ("billing/.arch", "node: billing\n"),
+        ("search/.arch", "node: search\n"),
+        ("search/lib.ts", "export const find = 1;\n"),
+        ("billing/a.ts", IMPORT_SEARCH),
+        ("billing/b.ts", IMPORT_SEARCH),
+    ];
+    assert_eq!(
+        header(&files, "private-symbol"),
+        "billing/a.ts:1: error[private-symbol]: `billing` imports `find` from `search` in 2 places but architecture.mmd lets `search` export only: other"
+    );
+}
+
+#[test]
+fn forbidden_package_header_is_specific() {
+    let contract = "flowchart LR\n  billing[\"billing\"]\n  %% forbid-packages billing: lodash\n";
+    let files = [
+        ("architecture.mmd", contract),
+        ("billing/.arch", "node: billing\n"),
+        (
+            "billing/a.ts",
+            "import _ from 'lodash';\nexport const a = _;\n",
+        ),
+        (
+            "billing/b.ts",
+            "import _ from 'lodash';\nexport const b = _;\n",
+        ),
+    ];
+    assert_eq!(
+        header(&files, "forbidden-package"),
+        "billing/a.ts:1: error[forbidden-package]: `billing` imports `lodash` in 2 places (third-party) but architecture.mmd:3 `%% forbid-packages billing` forbids it"
+    );
+}
+
+#[test]
+fn production_imports_test_header_is_specific() {
+    let files = [
+        (
+            "architecture.mmd",
+            "flowchart LR\n  billing[\"billing\"]\n  %% tests: isolated\n",
+        ),
+        ("billing/.arch", "node: billing\n"),
+        ("billing/helper.test.ts", "export const h = 1;\n"),
+        (
+            "billing/a.ts",
+            "import { h } from './helper.test';\nimport { h as g } from './helper.test';\nexport const a = [h, g];\n",
+        ),
+    ];
+    assert_eq!(
+        header(&files, "production-imports-test"),
+        "billing/a.ts:1: error[production-imports-test]: production file `billing/a.ts` imports test file `billing/helper.test.ts` in 2 places, but `%% tests: isolated` on line 3 keeps test code out of production"
+    );
+}
+
+#[test]
+fn upward_edge_header_is_specific() {
+    let contract = "flowchart LR\n  subgraph features[\"Features\"]\n    billing[\"billing\"]\n  end\n  subgraph core[\"Core\"]\n    search[\"search\"]\n  end\n  %% order: core > features\n";
+    let files = [
+        ("architecture.mmd", contract),
+        ("billing/.arch", "node: billing\n"),
+        ("search/.arch", "node: search\n"),
+        ("search/lib.ts", "export const find = 1;\n"),
+        ("billing/a.ts", IMPORT_SEARCH),
+        ("billing/b.ts", IMPORT_SEARCH),
+    ];
+    assert_eq!(
+        header(&files, "upward-edge"),
+        "billing/a.ts:1: error[upward-edge]: `billing` (boundary `features`) imports `search` (boundary `core`) in 2 places but the `%% order` on line 8 puts `core` above `features`"
+    );
+}
+
+#[test]
+fn isolation_breach_header_is_specific() {
+    let contract = "flowchart LR\n  subgraph features[\"Features\"]\n    billing[\"billing\"]\n    search[\"search\"]\n  end\n  %% isolated: features\n";
+    let files = [
+        ("architecture.mmd", contract),
+        ("billing/.arch", "node: billing\n"),
+        ("search/.arch", "node: search\n"),
+        ("search/lib.ts", "export const find = 1;\n"),
+        ("billing/a.ts", IMPORT_SEARCH),
+        ("billing/b.ts", IMPORT_SEARCH),
+    ];
+    assert_eq!(
+        header(&files, "isolation-breach"),
+        "billing/a.ts:1: error[isolation-breach]: boundary `features` is isolated (`%% isolated` on line 6): `billing` (in `billing`) imports `search` (in `search`) in 2 places, and `billing` and `search` may not depend on each other"
+    );
+}
