@@ -223,11 +223,13 @@ fn another_site_of_a_baselined_edge_reports_every_site() {
     let output = lint(dir.path(), &["--baseline", BASELINE]);
     assert_eq!(code(&output), 1);
     let text = stdout(&output);
+    // The text groups the two sites, so the note shows once; JSON keeps one result per site.
     assert_eq!(
         text.matches("the baseline allows 1, found 2").count(),
-        2,
+        1,
         "{text}"
     );
+    assert_eq!(text.matches("  at billing/").count(), 2, "{text}");
     assert!(text.contains("2 errors"), "{text}");
 }
 

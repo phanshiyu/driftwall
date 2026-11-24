@@ -5,7 +5,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::{Serialize, Serializer};
 use thiserror::Error;
@@ -784,9 +784,36 @@ pub struct Violation {
     /// Empty for a finding no baseline can hold. Never serialized.
     #[serde(skip)]
     pub key: String,
+    /// What the text output lists for the finding when it groups sites that share a key. Never
+    /// serialized: JSON and SARIF stay per site.
+    #[serde(skip)]
+    pub site: SiteDetail,
+}
+
+/// The parts of an import-site finding that differ between the sites of one key.
+#[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord)]
+pub struct SiteDetail {
+    /// The file the import resolves to, when the finding is about an import of one.
+    pub target: Option<PathBuf>,
+    /// The symbol the import uses, for a `private-symbol` finding.
+    pub symbol: Option<String>,
 }
 
 impl Violation {
+    /// The finding with the import target it is about, for the grouped text output.
+    #[must_use]
+    pub fn targeting(mut self, target: &Path) -> Self {
+        self.site.target = Some(target.to_path_buf());
+        self
+    }
+
+    /// The finding with the symbol it is about, for the grouped text output.
+    #[must_use]
+    pub fn naming(mut self, symbol: impl Into<String>) -> Self {
+        self.site.symbol = Some(symbol.into());
+        self
+    }
+
     /// The finding with its baseline key. A finding at a test-only site gets ` (test)` appended,
     /// so test debt and production debt are separate entries.
     #[must_use]
@@ -1094,6 +1121,7 @@ mod tests {
             hint: None,
             test_only: false,
             key: String::new(),
+            site: crate::model::SiteDetail::default(),
         };
         let report = LintReport {
             violations: vec![
@@ -1374,6 +1402,7 @@ mod tests {
                 hint: None,
                 test_only: false,
                 key: String::new(),
+                site: crate::model::SiteDetail::default(),
             }],
         };
         assert!(!report.failed(false));

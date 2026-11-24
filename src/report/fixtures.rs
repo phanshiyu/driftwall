@@ -22,6 +22,7 @@ pub fn violation(
         hint: hint.map(str::to_owned),
         test_only: false,
         key: String::new(),
+        site: crate::model::SiteDetail::default(),
     }
 }
 

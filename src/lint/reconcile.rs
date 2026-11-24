@@ -435,6 +435,7 @@ fn private_symbols(
                 ),
             )
             .keyed(format!("{} --> {} {symbol}", edge.from, edge.to))
+            .naming(symbol.to_string())
         })
         .collect()
 }

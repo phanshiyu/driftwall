@@ -4,7 +4,8 @@ use std::fmt::Write as _;
 
 use crate::model::{BaselineOutcome, LintReport};
 
-use super::common::{counts, kind_str, plural, severity_str, slash_path};
+use super::common::{counts, plural};
+use super::group::{Printed, write_blocks};
 
 /// Renders `report` as uncoloured text, one block per violation plus a summary line.
 #[must_use]
@@ -21,29 +22,13 @@ pub fn render_text_baselined(report: &LintReport, baseline: &BaselineOutcome) ->
 
 fn text(report: &LintReport, baselined: Option<usize>) -> String {
     let mut out = String::new();
-    for v in &report.violations {
-        // why: fmt::Write into a String is infallible, so the discarded Result carries no error.
-        if let Some(at) = &v.at {
-            let _ = write!(out, "{}:{}: ", slash_path(&at.file), at.line);
-        }
-        let mark = if v.test_only { " (test code)" } else { "" };
-        let _ = writeln!(
-            out,
-            "{}[{}]{mark}: {}",
-            severity_str(v.severity),
-            kind_str(v.kind),
-            v.message
-        );
-        if let Some(hint) = &v.hint {
-            let _ = writeln!(out, "  hint: {hint}");
-        }
-    }
-    out.push_str(&summary(report, baselined));
+    let printed = write_blocks(&mut out, report);
+    out.push_str(&summary(report, printed, baselined));
     out.push('\n');
     out
 }
 
-fn summary(report: &LintReport, baselined: Option<usize>) -> String {
+fn summary(report: &LintReport, printed: Printed, baselined: Option<usize>) -> String {
     let mut line = if report.violations.is_empty() {
         "driftwall: clean".to_owned()
     } else {
@@ -54,8 +39,11 @@ fn summary(report: &LintReport, baselined: Option<usize>) -> String {
             plural(warnings, "warning")
         )
     };
+    // why: fmt::Write into a String is infallible, so the discarded Result carries no error.
+    if printed.grouped {
+        let _ = write!(line, " ({})", plural(printed.blocks, "group"));
+    }
     if let Some(count) = baselined {
-        // why: fmt::Write into a String is infallible, so the discarded Result carries no error.
         let _ = write!(line, ", {count} baselined");
     }
     line

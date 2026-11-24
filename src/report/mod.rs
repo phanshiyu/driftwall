@@ -7,6 +7,7 @@ mod blind;
 mod common;
 mod diff;
 mod error;
+mod group;
 mod json;
 mod overview;
 mod sarif;
@@ -14,6 +15,8 @@ mod text;
 
 #[cfg(test)]
 mod fixtures;
+#[cfg(test)]
+mod group_tests;
 
 pub use blind::render_blind_note;
 pub use diff::{

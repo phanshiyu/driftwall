@@ -16,8 +16,26 @@ struct Document<'a> {
     summary: Summary,
     #[serde(skip_serializing_if = "Option::is_none")]
     baseline: Option<BaselineDoc>,
-    violations: &'a [Violation],
+    violations: Vec<Site<'a>>,
     blind_spots: &'a BlindSummary,
+}
+
+/// A finding as JSON has it: the model's fields, then `key` (`<kind> <key>`) for a finding a
+/// baseline can hold, so a consumer can group sites the way the text output does.
+#[derive(Serialize)]
+struct Site<'a> {
+    #[serde(flatten)]
+    violation: &'a Violation,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    key: Option<String>,
+}
+
+impl<'a> Site<'a> {
+    fn new(violation: &'a Violation) -> Self {
+        let key = (!violation.key.is_empty())
+            .then(|| format!("{} {}", violation.kind.name(), violation.key));
+        Self { violation, key }
+    }
 }
 
 /// The `baseline` object: the file, how many findings it suppressed and how many entries are stale.
@@ -71,7 +89,7 @@ fn json(
             suppressed: outcome.suppressed.len(),
             stale: outcome.stale,
         }),
-        violations: &report.violations,
+        violations: report.violations.iter().map(Site::new).collect(),
         blind_spots,
     };
     let mut out = serde_json::to_string_pretty(&document)?;
@@ -95,6 +113,18 @@ mod tests {
         assert_eq!(value["version"], json!(1));
         assert_eq!(value["summary"], json!({ "errors": 2, "warnings": 2 }));
         assert_eq!(value["violations"].as_array().unwrap().len(), 4);
+    }
+
+    #[test]
+    fn a_keyed_finding_carries_kind_and_key_and_a_keyless_one_does_not() {
+        let mut keyed = mixed();
+        keyed.violations[1].key = "lint --> report".to_owned();
+        let value = parse(&keyed);
+        assert_eq!(
+            value["violations"][1]["key"],
+            json!("undeclared-edge lint --> report")
+        );
+        assert!(value["violations"][0].get("key").is_none());
     }
 
     #[test]

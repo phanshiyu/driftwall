@@ -376,6 +376,7 @@ mod tests {
                     hint: None,
                     test_only: false,
                     key: String::new(),
+                    site: crate::model::SiteDetail::default(),
                 })
                 .collect(),
         }

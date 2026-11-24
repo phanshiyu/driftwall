@@ -45,6 +45,7 @@ pub(super) fn findings(
                 path_key(&import.at.file),
                 path_key(&import.target)
             ))
+            .targeting(&import.target)
         })
         .collect()
 }

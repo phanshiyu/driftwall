@@ -366,6 +366,7 @@ fn stale_entry(slot: &(String, String), entry: Entry, seen: usize, file: &Path) 
         )),
         test_only: false,
         key: String::new(),
+        site: crate::model::SiteDetail::default(),
     }
 }
 
@@ -382,6 +383,7 @@ mod tests {
             hint: None,
             test_only: false,
             key: key.to_owned(),
+            site: crate::model::SiteDetail::default(),
         }
     }
 

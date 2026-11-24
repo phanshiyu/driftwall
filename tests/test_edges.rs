@@ -83,7 +83,11 @@ fn lint_allows_the_test_site_and_flags_the_production_one() {
     let lint = run("lint", &dir, &["--format", "json"]);
     assert_eq!(lint.status.code(), Some(1), "{lint:?}");
     let out = text(&lint);
-    assert_eq!(out.matches("undeclared-edge").count(), 1, "{out}");
+    assert_eq!(
+        out.matches("\"kind\": \"undeclared-edge\"").count(),
+        1,
+        "{out}"
+    );
     assert!(out.contains("c/w.ts"), "{out}");
     assert!(!out.contains("c/z.test.ts"), "{out}");
 }

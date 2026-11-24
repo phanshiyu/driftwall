@@ -103,6 +103,7 @@ pub(super) fn violation(kind: ViolationKind, at: Option<Location>, message: Stri
         hint: Some(hint(kind).to_owned()),
         test_only: false,
         key: String::new(),
+        site: crate::model::SiteDetail::default(),
     }
 }
 
@@ -114,6 +115,6 @@ pub(super) fn site_violation(
 ) -> Violation {
     Violation {
         test_only: import.test_only,
-        ..violation(kind, Some(import.at.clone()), message)
+        ..violation(kind, Some(import.at.clone()), message).targeting(&import.target)
     }
 }

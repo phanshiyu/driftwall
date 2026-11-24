@@ -76,6 +76,7 @@ mod tests {
                     hint: None,
                     test_only: false,
                     key: String::new(),
+                    site: driftwall::model::SiteDetail::default(),
                 })
                 .collect(),
         }
