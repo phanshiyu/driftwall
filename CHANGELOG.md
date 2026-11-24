@@ -17,6 +17,13 @@
   the file shrink. Suppressed findings are counted in the text summary, in a JSON `baseline` object,
   and emitted in SARIF with `suppressions`. `driftwall diff --base REF --baseline FILE` reports
   debt added, which `--exit-code` fails on. See "Debt baseline" in `docs/DESIGN.md`.
+- Grouped findings: the `lint` text output prints findings that share a key (the debt baseline's
+  `<kind> <key>`) once, as a header with `in N places`, one `at file:line (target)` line per site and
+  the hint once, instead of N near-identical errors. A lone finding prints as before, test-only sites
+  stay a group of their own, and the baseline's "allows N, found M" shows once. The summary still
+  counts findings and gains ` (K groups)` when something grouped. JSON and SARIF stay per site;
+  JSON violations gain `"key": "<kind> <key>"` so a consumer can group the same way. See "Grouped
+  findings" in `docs/DESIGN.md`.
 
 ## 0.1.1 - 2026-11-25
 

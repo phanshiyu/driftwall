@@ -2189,7 +2189,7 @@ a name is added to an existing import.
   and they decide neither the exit code nor `--strict`.
 - A key with more findings than recorded is reported in full, every finding of it, with
   `; the baseline allows <N>, found <M>` appended to the message: the tool cannot tell which site is
-  new, and naming all of them is honest. A key the file lacks is reported as it is, with no suffix.
+  new, and naming all of them is honest. In the text output the suffix is shown once per group, see "Grouped findings". A key the file lacks is reported as it is, with no suffix.
 - The text summary gains `, K baselined` (`driftwall: clean, 9 baselined`,
   `driftwall: 1 error, 0 warnings, 9 baselined`); without `--baseline` it is unchanged.
 - JSON omits suppressed findings from `violations` and has a top-level `baseline` object
@@ -2551,7 +2551,7 @@ driftwall diff --base <REF> [PATH] [--contract FILE] [--format text|json] [--exi
 ```
 
 `--format json` is the agent interface. Every violation carries `kind`, `severity`, `at`
-(`file`, `line`), `message`, `hint`.
+(`file`, `line`), `message`, `hint`. A violation with a baseline key also carries `key`, `<kind> <key>`, see "Grouped findings".
 
 A finding at an import site written in test code (`test_only`, see "Import kind") says so: `undeclared-edge`,
 `private-symbol` and `upward-edge` carry the mark; no other kind does. The text puts `(test code)` after the kind, `src/a.test.ts:3: error[undeclared-edge]
@@ -2559,6 +2559,50 @@ A finding at an import site written in test code (`test_only`, see "Import kind"
 the key being absent on any other finding, so existing consumers see no change. A SARIF result has
 `"properties": {"testOnly": true}`, also only then. Whether a test site is allowed is decided by the edge
 kinds as before; the mark only tells the reader that the site is test code.
+
+### Grouped findings (text output)
+
+One bad edge used at twelve import sites is one problem, so the `lint` text output groups findings
+that share a key. JSON and SARIF do not: they stay one result per site, the stable interface for
+agents and for code scanning, which needs a result per line.
+
+- **The grouping key** is the kind plus `Violation.key` of "Debt baseline" ("Keys"), so a test-only
+  site (key ending ` (test)`) is its own group. A finding with no key never groups, and neither does
+  a finding without a location. A group of one prints exactly as before, byte for byte.
+- **A group of N > 1** prints a header, one line per site, and the hint once:
+
+  ```
+  src/billing/a.rs:3: error[undeclared-edge]: `billing` imports `search` in 3 places but architecture.mmd declares no edge billing --> search
+    at src/billing/a.rs:3 (src/search/mod.rs)
+    at src/billing/b.rs:8 (src/search/mod.rs)
+    at src/billing/c.rs:1 (src/search/index.rs)
+    hint: remove the import, or ask the user to approve adding the edge to the contract
+  ```
+
+  The header starts with the first site's `file:line:` so editors still jump. The site lines are
+  sorted by file, then line, and say `(<target file>)`, plus `, <symbol>` for a `private-symbol`
+  site. A site whose finding has no target (a package use, an unresolved import) has no
+  parenthetical. The `(test code)` mark of "Import kind" stays after the kind in the header: every
+  site of a group shares it.
+- **The header message** is the first site's message with its site-specific part, the target file,
+  replaced by `in N places`: `` `a` imports `b` (src/b/x.rs) but ... `` becomes
+  `` `a` imports `b` in N places but ... ``. Where the target sits elsewhere the sentence is kept
+  whole: `upward-edge` and `isolation-breach` write `(boundary `u`) in N places`,
+  `production-imports-test` writes `` imports test file `t` in N places ``, and `forbidden-package`
+  (which has no target) writes `` imports `pkg` in N places ``. A kind or message the generaliser
+  does not recognise ends in ` (N places)` instead, so a group always reads as a group. Kinds that
+  are one per key (`stale-edge`, `unmapped-file`, ...) never have two members, so never group.
+- **The baseline suffix** `; the baseline allows <N>, found <M>` appears once, at the end of the
+  header, not on every site.
+- **Order:** a group is printed where its first site would have been, in the order findings have
+  today (kind, then location); the sites inside it are sorted by file and line.
+- **The summary line** still counts findings, not groups. When at least one group has more than one
+  site it gains ` (K groups)` after the warning count and before `, N baselined`: `driftwall: 12
+  errors, 0 warnings (3 groups)`. K counts the printed blocks, a single finding being a group of
+  one. Without grouping the line is unchanged.
+- **JSON** violations gain `"key": "<kind> <key>"`, the grouping key, so a consumer can group the
+  same way; it is absent for a finding with no key (`stale-baseline`). It is additive: nothing else
+  in the JSON or SARIF changes.
 
 `where <FILE>` says what a path is and who owns it. The path must exist (inside `--root`, default
 `.`): a missing one is a tool error, exit `2`, `no such file: <path>`. `--contract` is accepted like
