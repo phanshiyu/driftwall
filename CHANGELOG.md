@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 - 2026-11-25
 
 - `%% deny <from>: <to>[, <to>...]` takes a pair out of an open chain. In `%% order open`, every
   downward pair of layers is allowed and an arrow narrows a pair; there was no way to say that
