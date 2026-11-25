@@ -357,6 +357,24 @@ flowchart LR
   %% no-cycles: boundaries
   %% tests: isolated
   %% facade imports
+  %% budget cli: fan-out 8, files 15, lines 1900
+  %% budget code: files 8, lines 1100, interface 26
+  %% budget contract: files 8, lines 2300, interface 32
+  %% budget diagram: fan-out 2, files 24, lines 9500, interface 6
+  %% budget imports: fan-out 7, files 30, lines 5800, interface 6
+  %% budget init: fan-out 6, files 23, lines 5700, interface 5
+  %% budget lint: fan-out 6, files 30, lines 7400, interface 7
+  %% budget markup: lines 700, interface 3
+  %% budget ownership: fan-out 3, files 18, lines 5800, interface 11
+  %% budget python: fan-out 2, files 17, lines 3800, interface 7
+  %% budget report: fan-out 3, files 17, lines 5300, interface 19
+  %% budget results: fan-out 2, files 14, lines 3000, interface 40
+  %% budget rust: fan-out 2, files 24, lines 4200, interface 11
+  %% budget shell: fan-out 2, files 8, lines 1100, interface 4
+  %% budget swift: fan-out 2, files 10, lines 1400, interface 8
+  %% budget syntax: files 12, lines 900, interface 29
+  %% budget views: fan-out 6, files 13, lines 2300, interface 11
+  %% budget web: fan-out 3, files 37, lines 8200, interface 18
 
   %% packages cli: anyhow, clap, tempfile
   %% packages diagram: thiserror
