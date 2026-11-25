@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.0 - 2026-11-26
 
 - driftwall no longer walks into a directory below the root that holds its own `.git`: a nested
   repository, a submodule, or a git worktree such as an agent's checkout under `.claude/worktrees/`.
