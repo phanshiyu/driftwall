@@ -99,11 +99,11 @@ pub enum Owner {
         /// What decided it.
         rule: Rule,
     },
-    /// A rule covers the file, but it is a folded entry file: it declares nothing and no other
-    /// module of its `node: *` directory has its name, so it has no node.
+    /// A folded entry file: it declares nothing, so it has no node. Either a rule covers it and no
+    /// other module of its `node: *` directory has its name, or no rule covers it at all.
     Folded {
-        /// What covered it.
-        rule: Rule,
+        /// What covered it, `None` when no rule does.
+        rule: Option<Rule>,
     },
 }
 
@@ -121,7 +121,8 @@ impl Owner {
     #[must_use]
     pub const fn rule(&self) -> Option<&Rule> {
         match self {
-            Self::Owned { rule, .. } | Self::Folded { rule } => Some(rule),
+            Self::Owned { rule, .. } => Some(rule),
+            Self::Folded { rule } => rule.as_ref(),
             Self::Unowned => None,
         }
     }
@@ -213,7 +214,7 @@ mod tests {
 
     #[test]
     fn a_folded_file_keeps_its_rule_but_has_no_node_and_is_not_owned() {
-        let owner = Owner::Folded { rule: tag() };
+        let owner = Owner::Folded { rule: Some(tag()) };
         assert!(owner.is_folded());
         assert_eq!(owner.node(), None);
         assert_eq!(owner.arch_file(), Some(Path::new("a/.arch")));

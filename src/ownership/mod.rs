@@ -30,7 +30,7 @@ use ignore::gitignore::{Gitignore, GitignoreBuilder};
 pub use census::{SHEBANG, line_count};
 pub use error::{ArchProblem, OwnershipError};
 pub use exclude::{HEADER_LINES, announces_generated, exclusion_of};
-pub use folded::{declares_nothing, is_entry_file, trivial_files};
+pub use folded::{declares_nothing, is_entry_file, is_foldable_in, trivial_files};
 pub use language::{language_in, language_of};
 pub use lookup::owner_in;
 pub use mapping::MapContext;
@@ -182,7 +182,7 @@ fn scan(root: &Path) -> Result<Ownership, OwnershipError> {
         ignored,
         ..Ownership::default()
     };
-    let derived = classify(&mut ownership, sources, assets, |source| {
+    let derived = classify(&mut ownership, sources, assets, &trivial, |source| {
         nearest_decision(&decisions, source)
             .map(|(dir, decision)| decision.verdict(dir, source, trivial.contains(source)))
     })?;
@@ -233,18 +233,24 @@ impl Verdict {
 }
 
 /// Sorts every walked file of the scan into `ownership`: owned, unmapped or folded sources, and
-/// the owners of assets and excluded files, by the verdicts of `decide`. Returns the derived tags
-/// as (rule location, node name).
+/// the owners of assets and excluded files, by the verdicts of `decide`. A source file no rule
+/// covers is folded when it is one of `trivial` (an entry file that declares nothing), else
+/// unmapped. Returns the derived tags as (rule location, node name).
 fn classify(
     ownership: &mut Ownership,
     sources: Vec<PathBuf>,
     assets: Vec<PathBuf>,
+    trivial: &BTreeSet<PathBuf>,
     decide: impl Fn(&Path) -> Option<Verdict>,
 ) -> Result<BTreeSet<(Location, String)>, OwnershipError> {
     let mut derived: BTreeSet<(Location, String)> = BTreeSet::new();
     for source in sources {
         let Some(verdict) = decide(&source) else {
-            ownership.unmapped.insert(source);
+            if trivial.contains(&source) {
+                ownership.folded.insert(source);
+            } else {
+                ownership.unmapped.insert(source);
+            }
             continue;
         };
         let (at, is_derived, site) = (verdict.at, verdict.derived, verdict.site);
@@ -378,7 +384,7 @@ pub fn explain(root: &Path, file: &Path) -> Result<Owner, OwnershipError> {
                     };
                     return Ok(match node {
                         Some(node) => Owner::Owned { node, rule },
-                        None => Owner::Folded { rule },
+                        None => Owner::Folded { rule: Some(rule) },
                     });
                 }
             }
@@ -390,6 +396,10 @@ pub fn explain(root: &Path, file: &Path) -> Result<Owner, OwnershipError> {
                 });
             }
         }
+    }
+    // why: a foldable entry file that declares nothing and that no rule covers is folded, with no rule.
+    if is_foldable_in(root, &relative) {
+        return Ok(Owner::Folded { rule: None });
     }
     Ok(Owner::Unowned)
 }
@@ -936,6 +946,57 @@ mod tests {
                 .map(NodeId::as_str),
             Some("lib")
         );
+    }
+
+    #[test]
+    fn an_uncovered_entry_file_that_declares_nothing_is_folded_and_explained_without_a_rule() {
+        let dir = tree(&[
+            ("a/.arch", "node: alpha\n"),
+            ("a/x.rs", "pub fn x() {}\n"),
+            ("b/mod.rs", "mod c;\n"),
+            ("b/lib.rs", "pub mod c;\n"),
+            ("b/main.rs", "pub use c::C;\n"),
+            ("pkg/__init__.py", ""),
+            ("pkg/mod.py", ""),
+            ("a/mod.rs", "mod x;\n"),
+        ]);
+        let found = scan(dir.path()).unwrap();
+        let folded: Vec<&str> = found.folded.iter().map(|p| p.to_str().unwrap()).collect();
+        assert_eq!(folded, ["b/lib.rs", "b/mod.rs", "pkg/__init__.py"]);
+        let unmapped: Vec<&str> = found.unmapped.iter().map(|p| p.to_str().unwrap()).collect();
+        assert_eq!(unmapped, ["b/main.rs", "pkg/mod.py"]);
+        let covered = found.owners.get(Path::new("a/mod.rs")).map(NodeId::as_str);
+        assert_eq!(covered, Some("alpha"));
+        let answer = explain(dir.path(), Path::new("b/mod.rs")).unwrap();
+        assert_eq!(answer, Owner::Folded { rule: None });
+        assert!(answer.rule().is_none() && answer.node().is_none());
+        assert_eq!(
+            explain(dir.path(), Path::new("b/main.rs")).unwrap(),
+            Owner::Unowned
+        );
+        assert_eq!(
+            explain(dir.path(), Path::new("b/absent/mod.rs")).unwrap(),
+            Owner::Unowned
+        );
+    }
+
+    #[test]
+    fn a_declarations_only_mod_rs_under_node_star_folds_unless_a_module_has_its_name() {
+        let dir = tree(&[
+            ("src/.arch", "node: *\n"),
+            ("src/mod.rs", "mod a;\n"),
+            ("src/a.rs", "pub fn a() {}\n"),
+            ("src/lone/mod.rs", "mod x;\n"),
+            ("src/named/mod.rs", "mod x;\n"),
+            ("src/named/x.rs", "pub fn x() {}\n"),
+            ("src/code/mod.rs", "pub fn f() {}\n"),
+        ]);
+        let found = scan(dir.path()).unwrap();
+        let folded: Vec<&str> = found.folded.iter().map(|p| p.to_str().unwrap()).collect();
+        assert_eq!(folded, ["src/lone/mod.rs", "src/mod.rs"]);
+        let owner = |file: &str| found.owners.get(Path::new(file)).map(NodeId::as_str);
+        assert_eq!(owner("src/named/mod.rs"), Some("named"));
+        assert_eq!(owner("src/code/mod.rs"), Some("code"));
     }
 
     #[test]

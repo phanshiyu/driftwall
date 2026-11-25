@@ -48,7 +48,10 @@ fn render_text(file: &str, located: &Located) -> String {
         (FileKind::TagFile, _) => "tag file".to_owned(),
         (FileKind::Contract, _) => "contract".to_owned(),
         (FileKind::Folded, _) => match &located.owner {
-            Owner::Folded { rule } => format!("folded, no node (via {})", via(rule)),
+            Owner::Folded { rule: Some(rule) } => {
+                format!("folded, no node (via {})", via(rule))
+            }
+            Owner::Folded { rule: None } => "folded, no node (no rule covers it)".to_owned(),
             Owner::Unowned | Owner::Owned { .. } => "folded, no node".to_owned(),
         },
     };
@@ -248,9 +251,9 @@ mod tests {
         let folded = Located {
             kind: FileKind::Folded,
             owner: Owner::Folded {
-                rule: Rule::Tag {
+                rule: Some(Rule::Tag {
                     arch_file: PathBuf::from("src/.arch"),
-                },
+                }),
             },
         };
         assert_eq!(
@@ -306,15 +309,27 @@ mod tests {
     }
 
     #[test]
+    fn a_folded_file_no_rule_covers_says_so() {
+        let folded = Located {
+            kind: FileKind::Folded,
+            owner: Owner::Folded { rule: None },
+        };
+        assert_eq!(
+            render_text("src/mod.rs", &folded),
+            "src/mod.rs: folded, no node (no rule covers it)\n"
+        );
+    }
+
+    #[test]
     fn json_has_no_owned_by_for_an_unowned_or_folded_file() {
         let unowned = render_json("x.ts", &located(FileKind::Source, false)).unwrap();
         assert!(!unowned.contains("owned_by"), "{unowned}");
         let folded = Located {
             kind: FileKind::Folded,
             owner: Owner::Folded {
-                rule: Rule::Tag {
+                rule: Some(Rule::Tag {
                     arch_file: PathBuf::from("src/.arch"),
-                },
+                }),
             },
         };
         let json = render_json("src/lib.rs", &folded).unwrap();
@@ -362,9 +377,9 @@ mod tests {
         let folded = Located {
             kind: FileKind::Folded,
             owner: Owner::Folded {
-                rule: Rule::Tag {
+                rule: Some(Rule::Tag {
                     arch_file: PathBuf::from("src/.arch"),
-                },
+                }),
             },
         };
         let json = render_json("src/lib.rs", &folded).unwrap();

@@ -1,4 +1,5 @@
-//! Entry files that declare nothing, which never make a node of their own under `node: *`.
+//! Entry files that declare nothing: they never make a node of their own under `node: *`, and no
+//! rule needs to cover them.
 //!
 //! See "Folded entry files" in `docs/DESIGN.md`. The scanners here are textual on purpose: they
 //! only have to tell "no declaration at all" from "anything else", and any doubt answers "anything
@@ -9,14 +10,22 @@ use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// Whether `file` is named like an entry file that can be folded: `__init__.py`, `lib.rs` or
-/// `main.rs`.
+/// Whether `file` is named like an entry file that can be folded: `__init__.py`, `lib.rs`,
+/// `main.rs` or `mod.rs`.
 #[must_use]
 pub fn is_entry_file(file: &Path) -> bool {
     matches!(
         file.file_name().and_then(OsStr::to_str),
-        Some("__init__.py" | "lib.rs" | "main.rs")
+        Some("__init__.py" | "lib.rs" | "main.rs" | "mod.rs")
     )
+}
+
+/// Whether `file` can be read and is an entry file that declares nothing.
+#[must_use]
+pub fn is_foldable_in(root: &Path, file: &Path) -> bool {
+    // why: a file that cannot be read is reported by the import collection, never folded.
+    is_entry_file(file)
+        && fs::read_to_string(root.join(file)).is_ok_and(|text| declares_nothing(file, &text))
 }
 
 /// The entry files among `files` (relative to `root`) that declare nothing.
@@ -27,11 +36,7 @@ pub fn trivial_files<'a>(
 ) -> BTreeSet<PathBuf> {
     files
         .into_iter()
-        .filter(|file| is_entry_file(file))
-        .filter(|file| {
-            // why: a file that cannot be read is reported by the import collection, never folded.
-            fs::read_to_string(root.join(file)).is_ok_and(|text| declares_nothing(file, &text))
-        })
+        .filter(|file| is_foldable_in(root, file))
         .map(Path::to_path_buf)
         .collect()
 }
@@ -296,11 +301,27 @@ mod tests {
     }
 
     #[test]
+    fn a_mod_rs_of_declarations_only_declares_nothing_and_a_use_is_a_declaration() {
+        let file = Path::new("src/billing/mod.rs");
+        assert!(declares_nothing(
+            file,
+            "mod controller;\npub(crate) mod service;\n"
+        ));
+        assert!(!declares_nothing(
+            file,
+            "mod controller;\npub use controller::X;\n"
+        ));
+        assert!(!declares_nothing(file, "mod controller { }\n"));
+    }
+
+    #[test]
     fn only_entry_files_and_known_languages_can_fold() {
         assert!(is_entry_file(Path::new("a/__init__.py")));
         assert!(is_entry_file(Path::new("lib.rs")));
         assert!(is_entry_file(Path::new("a/main.rs")));
-        assert!(!is_entry_file(Path::new("a/mod.rs")));
+        assert!(is_entry_file(Path::new("a/mod.rs")));
+        assert!(!is_entry_file(Path::new("a/index.ts")));
+        assert!(!is_entry_file(Path::new("a/mod.py")));
         assert!(!declares_nothing(Path::new("index.ts"), ""));
     }
 }

@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+- `mod.rs` is an entry file that can be folded, and a declarations-only entry file that no rule
+  covers is folded under every mechanism instead of being `unmapped-file`. A Rust feature module
+  whose `mod.rs` only declares `mod controller; mod service;` no longer has to be mapped to one of
+  its parts. Under `node: *` and `%% map <prefix>*: <dir>/`, a declarations-only `mod.rs` folds
+  like `__init__.py` (it used to derive a node named after its directory, such as
+  `billing-billing`, which the contract rarely declares). Under a plain `node: <id>` tag or a
+  `%% map` line of a single node, a declarations-only `__init__.py`, `lib.rs`, `main.rs` or
+  `mod.rs` that no rule covers is folded: no owner, no node, no `unmapped-file`, and an import of
+  it makes no edge. A file a rule covers keeps its owner, and one with a `use`, an item or an
+  inline `mod x { }` is still `unmapped-file`. `where` answers
+  `folded, no node (no rule covers it)` for it. See "Module nodes" in `docs/DESIGN.md`.
+
 ## 0.4.0 - 2026-11-25
 
 - A type alias is followed like a re-export. `pub type Review = crate::store::Review;` used to

@@ -177,10 +177,16 @@ pub fn run(
 ) -> Result<InitSummary, InitError> {
     let ownership = ownership::Mechanism::Tags.scan(root)?;
     // why: tagged files are known files too: they resolve as import targets and get edges.
+    // why: a folded file no tag covers is planned like any other, so the tags `init` writes cover it as they would have; one a `node: *` tag folds is left out.
+    let uncovered_folds = ownership
+        .folded
+        .iter()
+        .filter(|file| ownership::owner_in(&ownership.tag_dirs, file).is_none());
     let files: BTreeMap<PathBuf, Language> = ownership
         .owners
         .keys()
         .chain(&ownership.unmapped)
+        .chain(uncovered_folds)
         .filter_map(|path| Some((path.clone(), ownership::language_in(root, path)?)))
         .collect();
     if files.is_empty() {

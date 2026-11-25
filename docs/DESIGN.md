@@ -994,7 +994,8 @@ different targets for one source file is a contract error (exit `2`): `<contract
 <contract>:<line> both map <file> with equal specificity (<glob>, <glob>)`, naming the lines and the
 first such file in path order. Only source files can raise it: for an asset or excluded file a tie
 means no owner, so a tie never fails a scan through a file that is not code. A file no glob matches is
-unowned, and `unmapped-file` exactly as without a map.
+unowned, and `unmapped-file` exactly as without a map, unless it is an entry file that declares
+nothing, which is folded (see "Module nodes").
 
 **Module form.** `%% map <prefix>*: <dir>/` (`%% map *: <dir>/` for no prefix, `<prefix>` as in
 `node: <prefix>*`, ending in `-`) makes every module in the directory its own node by the module rule
@@ -1198,7 +1199,7 @@ directory is its own node, named by a fixed rule, with no further tagging:
   `private`, `__tests__/` is `tests__`, `_x.py` and `x.py` share the node `x`. A name that is empty
   after stripping (`_.py`, `__/`, a hidden file such as `.eslintrc.js`) is invalid.
 - **A file that declares nothing never creates a node of its own (a folded entry file).** An entry
-  file is one named `__init__.py`, `lib.rs` or `main.rs`. It *declares nothing* when its text holds
+  file is one named `__init__.py`, `lib.rs`, `main.rs` or `mod.rs`. It *declares nothing* when its text holds
   nothing but comments and
 
   - Python: string-literal statements (a docstring); any other statement, `pass` included, is a
@@ -1216,10 +1217,22 @@ directory is its own node, named by a fixed rule, with no further tagging:
   nothing owns it the import makes no edge and no record: it has nothing to depend on. When a module
   has the name (`lib.rs` beside `lib/x.rs`, `__init__.py` beside a module named like its directory),
   the file joins it as before. The rule applies to files in subdirectories too: a subdirectory
-  holding only a folded file derives no node. It applies under `node: *` only: an entry file under a
-  plain `node: <id>` tag belongs to that node. Because reading the file is needed, ownership reads
-  the entry files of the scan (`lint`, `init`, `where`, `explain`), a handful per repository; `lint`,
-  `where` and `init` use the one rule (`ownership::folds`) and agree.
+  holding only a folded file derives no node. A declarations-only `mod.rs` is named after its
+  directory like `__init__.py`, so under `node: *` or `%% map <prefix>*: <dir>/` it folds unless a
+  module of the directory has that name (a feature `billing/mod.rs` beside `controller/` and
+  `service/` derives no `billing-billing`). Under a plain `node: <id>` tag, or a `%% map` of one
+  node, a file a rule covers belongs to that node, folded or not. Because reading the file is
+  needed, ownership reads the entry files of the scan (`lint`, `init`, `where`, `explain`), a
+  handful per repository; `lint`, `where` and `init` use the one rule (`ownership::folds`) and
+  agree.
+- **An entry file that declares nothing and that no rule covers is folded under every mechanism**
+  (a `.arch` tag, `node: *`, a `%% map` line of either form), not `unmapped-file`: it is listed in
+  `Ownership::folded`, has no owner and no node, and an import of it resolves and makes no edge. A
+  Rust feature module whose `mod.rs` only declares `mod controller; mod service;` therefore needs
+  no map line of its own. The same file with a `use`, an item or an inline `mod x { }` is a
+  declaration, and stays `unmapped-file` when nothing covers it. A file a rule covers keeps its
+  owner. `where` and `explain` answer it as folded with no rule to name (see "CLI surface"), and
+  `init` plans such a file as before, so the tags it writes cover it.
 - A nested `.arch` still overrides, as everywhere else.
 - A derived id that is not a valid node id is an error at the `.arch` file, never silently renamed.
 
@@ -3044,7 +3057,7 @@ it, and scans the repository only for the package uses of a source file (below).
 | --- | --- | --- |
 | source file with an owner | `<node> (via <arch file>)`, with a map `<node> (via <contract>:<line> (map <glob>))` | `0` |
 | source file no tag covers | `unmapped` | `1` |
-| folded entry file (see "Module nodes") | `folded, no node (via <arch file>)` | `0` |
+| folded entry file (see "Module nodes") | `folded, no node (via <arch file>)`, or `folded, no node (no rule covers it)` when no rule covers it | `0` |
 | asset | `asset of node <node> (via <arch file>)`, or `asset, unmapped` | `0` |
 | unread code file (see "Blind spots") | `not read (<key>) in node <node> (via <arch file>)`, or `not read (<key>), unmapped` | `0` |
 | excluded source file | `excluded (<reason>), owned by <node> (via <arch file>)`, or `excluded (<reason>)` when no tag covers it | `0` |

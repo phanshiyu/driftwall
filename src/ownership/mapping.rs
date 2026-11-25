@@ -215,7 +215,7 @@ pub fn scan_mapped(root: &Path, context: MapContext<'_>) -> Result<Ownership, Ow
         tag_dirs: dirs.clone(),
         ..Ownership::default()
     };
-    let derived = classify(&mut ownership, sources, assets, |file| {
+    let derived = classify(&mut ownership, sources, assets, &trivial, |file| {
         let entry = mapper.best(file).ok().flatten()?;
         Some(mapper.verdict(entry, file, &dirs, trivial.contains(file)))
     })?;
@@ -261,7 +261,12 @@ pub(super) fn explain_mapped(
         });
     // why: an owner or a fold is always decided by a glob, so a missing glob can only mean unowned.
     let Some(entry) = hit else {
-        return Ok(Owner::Unowned);
+        // why: an uncovered entry file that declares nothing is folded, with no rule to name.
+        return Ok(if folded {
+            Owner::Folded { rule: None }
+        } else {
+            Owner::Unowned
+        });
     };
     let rule = Rule::Map {
         contract: context.contract.to_path_buf(),
@@ -269,7 +274,7 @@ pub(super) fn explain_mapped(
     };
     Ok(match node {
         Some(node) => Owner::Owned { node, rule },
-        None if folded => Owner::Folded { rule },
+        None if folded => Owner::Folded { rule: Some(rule) },
         None => Owner::Unowned,
     })
 }
@@ -470,6 +475,55 @@ mod tests {
         let dir = repo(&[("src/a.ts", "")]);
         let contract = format!("{HEAD}%% map ui: src/\n%% map api: src/a.ts\n");
         assert_eq!(scan(&dir, &contract).unwrap().stale_maps, Vec::new());
+    }
+
+    #[test]
+    fn an_uncovered_entry_file_that_declares_nothing_is_folded_under_both_map_forms() {
+        let dir = repo(&[
+            ("src/billing/mod.rs", "mod service;\n"),
+            ("src/billing/service/run.rs", ""),
+            ("src/billing/used.rs", "pub use service::run;\n"),
+            ("src/lib.rs", "pub mod billing;\n"),
+            ("src/ui/mod.rs", "mod a;\n"),
+            ("src/ui/a.ts", ""),
+            ("src/ui/main.rs", "mod a;\n"),
+            ("pkg/__init__.py", ""),
+        ]);
+        let contract = format!(
+            "{HEAD}%% map store: src/billing/service/\n%% map ui: src/ui/*.ts\n%% map api: src/ui/main.rs\n"
+        );
+        let own = scan(&dir, &contract).unwrap();
+        let folded: Vec<&str> = own.folded.iter().map(|p| p.to_str().unwrap()).collect();
+        assert_eq!(
+            folded,
+            [
+                "pkg/__init__.py",
+                "src/billing/mod.rs",
+                "src/lib.rs",
+                "src/ui/mod.rs"
+            ]
+        );
+        assert!(own.unmapped.contains(Path::new("src/billing/used.rs")));
+        assert_eq!(owner(&own, "src/ui/main.rs").as_deref(), Some("api"));
+        let module = format!("{HEAD}%% map *: src/billing/\n");
+        let own = scan(&dir, &module).unwrap();
+        // why: the module form covers `src/billing/mod.rs`, which folds like `__init__.py`.
+        assert!(own.folded.contains(Path::new("src/billing/mod.rs")));
+        assert_eq!(owner(&own, "src/billing/used.rs").as_deref(), Some("used"));
+        assert!(own.folded.contains(Path::new("src/lib.rs")));
+    }
+
+    #[test]
+    fn explain_names_no_rule_for_an_uncovered_folded_file() {
+        let dir = repo(&[("src/a/mod.rs", "mod x;\n"), ("src/a/x/y.rs", "")]);
+        let contract = format!("{HEAD}%% map ui: src/a/x/\n");
+        let rules = rules_in(&contract);
+        let context = MapContext {
+            contract: Path::new("docs/architecture.mmd"),
+            rules: &rules,
+        };
+        let found = explain_mapped(dir.path(), Path::new("src/a/mod.rs"), false, context).unwrap();
+        assert_eq!(found, Owner::Folded { rule: None });
     }
 
     #[test]

@@ -120,8 +120,8 @@ pub struct Ownership {
     /// Walked code files driftwall has no language for, by key: the extension (`swift`, `sh`) or
     /// `shebang` for an extensionless script. Neither owned nor unmapped, and never a finding.
     pub unread: BTreeMap<String, BTreeSet<PathBuf>>,
-    /// Entry files that declare nothing and that no other module of a `node: *` directory shares a
-    /// name with (see "Folded entry files" in `docs/DESIGN.md`). They are neither owned nor
+    /// Entry files that declare nothing: those no rule covers, and those a `node: *` directory
+    /// gives no module (see "Folded entry files" in `docs/DESIGN.md`). They are neither owned nor
     /// unmapped, but they are known files, so an import of one resolves.
     pub folded: BTreeSet<PathBuf>,
     /// Source files that only `.driftwallignore` hides. Never owned or unmapped, and never a
