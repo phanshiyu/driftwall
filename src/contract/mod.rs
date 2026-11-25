@@ -19,7 +19,7 @@ mod rules;
 pub use boundary::{
     BoundaryEdge, Cover, Declared, EdgeEnds, Endpoint, Template, child_of, children, children_apart,
 };
-pub use map::{GlobError, MapGlob, MapRule, MapTarget, Specificity};
+pub use map::{GlobError, MapGlob, MapRule, MapTarget, MapTemplate, Specificity};
 pub use open_order::{EachLimit, Narrowing, OpenAccess};
 pub use package_rule::{PackagePattern, PackageRule, PackageRuleKind};
 pub use rules::{Budget, Denial, EachArrow, EachBody, EachRule, LayerOrder, Rules};

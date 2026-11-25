@@ -33,6 +33,8 @@ impl Entry<'_> {
         MapSite {
             line: self.rule.line,
             glob: self.glob.to_string(),
+            each: self.rule.each_text(),
+            child: self.rule.template.as_ref().map(|t| t.child.clone()),
         }
     }
 }
@@ -189,8 +191,8 @@ pub fn scan_mapped(root: &Path, context: MapContext<'_>) -> Result<Ownership, Ow
             return Err(OwnershipError::AmbiguousMap {
                 contract: context.contract.to_path_buf(),
                 file: source.clone(),
-                first: first.site(),
-                second: second.site(),
+                first: Box::new(first.site()),
+                second: Box::new(second.site()),
             });
         }
     }
@@ -306,6 +308,7 @@ mod tests {
                     .split(',')
                     .map(|g| MapGlob::parse(g).unwrap())
                     .collect(),
+                template: None,
             });
         }
         rules

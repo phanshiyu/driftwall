@@ -125,6 +125,11 @@ pub enum EachBody {
         /// The imported ends, roles or fixed ids, in the order written.
         to: Vec<String>,
     },
+    /// `map <dir>/, ...`: one module-form map rule for each child and directory pattern.
+    Map {
+        /// The directory patterns, each with `{child}`, in the order written.
+        dirs: Vec<String>,
+    },
 }
 
 /// `%% each <boundary>: <body>`: edges, package rules or denials declared for every child boundary
@@ -140,6 +145,17 @@ pub struct EachRule {
 }
 
 impl EachRule {
+    /// The child name that would make a directory pattern of this `map` line cover `file`, when
+    /// the line is the map form and `file` lies where such a child's directory would be.
+    #[must_use]
+    pub fn would_cover(&self, file: &std::path::Path) -> Option<String> {
+        let EachBody::Map { dirs } = &self.body else {
+            return None;
+        };
+        dirs.iter()
+            .find_map(|dir| super::map::child_named_by(dir, file))
+    }
+
     /// The text after `%% each <boundary>:` as written, `controller --> service` for arrows.
     #[must_use]
     pub fn list(&self) -> String {
@@ -156,17 +172,19 @@ impl EachRule {
                     .to_owned()
             }
             EachBody::Deny { from, to } => format!("deny {from}: {}", to.join(", ")),
+            EachBody::Map { dirs } => format!("map {}", dirs.join(", ")),
         }
     }
 
     /// The directive word of a line that declares rules instead of arrows: `packages`,
-    /// `forbid-packages` or `deny`.
+    /// `forbid-packages`, `deny` or `map`.
     #[must_use]
     pub const fn form(&self) -> Option<&'static str> {
         match &self.body {
             EachBody::Arrows(_) => None,
             EachBody::Packages { kind, .. } => Some(kind.directive()),
             EachBody::Deny { .. } => Some("deny"),
+            EachBody::Map { .. } => Some("map"),
         }
     }
 }

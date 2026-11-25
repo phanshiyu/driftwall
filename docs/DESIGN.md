@@ -714,6 +714,48 @@ inside the `|...|` label does not end the arrow). An end is a role, a node id su
     lines, and `form`, `packages`, `forbid-packages` or `deny`, absent for arrows. `diff` reports
     the line as a rule added or removed, like every other template.
 
+- Map form. `%% each <boundary>: map <dir>/[, <dir>/...]` writes the `%% map` lines of every feature
+  once. Each `<dir>` is a directory glob ending in `/` that holds the placeholder `{child}` at least
+  once and no other `{...}`, and is a plain directory (no wildcard) once the child is filled in; a
+  pattern without `{child}`, with another placeholder or a wildcard is a contract error at the line.
+
+  ```
+  %% each features: map src/features/{child}/
+  ```
+
+  The form is recognised by the word `map` followed by a first token that has a `/`; an id never has
+  one, so a role called `map` in an arrow (`map --> view`) keeps its meaning. For every direct child
+  `C` of `<boundary>` (the children of arrows: boundaries written directly inside it that hold a node
+  at some depth; nodes written directly in `<boundary>` are not children) and every `<dir>`, the line
+  expands into the module-form map `%% map C-*: <dir with {child} replaced by C>`. With the line
+  above, `src/features/billing/service/` is owned by the node `billing-service` and
+  `src/features/billing/controller/` by `billing-controller`. The nodes are never generated: each
+  feature still draws its own subgraph, so the contract stays a complete picture. An expansion is an
+  ordinary module-form map rule with the line of the `%% each`, with every check and the
+  specificity order of "Contract map": written map lines coexist with it, win when more specific
+  (`%% map billing-service: src/features/billing/service/` beats the expansion
+  `src/features/billing/`) and tie by the same rule. A glob that an expansion shares with another
+  map line is the duplicate-glob error at the `%% each` line. A boundary with no child boundary is a
+  contract error, as for arrows.
+
+  The findings are those of the rules, located at the `%% each` line and naming the child: a derived
+  node the contract does not declare is `unknown-node` (`` `%% each features map src/features/{child}/`
+  (child `billing`) derives `billing-report` but ... ``), and a child whose directory matches no file
+  is `stale-map` (`` `%% each features map src/features/{child}/` maps child `search` to
+  `src/features/search/`, which matches no file ``). A new folder under the pattern for which no
+  child subgraph exists is covered by nothing, so its files stay `unmapped-file`; in this one
+  situation the hint is "draw a `<name>` subgraph inside `<boundary>`, or ask the user to approve
+  adding it" (the file lies where a `%% each ... map` pattern would cover it if a child of that
+  name existed and the name is a valid id) instead of the generic one.
+
+  `render` writes the template line back, never the expansions. `where` on a file owned through an
+  expansion names the `%% each` line, `architecture.mmd:31 (each features map
+  src/features/{child}/)`, and JSON `map` has `line`, `glob` (the expanded glob) and `each` (the
+  text `each features map src/features/{child}/`). `brief` and `neighbors` show the directories of
+  a derived node as for a written module map. `diff` reports the line as a rule added or removed,
+  and a file whose owner changes because of it as moved (`mapping changed`). JSON `rules.each`
+  has `form` `map`, and `arrows` has one entry, `map src/features/{child}/`.
+
 Lint treats an expansion as a declared edge of its kind:
 
 - Allowed, kinds, planned and the other findings follow "Boundary edges" and "Test edges" and "Type
@@ -1015,12 +1057,17 @@ reports them once as the warning `ignored-tag-files` (count and the first 3 path
 error: a repository can move to maps in steps, and `--strict` makes it a failure when it should be
 finished. A contract without map lines works as before.
 
+**Templates.** `%% each <boundary>: map <dir>/` expands to one module-form line per child boundary,
+see "Edge templates". The expansions are ordinary rules of this section, kept in `Contract::maps`
+with the template they come from, and `render` writes only the template.
+
 **Staleness.** A glob that matches no walked file (source, asset or excluded file, ignored files
 excluded) is the warning `stale-map` at its line, naming the glob. It is judged on the glob alone, not
 on the files it wins, so a glob shadowed by a more specific one is not stale.
 
 **Where.** `where <file>` answers `<node> (via <contract>:<line> (map <glob>))` with the contract path
-as given and the glob as written; JSON `arch_file` is the contract path and `map` is `{line, glob}`
+as given and the glob as written (`(each <boundary> map <pattern>)` for a glob that a `%% each`
+map line of "Edge templates" expanded to); JSON `arch_file` is the contract path and `map` is `{line, glob}`
 (absent for a `.arch` decision). `where` uses maps when the contract (`--contract`, else the default
 if it exists and is valid) has map lines. `brief` and `neighbors` show as the `dirs` of a node the
 globs of its plain map lines as written, and, for a module-form line, the module paths of the files it

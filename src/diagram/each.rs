@@ -7,12 +7,13 @@ use super::error::DiagramError;
 use super::parse::{edge_tail, split_ident, valid_id};
 use super::rules::not_a_boundary;
 use crate::contract::{
-    BoundaryEdge, Denial, EachArrow, EachBody, EachRule, Endpoint, NodeId, NodeInfo,
+    BoundaryEdge, Denial, EachArrow, EachBody, EachRule, Endpoint, MapRule, NodeId, NodeInfo,
     PackagePattern, PackageRule, PackageRuleKind, Template, child_of, children,
 };
 
 /// Reads the text after `each`: `<boundary>: <arrow>, <arrow>`, or one of the rule forms
-/// `<boundary>: packages <role>: <name>, ...`, `forbid-packages` and `deny <end>: <end>, ...`.
+/// `<boundary>: packages <role>: <name>, ...`, `forbid-packages`, `deny <end>: <end>, ...` and
+/// `map <dir>/, ...`.
 pub(super) fn parse(rest: &str, line: u32) -> Result<EachRule, DiagramError> {
     let (raw_boundary, list) = rest.split_once(':').ok_or_else(|| {
         malformed(
@@ -21,9 +22,14 @@ pub(super) fn parse(rest: &str, line: u32) -> Result<EachRule, DiagramError> {
         )
     })?;
     let boundary = valid_id(raw_boundary.trim(), line)?.to_string();
-    let body = match rule_form(list.trim()) {
-        Some((word, head, tail)) => rule_body(word, head, tail, line)?,
-        None => EachBody::Arrows(arrows(list, line)?),
+    let body = if let Some(dirs) = map_form(list.trim()) {
+        EachBody::Map {
+            dirs: map_dirs(dirs, line)?,
+        }
+    } else if let Some((word, head, tail)) = rule_form(list.trim()) {
+        rule_body(word, head, tail, line)?
+    } else {
+        EachBody::Arrows(arrows(list, line)?)
     };
     Ok(EachRule {
         line,
@@ -54,6 +60,38 @@ fn rule_form(list: &str) -> Option<(&'static str, &str, &str)> {
             let head = head.trim();
             (!head.is_empty() && split_ident(head) == (head, "")).then_some((word, head, tail))
         })
+}
+
+/// The directory list after `map`, when `list` is the map form: the word `map`, whitespace and a
+/// first token with a `/`. An id never has one, so a role called `map` still reads as an arrow.
+fn map_form(list: &str) -> Option<&str> {
+    let after = list.strip_prefix("map")?;
+    after.starts_with(char::is_whitespace).then_some(())?;
+    let rest = after.trim_start();
+    let first = rest.split(|c: char| c.is_whitespace() || c == ',').next()?;
+    first.contains('/').then_some(rest)
+}
+
+/// The directory patterns of the map form, checked: each ends in `/`, has `{child}` and no other
+/// `{...}`, and is a plain directory once the child is filled in.
+fn map_dirs(list: &str, line: u32) -> Result<Vec<String>, DiagramError> {
+    let mut dirs: Vec<String> = Vec::new();
+    for piece in list.split(',') {
+        let dir = piece.trim();
+        let bad = |reason: &str| malformed(line, format!("`{dir}`: {reason}"));
+        if dir.is_empty() {
+            return Err(malformed(
+                line,
+                "expected `%% each <boundary>: map <dir>/[, <dir>/]`".to_owned(),
+            ));
+        }
+        MapRule::check_pattern(dir).map_err(|reason| bad(&reason))?;
+        if dirs.iter().any(|listed| listed == dir) {
+            return Err(bad("listed twice"));
+        }
+        dirs.push(dir.to_owned());
+    }
+    Ok(dirs)
 }
 
 /// The body of a rule form: the role or end `head` and the list `tail` after its colon.
@@ -206,6 +244,8 @@ pub(super) struct Expanded {
     pub packages: Vec<PackageRule>,
     /// The denials, in the order of the lines.
     pub deny: Vec<Denial>,
+    /// The module-form map rules of the `map` lines, in the order of the lines.
+    pub maps: Vec<MapRule>,
 }
 
 /// The template that an expansion of `rule` for `child` comes from, with `arrow` as its text.
@@ -242,6 +282,7 @@ pub(super) fn expand(
         edges: Vec::new(),
         packages: Vec::new(),
         deny: Vec::new(),
+        maps: Vec::new(),
     };
     for rule in templates {
         let line = rule.line;
@@ -283,6 +324,7 @@ pub(super) fn expand(
                     });
                 }
             }
+            EachBody::Map { dirs } => expand_maps(rule, dirs, &kids, &mut expanded.maps)?,
             EachBody::Deny { from, to } => {
                 for target in to {
                     let text = format!("deny {from}: {target}");
@@ -320,6 +362,24 @@ pub(super) fn expand(
         }
     }
     Ok(expanded)
+}
+
+/// The module-form map rules of the map form of `rule`: one per child and directory pattern.
+fn expand_maps(
+    rule: &EachRule,
+    dirs: &[String],
+    kids: &[String],
+    maps: &mut Vec<MapRule>,
+) -> Result<(), DiagramError> {
+    for kid in kids {
+        for dir in dirs {
+            maps.push(
+                MapRule::expansion(rule.line, &rule.boundary, kid, dir)
+                    .map_err(|reason| malformed(rule.line, reason))?,
+            );
+        }
+    }
+    Ok(())
 }
 
 /// The error for a role that no child of the template's boundary has.

@@ -5,7 +5,8 @@ use std::path::{Path, PathBuf};
 
 use crate::code::{ImportKind, Location, Ownership, ResolvedImport, Symbol};
 use crate::contract::{
-    BoundaryEdge, Contract, Cover, Declared, Denial, Edge, EdgeKind, Narrowing, OpenAccess,
+    BoundaryEdge, Contract, Cover, Declared, Denial, Edge, EdgeKind, MapTarget, Narrowing,
+    OpenAccess,
 };
 use crate::imports::FileImports;
 use crate::results::{
@@ -493,6 +494,13 @@ fn private_symbols(
 fn map_findings(ownership: &Ownership, contract_file: &Path) -> Vec<Violation> {
     let mut violations = Vec::new();
     for site in &ownership.stale_maps {
+        let message = match (&site.each, &site.child) {
+            (Some(each), Some(child)) => format!(
+                "`%% {each}` maps child `{child}` to `{}`, which matches no file",
+                site.glob
+            ),
+            _ => format!("map glob `{}` matches no file", site.glob),
+        };
         violations.push(
             violation(
                 ViolationKind::StaleMap,
@@ -500,7 +508,7 @@ fn map_findings(ownership: &Ownership, contract_file: &Path) -> Vec<Violation> {
                     file: contract_file.to_path_buf(),
                     line: site.line,
                 }),
-                format!("map glob `{}` matches no file", site.glob),
+                message,
             )
             .keyed(site.glob.clone()),
         );
@@ -547,9 +555,10 @@ fn ownership_findings(
     for (at, name) in &ownership.tags {
         if !declared(contract, name) {
             let source = if at.file == contract_file {
-                "`%% map` derives"
+                each_source(contract, at.line, name)
+                    .unwrap_or_else(|| "`%% map` derives".to_owned())
             } else {
-                "`.arch` tags"
+                "`.arch` tags".to_owned()
             };
             violations.push(
                 violation(
@@ -568,19 +577,50 @@ fn ownership_findings(
     violations.extend(map_findings(ownership, contract_file));
 
     for file in &ownership.unmapped {
-        violations.push(
-            violation(
-                ViolationKind::UnmappedFile,
-                Some(Location {
-                    file: file.clone(),
-                    line: 1,
-                }),
-                format!("`{}` has no owning node", file.display()),
-            )
-            .keyed(path_key(file)),
-        );
+        let mut found = violation(
+            ViolationKind::UnmappedFile,
+            Some(Location {
+                file: file.clone(),
+                line: 1,
+            }),
+            format!("`{}` has no owning node", file.display()),
+        )
+        .keyed(path_key(file));
+        if let Some((boundary, child)) = missing_child(contract, file) {
+            found.hint = Some(format!(
+                "draw a `{child}` subgraph inside `{boundary}`, or ask the user to approve adding it"
+            ));
+        }
+        violations.push(found);
     }
     violations
+}
+
+/// How an `%% each ... map` line at `line` reads in the message about the node `name` it derives:
+/// the line and the child it was expanded for, or `None` when no such line expanded to `name`.
+fn each_source(contract: &Contract, line: u32, name: &str) -> Option<String> {
+    contract.maps.iter().find_map(|rule| {
+        let template = rule.template.as_ref().filter(|_| rule.line == line)?;
+        let MapTarget::Modules(prefix) = &rule.target else {
+            return None;
+        };
+        name.starts_with(prefix.as_str()).then(|| {
+            format!(
+                "`%% {}` (child `{}`) derives",
+                template.text(),
+                template.child
+            )
+        })
+    })
+}
+
+/// The boundary and the child name of an `%% each ... map` line whose pattern would cover the
+/// unmapped `file` if a child boundary of that name existed.
+fn missing_child(contract: &Contract, file: &Path) -> Option<(String, String)> {
+    contract.rules.each.iter().find_map(|rule| {
+        let child = rule.would_cover(file)?;
+        Some((rule.boundary.clone(), child))
+    })
 }
 
 /// True when `name` is a node declared in the contract.

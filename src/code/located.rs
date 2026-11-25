@@ -175,6 +175,8 @@ mod tests {
             site: MapSite {
                 line: 4,
                 glob: "src/".to_owned(),
+                each: None,
+                child: None,
             },
         }
     }

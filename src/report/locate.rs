@@ -80,7 +80,10 @@ fn render_text_with(file: &str, located: &Located, uses: &[PackageUse]) -> Strin
 fn via(rule: &Rule) -> String {
     let file = slash_path(rule.file());
     match rule.site() {
-        Some(site) => format!("{file}:{} (map {})", site.line, site.glob),
+        Some(site) => site.each.as_ref().map_or_else(
+            || format!("{file}:{} (map {})", site.line, site.glob),
+            |each| format!("{file}:{} ({each})", site.line),
+        ),
         None => file,
     }
 }
@@ -116,6 +119,9 @@ struct PackageAnswer<'a> {
 struct MapAnswer<'a> {
     line: u32,
     glob: &'a str,
+    /// The `%% each` template line, when the glob is an expansion of one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    each: Option<&'a str>,
 }
 
 fn render_json_with(
@@ -143,6 +149,7 @@ fn render_json_with(
         map: located.owner.site().map(|site| MapAnswer {
             line: site.line,
             glob: &site.glob,
+            each: site.each.as_deref(),
         }),
         owned_by: located.owner.owned_by(),
         packages: uses
@@ -289,6 +296,8 @@ mod tests {
                     site: MapSite {
                         line: 7,
                         glob: "src/".to_owned(),
+                        each: None,
+                        child: None,
                     },
                 },
             },
@@ -356,6 +365,8 @@ mod tests {
                     site: MapSite {
                         line: 7,
                         glob: "src/lint/".to_owned(),
+                        each: None,
+                        child: None,
                     },
                 },
             },

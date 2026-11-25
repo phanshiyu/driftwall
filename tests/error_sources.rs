@@ -416,14 +416,18 @@ mod witness {
                 Self::AmbiguousMap {
                     contract: path(),
                     file: path(),
-                    first: MapSite {
+                    first: Box::new(MapSite {
                         line: 2,
                         glob: "a/".to_owned(),
-                    },
-                    second: MapSite {
+                        each: None,
+                        child: None,
+                    }),
+                    second: Box::new(MapSite {
                         line: 3,
                         glob: "a/*".to_owned(),
-                    },
+                        each: None,
+                        child: None,
+                    }),
                 },
                 Self::NoSuchFile { path: path() },
                 Self::OutsideRoot {

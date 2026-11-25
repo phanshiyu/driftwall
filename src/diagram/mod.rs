@@ -20,6 +20,8 @@ mod built_tests;
 #[cfg(test)]
 mod deny_tests;
 #[cfg(test)]
+mod each_map_tests;
+#[cfg(test)]
 mod each_rules_tests;
 #[cfg(test)]
 mod each_tests;

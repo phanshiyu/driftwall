@@ -318,6 +318,7 @@ impl Parser {
             line,
             target,
             globs,
+            template: None,
         });
         Ok(())
     }
@@ -494,6 +495,20 @@ impl Parser {
                 })?;
             }
             self.package_rules.push(rule);
+        }
+        for map in expanded.maps {
+            for glob in &map.globs {
+                let key = glob.normalized();
+                if let Some(first_line) = self.map_globs.get(&key) {
+                    return Err(DiagramError::DuplicateMapGlob {
+                        line: map.line,
+                        glob: glob.to_string(),
+                        first_line: *first_line,
+                    });
+                }
+                self.map_globs.insert(key, map.line);
+            }
+            self.maps.push(map);
         }
         let rules = self.rules.finish(
             &self.nodes,

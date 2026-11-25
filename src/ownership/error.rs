@@ -72,9 +72,9 @@ pub enum OwnershipError {
         /// An example file both globs match.
         file: PathBuf,
         /// The glob on the earlier line.
-        first: MapSite,
+        first: Box<MapSite>,
         /// The glob on the later line.
-        second: MapSite,
+        second: Box<MapSite>,
     },
     /// Walking the directory tree failed, or an ignore file was malformed.
     #[error("cannot walk {}", root.display())]

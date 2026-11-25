@@ -240,6 +240,112 @@ pub struct MapRule {
     pub target: MapTarget,
     /// The globs, in the order written.
     pub globs: Vec<MapGlob>,
+    /// The `%% each ... map` line this rule is the expansion of, or `None` for a written line.
+    /// Not part of equality: the template line is what is written back.
+    pub template: Option<MapTemplate>,
+}
+
+/// The `%% each <boundary>: map <dir>/` line that an expanded map rule comes from.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MapTemplate {
+    /// The boundary the `%% each` line names.
+    pub boundary: String,
+    /// The child boundary of `boundary` this expansion is for.
+    pub child: String,
+    /// The directory pattern as written, `src/features/{child}/`.
+    pub pattern: String,
+}
+
+/// The placeholder of an `%% each ... map` directory pattern.
+const CHILD: &str = "{child}";
+
+impl MapTemplate {
+    /// The template as `%% each` writes it, `each features map src/features/{child}/`.
+    #[must_use]
+    pub fn text(&self) -> String {
+        format!("each {} map {}", self.boundary, self.pattern)
+    }
+}
+
+/// The name that would make `pattern` (a directory pattern with `{child}`) cover
+/// `file`, if there is one: the part of the path where the placeholder stands.
+#[must_use]
+pub(super) fn child_named_by(pattern: &str, file: &Path) -> Option<String> {
+    let parts: Vec<&str> = pattern
+        .split('/')
+        .filter(|segment| !segment.is_empty() && *segment != ".")
+        .collect();
+    let names: Vec<&str> = file
+        .components()
+        .filter_map(|component| match component {
+            Component::Normal(part) => part.to_str(),
+            _ => None,
+        })
+        .collect();
+    let at = parts.iter().position(|segment| segment.contains(CHILD))?;
+    let (segment, name) = (parts.get(at)?, names.get(at)?);
+    let (head, _) = segment.split_once(CHILD)?;
+    let tail = segment.rsplit_once(CHILD).map_or("", |(_, tail)| tail);
+    let child = name
+        .strip_prefix(head)?
+        .strip_suffix(tail)
+        .filter(|child| !child.is_empty())?;
+    let glob = MapGlob::parse(&pattern.replace(CHILD, child)).ok()?;
+    (glob.matches(file) && NodeId::new(child).is_ok()).then(|| child.to_owned())
+}
+
+impl MapRule {
+    /// The `%% each` line this rule expands, as `each features map src/{child}/`, or `None` for a
+    /// written line.
+    #[must_use]
+    pub fn each_text(&self) -> Option<String> {
+        self.template.as_ref().map(MapTemplate::text)
+    }
+
+    /// Why `dir` cannot be a directory pattern of `%% each <boundary>: map <dir>/`, if it cannot:
+    /// it ends in `/`, has `{child}` and no other placeholder, and is a plain directory once a
+    /// child is filled in.
+    ///
+    /// # Errors
+    /// The reason, as a sentence fragment.
+    pub fn check_pattern(dir: &str) -> Result<(), String> {
+        if !dir.ends_with('/') {
+            return Err("a directory pattern ends in `/`".to_owned());
+        }
+        if !dir.contains(CHILD) {
+            return Err("a directory pattern has `{child}` in it".to_owned());
+        }
+        if dir.replace(CHILD, "").contains(['{', '}']) {
+            return Err("`{child}` is the only placeholder".to_owned());
+        }
+        let sample =
+            MapGlob::parse(&dir.replace(CHILD, "x")).map_err(|reason| reason.to_string())?;
+        if sample.directory().is_none() {
+            return Err("a directory pattern has no wildcard besides `{child}`".to_owned());
+        }
+        Ok(())
+    }
+
+    /// The module-form rule at `line` that the `%% each <boundary>: map <dir>` line expands to for
+    /// `child`: `%% map <child>-*: <dir with the child filled in>`.
+    ///
+    /// # Errors
+    /// The reason, when `child` makes no prefix or the filled-in directory is no glob.
+    pub fn expansion(line: u32, boundary: &str, child: &str, dir: &str) -> Result<Self, String> {
+        let prefix = Prefix::new(&format!("{child}-")).map_err(|reason| reason.to_string())?;
+        let glob =
+            MapGlob::parse(&dir.replace(CHILD, child)).map_err(|reason| reason.to_string())?;
+        Ok(Self {
+            line,
+            target: MapTarget::Modules(prefix),
+            globs: vec![glob],
+            template: Some(MapTemplate {
+                boundary: boundary.to_owned(),
+                child: child.to_owned(),
+                pattern: dir.to_owned(),
+            }),
+        })
+    }
 }
 
 impl PartialEq for MapRule {
@@ -339,6 +445,28 @@ mod tests {
         assert_eq!(MapGlob::parse("a/{b,c}"), Err(GlobError::Unsupported('{')));
         assert_eq!(MapGlob::parse("a/[b]"), Err(GlobError::Unsupported('[')));
         assert_eq!(MapGlob::parse("a**/b"), Err(GlobError::DoubleStar));
+    }
+
+    #[test]
+    fn the_child_a_pattern_would_cover_is_the_name_at_the_placeholder() {
+        let named = |pattern: &str, file: &str| child_named_by(pattern, Path::new(file));
+        let pattern = "src/features/{child}/";
+        assert_eq!(
+            named(pattern, "src/features/billing/service/a.ts"),
+            Some("billing".to_owned())
+        );
+        assert_eq!(
+            named(pattern, "src/features/billing/a.ts"),
+            Some("billing".to_owned())
+        );
+        assert_eq!(named(pattern, "src/features/a.ts"), None);
+        assert_eq!(named(pattern, "src/other/billing/a.ts"), None);
+        assert_eq!(
+            named("src/{child}-app/", "src/orders-app/a.ts"),
+            Some("orders".to_owned())
+        );
+        assert_eq!(named("src/{child}-app/", "src/orders/a.ts"), None);
+        assert_eq!(named("src/{child}/", "src/not an id/a.ts"), None);
     }
 
     #[test]

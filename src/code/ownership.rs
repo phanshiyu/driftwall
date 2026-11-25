@@ -144,6 +144,11 @@ pub struct MapSite {
     pub line: u32,
     /// The glob as written.
     pub glob: String,
+    /// The `%% each` line this glob is an expansion of, as `each features map src/{child}/`, or
+    /// `None` for a written `%% map`.
+    pub each: Option<String>,
+    /// The child boundary the expansion is for, with `each`.
+    pub child: Option<String>,
 }
 
 #[cfg(test)]

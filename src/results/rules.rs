@@ -79,7 +79,7 @@ pub struct EachSummary {
     /// The arrows as written, `controller --> service`. A line that declares rules has one entry,
     /// the rule as written after the colon, `forbid-packages service: maud`.
     pub arrows: Vec<String>,
-    /// `packages`, `forbid-packages` or `deny` for a line that declares rules, absent for arrows.
+    /// `packages`, `forbid-packages`, `deny` or `map` for a line that declares rules, absent for arrows.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub form: Option<&'static str>,
 }

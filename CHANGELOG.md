@@ -21,6 +21,18 @@
   it makes no edge. A file a rule covers keeps its owner, and one with a `use`, an item or an
   inline `mod x { }` is still `unmapped-file`. `where` answers
   `folded, no node (no rule covers it)` for it. See "Module nodes" in `docs/DESIGN.md`.
+- Map lines per feature in `%% each`: `%% each features: map src/features/{child}/` writes the
+  module-form `%% map billing-*: src/features/billing/` for every child boundary, so the folder
+  `src/features/billing/service/` is owned by `billing-service` without repeating a map line per
+  part and feature. The pattern is a directory ending in `/` with `{child}` in it (several may be
+  listed); another placeholder, no `{child}` or a wildcard is a contract error. The nodes are still
+  drawn in each feature's subgraph. An expansion is an ordinary module map with the usual checks
+  and specificity, so a written map line beside it wins where it is more specific. Findings point
+  at the `%% each` line and name the child: `unknown-node` for a part folder with no declared node
+  and `stale-map` for a child with no folder. A new feature folder with no subgraph stays
+  `unmapped-file`, and its hint now says to draw the subgraph or ask to approve it. `render`
+  writes the template, `where` names the `%% each` line (JSON `map.each`), and `diff` reports the
+  line as a rule change and the files it moves. See "Edge templates" in `docs/DESIGN.md`.
 
 ## 0.4.0 - 2026-11-25
 

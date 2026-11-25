@@ -440,6 +440,7 @@ mod tests {
             line: 0,
             target: crate::contract::MapTarget::Node(id("a")),
             globs: vec![MapGlob::parse("src/a/").unwrap()],
+            template: None,
         });
         let text = render(&c, &BTreeMap::new());
         assert!(text.contains("subgraph g"), "{text}");

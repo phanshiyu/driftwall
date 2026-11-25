@@ -109,9 +109,11 @@ pub fn render(contract: &Contract) -> String {
         }
     }
 
-    if !contract.maps.is_empty() {
+    // why: an expansion is written by its `%% each` line, never on its own.
+    let written = || contract.maps.iter().filter(|rule| rule.template.is_none());
+    if written().next().is_some() {
         lines.push(String::new());
-        for rule in &contract.maps {
+        for rule in written() {
             let globs: Vec<&str> = rule.globs.iter().map(MapGlob::as_str).collect();
             lines.push(format!("  %% map {}: {}", rule.target, globs.join(", ")));
         }

@@ -31,6 +31,7 @@ pub fn rules_of(tags: &BTreeMap<PathBuf, DirTag>) -> Result<Vec<MapRule>, InitEr
                 line: 0,
                 target,
                 globs: vec![glob],
+                template: None,
             })
         })
         .collect()
