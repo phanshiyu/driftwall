@@ -5,7 +5,7 @@
 driftwall stops architecture drift. You draw your architecture as a small diagram. driftwall reads
 your code and fails the build when the code depends on something the diagram does not allow.
 
-> Status: proof of concept, not yet published to crates.io or npm. Install from git (below).
+> Status: early (0.x). Published on npm; the contract format may still change between minor versions.
 
 ## The idea
 
@@ -210,7 +210,7 @@ syntax and behaviour are in [docs/DESIGN.md](docs/DESIGN.md).
 | `%% tests: isolated` | Production code may not import test files. | [Test isolation](docs/DESIGN.md#test-isolation) |
 | `%% facade ui-lib` | Callers of a re-exporting module depend on it, not on what it re-exports. | [Re-exports](docs/DESIGN.md#re-exports) |
 | `%% packages db: sqlx` | A component may use only these outside packages. | [Package rules](docs/DESIGN.md#package-rules) |
-| `%% forbid-packages domain: subprocess` | A component may never use these packages. | [Package rules](docs/DESIGN.md#package-rules) |
+| `%% forbid-packages domain: subprocess, askama` | A component may never use these packages. Write a name as the code imports it: `subprocess` for Python, `askama` or `serde_json` for a Rust crate. | [Package rules](docs/DESIGN.md#package-rules) |
 
 Every kind of finding, with its severity, is listed in
 [Rules (violation kinds)](docs/DESIGN.md#rules-violation-kinds). `lint` prints `text`, `json`
