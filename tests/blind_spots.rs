@@ -126,16 +126,16 @@ fn where_json_carries_the_kind_and_its_detail() {
     assert_eq!(
         json_of("a/view.go"),
         json!({"file": "a/view.go", "node": "a", "arch_file": "a/.arch",
-               "kind": "unread", "detail": "go"})
+               "kind": "unread", "detail": "go", "owned_by": "tag"})
     );
     assert_eq!(
         json_of("a/vendor/lib.js"),
         json!({"file": "a/vendor/lib.js", "node": "a", "arch_file": "a/.arch",
-               "kind": "excluded", "detail": "vendored"})
+               "kind": "excluded", "detail": "vendored", "owned_by": "tag"})
     );
     assert_eq!(
         json_of("a/hidden.ts"),
-        json!({"file": "a/hidden.ts", "node": "a", "arch_file": "a/.arch", "kind": "ignored"})
+        json!({"file": "a/hidden.ts", "node": "a", "arch_file": "a/.arch", "kind": "ignored", "owned_by": "tag"})
     );
     assert_eq!(
         json_of("a/.arch"),
@@ -147,7 +147,7 @@ fn where_json_carries_the_kind_and_its_detail() {
     );
     assert_eq!(
         json_of("a/data.json"),
-        json!({"file": "a/data.json", "node": "a", "arch_file": "a/.arch", "kind": "asset"})
+        json!({"file": "a/data.json", "node": "a", "arch_file": "a/.arch", "kind": "asset", "owned_by": "tag"})
     );
 }
 

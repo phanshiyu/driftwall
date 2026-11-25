@@ -230,6 +230,7 @@ fn where_names_the_contract_line_and_glob() {
     assert_eq!(value["arch_file"], CONTRACT);
     assert_eq!(value["map"]["line"], 6);
     assert_eq!(value["map"]["glob"], "src/api/");
+    assert_eq!(value["owned_by"], "map");
 }
 
 #[test]

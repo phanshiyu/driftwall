@@ -10,6 +10,7 @@ mod locate;
 mod lookup;
 mod mapping;
 mod module;
+mod owner;
 
 #[cfg(test)]
 mod asset_tests;
@@ -34,6 +35,7 @@ pub use locate::{FileKind, Located, locate, locate_mapped};
 pub use lookup::owner_in;
 pub use mapping::{MapContext, Mapper, scan_mapped};
 pub use module::{folds, is_test_file, module_name, peers_in};
+pub use owner::{Owner, Rule};
 
 pub use crate::model::{DirTag, Scope, Tag};
 use crate::model::{Exclusion, Location, MapSite, ModelError, NodeId, Ownership};
@@ -42,18 +44,6 @@ use crate::model::{Exclusion, Location, MapSite, ModelError, NodeId, Ownership};
 const ARCH_FILE: &str = ".arch";
 /// Extra gitignore-syntax exclusions, honored in addition to `.gitignore`.
 const IGNORE_FILE: &str = ".driftwallignore";
-
-/// The answer to "who owns this path, and why".
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Explanation {
-    /// The owning node, or `None` when no `.arch` applies or the file is folded.
-    pub node: Option<NodeId>,
-    /// The `.arch` file that decided it, relative to the root, or `None` when unmapped.
-    pub arch_file: Option<PathBuf>,
-    /// Whether the file is a folded entry file: it declares nothing and no other module of its
-    /// `node: *` directory has its name, so it has no node.
-    pub folded: bool,
-}
 
 /// One `.arch` file's decision about its directory.
 struct Decision {
@@ -76,25 +66,32 @@ impl Decision {
     /// `trivial` is whether `file` is an entry file that declares nothing.
     fn verdict(&self, dir: &Path, file: &Path, trivial: bool) -> Verdict {
         let derived = matches!(self.tag, Tag::Modules(_));
-        let node = match &self.tag {
-            Tag::Node(id) => Ok(id.clone()),
-            Tag::Modules(prefix) => {
-                prefix.derive(&module_name(dir, file, &self.peers).unwrap_or_default())
-            }
+        let decided = if trivial && derived && folds(dir, file, &self.peers) {
+            Decided::Folded
+        } else {
+            Decided::Node(self.node(dir, file))
         };
         Verdict {
-            node,
+            decided,
             at: self.location(),
-            folded: trivial && derived && folds(dir, file, &self.peers),
             derived,
             site: None,
         }
     }
 
+    /// The node this decision names for `file`, or why a `node: *` name is not one.
+    fn node(&self, dir: &Path, file: &Path) -> Result<NodeId, ModelError> {
+        match &self.tag {
+            Tag::Node(id) => Ok(id.clone()),
+            Tag::Modules(prefix) => {
+                prefix.derive(&module_name(dir, file, &self.peers).unwrap_or_default())
+            }
+        }
+    }
+
     /// The node `file` gets from this decision, where `dir` is the directory of the `.arch` file.
     fn node_for(&self, dir: &Path, file: &Path) -> Result<NodeId, OwnershipError> {
-        self.verdict(dir, file, false)
-            .node
+        self.node(dir, file)
             .map_err(|source| OwnershipError::InvalidModule {
                 at: self.location(),
                 file: file.to_path_buf(),
@@ -205,18 +202,33 @@ pub fn scan(root: &Path) -> Result<Ownership, OwnershipError> {
     Ok(ownership)
 }
 
+/// What a rule says a file is.
+enum Decided {
+    /// A folded entry file: it has no node.
+    Folded,
+    /// The node, or why a `node: *` name is not one.
+    Node(Result<NodeId, ModelError>),
+}
+
 /// What a tag rule decides about one file.
 struct Verdict {
-    /// The node, or why a `node: *` name is not one.
-    node: Result<NodeId, ModelError>,
+    decided: Decided,
     /// Where the rule is written, for an error and for the derived tags.
     at: Location,
-    /// Whether the file is a folded entry file.
-    folded: bool,
     /// Whether the node is derived from a module name (the tag is `node: *`, or a module `%% map`).
     derived: bool,
     /// With `%% map` lines: the glob that decided.
     site: Option<MapSite>,
+}
+
+impl Verdict {
+    /// The node and glob, `None` for a folded file or a name that is no node id.
+    fn into_owner(self) -> Option<(NodeId, Option<MapSite>)> {
+        match self.decided {
+            Decided::Node(node) => Some((node.ok()?, self.site)),
+            Decided::Folded => None,
+        }
+    }
 }
 
 /// Sorts every walked file of the scan into `ownership`: owned, unmapped or folded sources, and
@@ -230,34 +242,34 @@ fn classify(
 ) -> Result<BTreeSet<(Location, String)>, OwnershipError> {
     let mut derived: BTreeSet<(Location, String)> = BTreeSet::new();
     for source in sources {
-        match decide(&source) {
-            Some(verdict) if verdict.folded => {
+        let Some(verdict) = decide(&source) else {
+            ownership.unmapped.insert(source);
+            continue;
+        };
+        let (at, is_derived, site) = (verdict.at, verdict.derived, verdict.site);
+        match verdict.decided {
+            Decided::Folded => {
                 ownership.folded.insert(source);
             }
-            Some(verdict) => {
-                let node = verdict
-                    .node
-                    .map_err(|error| OwnershipError::InvalidModule {
-                        at: verdict.at.clone(),
-                        file: source.clone(),
-                        source: error,
-                    })?;
-                if verdict.derived {
-                    derived.insert((verdict.at, node.to_string()));
+            Decided::Node(node) => {
+                let node = node.map_err(|error| OwnershipError::InvalidModule {
+                    at: at.clone(),
+                    file: source.clone(),
+                    source: error,
+                })?;
+                if is_derived {
+                    derived.insert((at, node.to_string()));
                 }
-                if let Some(site) = verdict.site {
+                if let Some(site) = site {
                     ownership.map_sites.insert(source.clone(), site);
                 }
                 ownership.owners.insert(source, node);
-            }
-            None => {
-                ownership.unmapped.insert(source);
             }
         }
     }
     for asset in assets {
         // why: an asset must never fail the scan, so a name that is no node id leaves it unmapped.
-        match decide(&asset).and_then(|verdict| Some((verdict.node.ok()?, verdict.site))) {
+        match decide(&asset).and_then(Verdict::into_owner) {
             Some((node, site)) => {
                 if let Some(site) = site {
                     ownership.map_sites.insert(asset.clone(), site);
@@ -272,9 +284,7 @@ fn classify(
     // why: like an asset, an excluded file must never fail the scan, so a bad derived name is no owner.
     let excluded: Vec<PathBuf> = ownership.excluded.values().flatten().cloned().collect();
     for file in excluded {
-        if let Some((node, site)) =
-            decide(&file).and_then(|verdict| Some((verdict.node.ok()?, verdict.site)))
-        {
+        if let Some((node, site)) = decide(&file).and_then(Verdict::into_owner) {
             if let Some(site) = site {
                 ownership.map_sites.insert(file.clone(), site);
             }
@@ -323,7 +333,7 @@ fn nearest_decision<'a>(
 /// # Errors
 /// Fails when `file` is outside `root`, an `.arch` on its path is unreadable or invalid, or a
 /// `node: *` derives a name that is not a valid node id.
-pub fn explain(root: &Path, file: &Path) -> Result<Explanation, OwnershipError> {
+pub fn explain(root: &Path, file: &Path) -> Result<Owner, OwnershipError> {
     let relative = relative_to_root(root, file)?;
     for dir in relative.parent().into_iter().flat_map(Path::ancestors) {
         let arch_file = dir.join(ARCH_FILE);
@@ -362,10 +372,12 @@ pub fn explain(root: &Path, file: &Path) -> Result<Explanation, OwnershipError> 
                     } else {
                         Some(decision.node_for(dir, &relative)?)
                     };
-                    return Ok(Explanation {
-                        node,
-                        arch_file: Some(decision.arch_file),
-                        folded,
+                    let rule = Rule::Tag {
+                        arch_file: decision.arch_file,
+                    };
+                    return Ok(match node {
+                        Some(node) => Owner::Owned { node, rule },
+                        None => Owner::Folded { rule },
                     });
                 }
             }
@@ -378,11 +390,7 @@ pub fn explain(root: &Path, file: &Path) -> Result<Explanation, OwnershipError> 
             }
         }
     }
-    Ok(Explanation {
-        node: None,
-        arch_file: None,
-        folded: false,
-    })
+    Ok(Owner::Unowned)
 }
 
 /// Lexically reduces `file` to a clean path relative to `root`.
@@ -838,16 +846,16 @@ mod tests {
         let explain_of = |path: &str| explain(dir.path(), Path::new(path)).unwrap();
 
         let inner = explain_of("a/inner/y.ts");
-        assert_eq!(inner.node.as_ref().map(NodeId::as_str), Some("inner"));
-        assert_eq!(inner.arch_file.as_deref(), Some(Path::new("a/inner/.arch")));
+        assert_eq!(inner.node().map(NodeId::as_str), Some("inner"));
+        assert_eq!(inner.arch_file(), Some(Path::new("a/inner/.arch")));
 
         let inherited = explain_of("a/other/z.ts");
-        assert_eq!(inherited.node.as_ref().map(NodeId::as_str), Some("outer"));
-        assert_eq!(inherited.arch_file.as_deref(), Some(Path::new("a/.arch")));
+        assert_eq!(inherited.node().map(NodeId::as_str), Some("outer"));
+        assert_eq!(inherited.arch_file(), Some(Path::new("a/.arch")));
 
         let top = explain_of("top.py");
-        assert_eq!(top.node.as_ref().map(NodeId::as_str), Some("root"));
-        assert_eq!(top.arch_file.as_deref(), Some(Path::new(".arch")));
+        assert_eq!(top.node().map(NodeId::as_str), Some("root"));
+        assert_eq!(top.arch_file(), Some(Path::new(".arch")));
     }
 
     #[test]
@@ -860,12 +868,12 @@ mod tests {
         let scanned = scan(dir.path()).unwrap();
         for (path, node) in &scanned.owners {
             let explanation = explain(dir.path(), path).unwrap();
-            assert_eq!(explanation.node.as_ref(), Some(node));
+            assert_eq!(explanation.node(), Some(node));
         }
         for path in &scanned.unmapped {
             let explanation = explain(dir.path(), path).unwrap();
-            assert_eq!(explanation.node, None);
-            assert_eq!(explanation.arch_file, None);
+            assert_eq!(explanation.node(), None);
+            assert_eq!(explanation.arch_file(), None);
         }
     }
 
@@ -873,14 +881,7 @@ mod tests {
     fn explain_unmapped_returns_none() {
         let dir = tree(&[("x/y.ts", "")]);
         let explanation = explain(dir.path(), Path::new("x/y.ts")).unwrap();
-        assert_eq!(
-            explanation,
-            Explanation {
-                node: None,
-                arch_file: None,
-                folded: false
-            }
-        );
+        assert_eq!(explanation, Owner::Unowned);
     }
 
     #[test]
@@ -921,11 +922,11 @@ mod tests {
             ("src/__init__.py", ""),
         ]);
         let folded = explain(dir.path(), Path::new("src/__init__.py")).unwrap();
-        assert!(folded.folded && folded.node.is_none());
-        assert_eq!(folded.arch_file, Some(PathBuf::from("src/.arch")));
+        assert!(folded.is_folded() && folded.node().is_none());
+        assert_eq!(folded.arch_file(), Some(Path::new("src/.arch")));
         let named = explain(dir.path(), Path::new("src/lib.rs")).unwrap();
-        assert!(!named.folded);
-        assert_eq!(named.node.as_ref().map(NodeId::as_str), Some("lib"));
+        assert!(!named.is_folded());
+        assert_eq!(named.node().map(NodeId::as_str), Some("lib"));
         let found = scan(dir.path()).unwrap();
         assert_eq!(
             found
@@ -950,7 +951,7 @@ mod tests {
         let absolute = explain(dir.path(), &dir.path().join("a/x.ts")).unwrap();
         let dotted = explain(dir.path(), Path::new("./a/x.ts")).unwrap();
         assert_eq!(absolute, dotted);
-        assert_eq!(absolute.arch_file.as_deref(), Some(Path::new("a/.arch")));
+        assert_eq!(absolute.arch_file(), Some(Path::new("a/.arch")));
     }
 
     #[test]
@@ -1227,16 +1228,8 @@ mod tests {
         let explain_of = |path: &str| explain(dir.path(), Path::new(path)).unwrap();
         let expect = |path: &str, node: &str, arch: &str| {
             let explanation = explain_of(path);
-            assert_eq!(
-                explanation.node.as_ref().map(NodeId::as_str),
-                Some(node),
-                "{path}"
-            );
-            assert_eq!(
-                explanation.arch_file.as_deref(),
-                Some(Path::new(arch)),
-                "{path}"
-            );
+            assert_eq!(explanation.node().map(NodeId::as_str), Some(node), "{path}");
+            assert_eq!(explanation.arch_file(), Some(Path::new(arch)), "{path}");
         };
         expect("src/gitlab.rs", "gitlab", "src/.arch");
         expect("src/gitlab/new.rs", "gitlab", "src/.arch");
@@ -1258,7 +1251,7 @@ mod tests {
         let scanned = scan(dir.path()).unwrap();
         for (path, node) in &scanned.owners {
             let explanation = explain(dir.path(), path).unwrap();
-            assert_eq!(explanation.node.as_ref(), Some(node), "{}", path.display());
+            assert_eq!(explanation.node(), Some(node), "{}", path.display());
         }
     }
 
@@ -1429,12 +1422,12 @@ mod tests {
         assert!(!scanned.owners.is_empty() && !scanned.unmapped.is_empty());
         for (path, node) in &scanned.owners {
             let explanation = explain(dir.path(), path).unwrap();
-            assert_eq!(explanation.node.as_ref(), Some(node), "{}", path.display());
+            assert_eq!(explanation.node(), Some(node), "{}", path.display());
         }
         for path in &scanned.unmapped {
             let explanation = explain(dir.path(), path).unwrap();
-            assert_eq!(explanation.node, None, "{}", path.display());
-            assert_eq!(explanation.arch_file, None, "{}", path.display());
+            assert_eq!(explanation.node(), None, "{}", path.display());
+            assert_eq!(explanation.arch_file(), None, "{}", path.display());
         }
         assert_eq!(unmapped(&scanned), ["lone/x.ts", "pkg/sub/n.ts"]);
     }
@@ -1447,11 +1440,11 @@ mod tests {
         ]);
         let explain_of = |path: &str| explain(dir.path(), Path::new(path)).unwrap();
         let direct = explain_of("a/b/y.ts");
-        assert_eq!(direct.node.as_ref().map(NodeId::as_str), Some("inner"));
-        assert_eq!(direct.arch_file.as_deref(), Some(Path::new("a/b/.arch")));
+        assert_eq!(direct.node().map(NodeId::as_str), Some("inner"));
+        assert_eq!(direct.arch_file(), Some(Path::new("a/b/.arch")));
         let below = explain_of("a/b/new/z.ts");
-        assert_eq!(below.node.as_ref().map(NodeId::as_str), Some("outer"));
-        assert_eq!(below.arch_file.as_deref(), Some(Path::new("a/.arch")));
+        assert_eq!(below.node().map(NodeId::as_str), Some("outer"));
+        assert_eq!(below.arch_file(), Some(Path::new("a/.arch")));
     }
 
     #[test]
@@ -1459,13 +1452,10 @@ mod tests {
         let dir = tree(&[("ui/.arch", "node: ui-*\n")]);
         let explanation = explain(dir.path(), Path::new("ui/components/new.ts")).unwrap();
         assert_eq!(
-            explanation.node.as_ref().map(NodeId::as_str),
+            explanation.node().map(NodeId::as_str),
             Some("ui-components")
         );
-        assert_eq!(
-            explanation.arch_file.as_deref(),
-            Some(Path::new("ui/.arch"))
-        );
+        assert_eq!(explanation.arch_file(), Some(Path::new("ui/.arch")));
     }
 
     #[test]

@@ -46,6 +46,8 @@
   `docs/DESIGN.md`.
 - `diff --format json`: each `moved` entry gains `cause` (`mapping-changed`, `renamed` or
   `renamed-and-mapping-changed`). `renamed_from` and `mapping_changed` are unchanged.
+- `where --format json`: gains `owned_by` (`tag` or `map`), absent when the file has no owner, so
+  agents need not infer it from which keys are present. `node`, `arch_file` and `map` are unchanged.
 
 ## 0.1.1 - 2026-11-25
 

@@ -2728,7 +2728,10 @@ is answered like a source file, by the tag that covers it. The JSON has `file`, 
 `arch_file` and `kind` (`source`, `folded`, `asset`, `unread`, `excluded`, `ignored`, `tag-file`,
 `contract` or `directory`), plus `detail` for the unread key and the exclusion reason (absent
 otherwise). `node` and `arch_file` are `null` for anything no tag covers, a tag file and the contract,
-and carry the owner of an excluded or ignored file that a tag covers.
+and carry the owner of an excluded or ignored file that a tag covers. `owned_by` says which
+mechanism gave the owner: `tag` (an `.arch` file) or `map` (a `%% map` glob). It is absent when
+the file has no owner, also for a folded entry file, so an agent does not infer it from which keys
+are present.
 
 For a source file that uses packages (see "Package uses") `where` also lists them, in line order,
 after the answer, one per line: `  package <name> (<kind>) line <n>`, followed by ` (test)` for a use

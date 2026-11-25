@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use anyhow::Result;
 use driftwall::lint;
 use driftwall::model::{DEFAULT_CONTRACT, PackageUse};
-use driftwall::ownership::{self, FileKind, Located};
+use driftwall::ownership::{self, FileKind, Located, Owner, Rule};
 use serde::Serialize;
 
 use crate::args::{WhereArgs, WhereFormat};
@@ -47,9 +47,7 @@ pub fn run(args: &WhereArgs) -> Result<Run> {
     if located.kind != FileKind::Directory && slash_path(&file) == slash_path(contract) {
         located = Located {
             kind: FileKind::Contract,
-            node: None,
-            arch_file: None,
-            map: None,
+            owner: Owner::Unowned,
         };
     }
     let shown = slash_path(&args.file);
@@ -118,9 +116,9 @@ fn resolve(file: &Path) -> Option<PathBuf> {
 
 /// `<file>: <answer>`, see "CLI surface" in `docs/DESIGN.md` for the answers.
 fn render_text(file: &str, located: &Located) -> String {
-    let owner = match (&located.node, &located.arch_file) {
-        (Some(node), Some(_)) => Some(format!("{node} (via {})", via(located))),
-        _ => None,
+    let owner = match &located.owner {
+        Owner::Owned { node, rule } => Some(format!("{node} (via {})", via(rule))),
+        Owner::Unowned | Owner::Folded { .. } => None,
     };
     let answer = match (&located.kind, owner) {
         (FileKind::Source | FileKind::Directory, Some(owner)) => owner,
@@ -139,10 +137,10 @@ fn render_text(file: &str, located: &Located) -> String {
         (FileKind::Ignored, None) => "ignored by .driftwallignore".to_owned(),
         (FileKind::TagFile, _) => "tag file".to_owned(),
         (FileKind::Contract, _) => "contract".to_owned(),
-        (FileKind::Folded, _) => located.arch_file.as_deref().map_or_else(
-            || "folded, no node".to_owned(),
-            |_| format!("folded, no node (via {})", via(located)),
-        ),
+        (FileKind::Folded, _) => match &located.owner {
+            Owner::Folded { rule } => format!("folded, no node (via {})", via(rule)),
+            Owner::Unowned | Owner::Owned { .. } => "folded, no node".to_owned(),
+        },
     };
     format!("{file}: {answer}\n")
 }
@@ -166,13 +164,9 @@ fn render_text_with(file: &str, located: &Located, uses: &[PackageUse]) -> Strin
 }
 
 /// The file that decided the owner, with the line and glob when a `%% map` did.
-fn via(located: &Located) -> String {
-    let file = located
-        .arch_file
-        .as_deref()
-        .map(slash_path)
-        .unwrap_or_default();
-    match &located.map {
+fn via(rule: &Rule) -> String {
+    let file = slash_path(rule.file());
+    match rule.site() {
         Some(site) => format!("{file}:{} (map {})", site.line, site.glob),
         None => file,
     }
@@ -189,6 +183,8 @@ struct Answer<'a> {
     detail: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     map: Option<MapAnswer<'a>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    owned_by: Option<&'static str>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     packages: Vec<PackageAnswer<'a>>,
 }
@@ -223,14 +219,15 @@ fn render_json_with(file: &str, located: &Located, uses: &[PackageUse]) -> Resul
     };
     let answer = Answer {
         file,
-        node: located.node.as_ref().map(driftwall::model::NodeId::as_str),
-        arch_file: located.arch_file.as_deref().map(slash_path),
+        node: located.owner.node().map(driftwall::model::NodeId::as_str),
+        arch_file: located.owner.arch_file().map(slash_path),
         kind,
         detail,
-        map: located.map.as_ref().map(|site| MapAnswer {
+        map: located.owner.site().map(|site| MapAnswer {
             line: site.line,
             glob: &site.glob,
         }),
+        owned_by: located.owner.owned_by(),
         packages: uses
             .iter()
             .map(|used| PackageAnswer {
@@ -256,7 +253,7 @@ fn slash_path(path: &Path) -> String {
 
 #[cfg(test)]
 mod tests {
-    use driftwall::model::{Exclusion, NodeId};
+    use driftwall::model::{Exclusion, MapSite, NodeId};
 
     use super::*;
 
@@ -267,9 +264,16 @@ mod tests {
     fn located(kind: FileKind, owned: bool) -> Located {
         Located {
             kind,
-            node: owned.then(|| NodeId::new("lint").unwrap()),
-            arch_file: owned.then(|| PathBuf::from("src/lint/.arch")),
-            map: None,
+            owner: if owned {
+                Owner::Owned {
+                    node: NodeId::new("lint").unwrap(),
+                    rule: Rule::Tag {
+                        arch_file: PathBuf::from("src/lint/.arch"),
+                    },
+                }
+            } else {
+                Owner::Unowned
+            },
         }
     }
 
@@ -328,9 +332,11 @@ mod tests {
         assert_eq!(text(FileKind::Contract, false), "f: contract\n");
         let folded = Located {
             kind: FileKind::Folded,
-            node: None,
-            arch_file: Some(PathBuf::from("src/.arch")),
-            map: None,
+            owner: Owner::Folded {
+                rule: Rule::Tag {
+                    arch_file: PathBuf::from("src/.arch"),
+                },
+            },
         };
         assert_eq!(
             render_text("src/lib.rs", &folded),
@@ -351,8 +357,104 @@ mod tests {
     fn json_mapped_has_all_keys_pretty_printed() {
         assert_eq!(
             render_json("a.ts", &located(FileKind::Source, true)).unwrap(),
-            "{\n  \"file\": \"a.ts\",\n  \"node\": \"lint\",\n  \"arch_file\": \"src/lint/.arch\",\n  \"kind\": \"source\"\n}\n"
+            "{\n  \"file\": \"a.ts\",\n  \"node\": \"lint\",\n  \"arch_file\": \"src/lint/.arch\",\n  \"kind\": \"source\",\n  \"owned_by\": \"tag\"\n}\n"
         );
+    }
+
+    fn mapped() -> Located {
+        Located {
+            kind: FileKind::Source,
+            owner: Owner::Owned {
+                node: NodeId::new("lint").unwrap(),
+                rule: Rule::Map {
+                    contract: PathBuf::from("c.mmd"),
+                    site: MapSite {
+                        line: 7,
+                        glob: "src/".to_owned(),
+                    },
+                },
+            },
+        }
+    }
+
+    #[test]
+    fn json_of_a_map_owner_keeps_its_keys_and_adds_owned_by() {
+        let json = render_json("src/a.ts", &mapped()).unwrap();
+        assert!(
+            json.contains("\"node\": \"lint\",\n  \"arch_file\": \"c.mmd\","),
+            "{json}"
+        );
+        assert!(
+            json.contains("\"map\": {\n    \"line\": 7,\n    \"glob\": \"src/\"\n  },\n  \"owned_by\": \"map\""),
+            "{json}"
+        );
+    }
+
+    #[test]
+    fn json_has_no_owned_by_for_an_unowned_or_folded_file() {
+        let unowned = render_json("x.ts", &located(FileKind::Source, false)).unwrap();
+        assert!(!unowned.contains("owned_by"), "{unowned}");
+        let folded = Located {
+            kind: FileKind::Folded,
+            owner: Owner::Folded {
+                rule: Rule::Tag {
+                    arch_file: PathBuf::from("src/.arch"),
+                },
+            },
+        };
+        let json = render_json("src/lib.rs", &folded).unwrap();
+        assert!(!json.contains("owned_by"), "{json}");
+        assert!(json.contains("\"arch_file\": \"src/.arch\""), "{json}");
+    }
+
+    #[test]
+    fn text_of_a_map_owner_names_the_line_and_glob() {
+        assert_eq!(
+            render_text("src/a.ts", &mapped()),
+            "src/a.ts: lint (via c.mmd:7 (map src/))\n"
+        );
+    }
+
+    #[test]
+    fn json_of_a_map_owner_keeps_the_old_keys_and_adds_owned_by() {
+        let mapped = Located {
+            kind: FileKind::Source,
+            owner: Owner::Owned {
+                node: NodeId::new("lint").unwrap(),
+                rule: Rule::Map {
+                    contract: PathBuf::from("architecture.mmd"),
+                    site: MapSite {
+                        line: 7,
+                        glob: "src/lint/".to_owned(),
+                    },
+                },
+            },
+        };
+        assert_eq!(
+            render_json("a.ts", &mapped).unwrap(),
+            "{\n  \"file\": \"a.ts\",\n  \"node\": \"lint\",\n  \"arch_file\": \"architecture.mmd\",\n  \"kind\": \"source\",\n  \"map\": {\n    \"line\": 7,\n    \"glob\": \"src/lint/\"\n  },\n  \"owned_by\": \"map\"\n}\n"
+        );
+        assert_eq!(
+            render_text("a.ts", &mapped),
+            "a.ts: lint (via architecture.mmd:7 (map src/lint/))\n"
+        );
+    }
+
+    #[test]
+    fn json_omits_owned_by_when_unowned_or_folded() {
+        let unowned = render_json("a.ts", &located(FileKind::Source, false)).unwrap();
+        assert!(!unowned.contains("owned_by"), "{unowned}");
+        let folded = Located {
+            kind: FileKind::Folded,
+            owner: Owner::Folded {
+                rule: Rule::Tag {
+                    arch_file: PathBuf::from("src/.arch"),
+                },
+            },
+        };
+        let json = render_json("src/lib.rs", &folded).unwrap();
+        assert!(!json.contains("owned_by"), "{json}");
+        assert!(json.contains("\"arch_file\": \"src/.arch\""), "{json}");
     }
 
     #[test]

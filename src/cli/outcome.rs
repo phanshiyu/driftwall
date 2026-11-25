@@ -30,7 +30,7 @@ impl Outcome {
     /// unread, excluded and ignored files are not findings whatever their owner.
     #[must_use]
     pub const fn of_where(located: &Located) -> Self {
-        match (&located.kind, &located.node) {
+        match (&located.kind, located.owner.node()) {
             (FileKind::Source | FileKind::Directory, None) => Self::Findings,
             _ => Self::Clean,
         }
@@ -61,6 +61,7 @@ impl Outcome {
 #[cfg(test)]
 mod tests {
     use driftwall::model::{NodeId, Severity, Violation, ViolationKind};
+    use driftwall::ownership::{Owner, Rule};
 
     use super::*;
 
@@ -114,9 +115,16 @@ mod tests {
     fn a_mapped_file_is_clean_and_an_unmapped_one_is_a_finding() {
         let located = |kind, owned: bool| Located {
             kind,
-            node: owned.then(|| NodeId::new("lint").unwrap()),
-            arch_file: owned.then(|| "src/lint/.arch".into()),
-            map: None,
+            owner: if owned {
+                Owner::Owned {
+                    node: NodeId::new("lint").unwrap(),
+                    rule: Rule::Tag {
+                        arch_file: "src/lint/.arch".into(),
+                    },
+                }
+            } else {
+                Owner::Unowned
+            },
         };
         assert_eq!(
             Outcome::of_where(&located(FileKind::Source, true)),
@@ -132,9 +140,7 @@ mod tests {
     fn only_an_unmapped_source_file_is_a_finding_for_where() {
         let unowned = |kind| Located {
             kind,
-            node: None,
-            arch_file: None,
-            map: None,
+            owner: Owner::Unowned,
         };
         for kind in [
             FileKind::Asset,

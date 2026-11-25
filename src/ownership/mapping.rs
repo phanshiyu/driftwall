@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use super::{
-    Discovered, Explanation, OwnershipError, Verdict, classify, discover, peers_without,
+    Decided, Discovered, Owner, OwnershipError, Rule, Verdict, classify, discover, peers_without,
     relative_to_root,
 };
 use super::{folds, module_name, trivial_files};
@@ -107,9 +107,8 @@ impl<'a> Mapper<'a> {
         let site = Some(entry.site());
         match &entry.rule.target {
             MapTarget::Node(id) => Verdict {
-                node: Ok(id.clone()),
+                decided: Decided::Node(Ok(id.clone())),
                 at,
-                folded: false,
                 derived: false,
                 site,
             },
@@ -119,10 +118,14 @@ impl<'a> Mapper<'a> {
                 let empty = std::collections::BTreeSet::new();
                 let peers = peers.unwrap_or(&empty);
                 let name = module_name(&dir, file, peers).unwrap_or_default();
+                let decided = if trivial && folds(&dir, file, peers) {
+                    Decided::Folded
+                } else {
+                    Decided::Node(prefix.derive(&name))
+                };
                 Verdict {
-                    node: prefix.derive(&name),
+                    decided,
                     at,
-                    folded: trivial && folds(&dir, file, peers),
                     derived: true,
                     site,
                 }
@@ -135,7 +138,9 @@ impl<'a> Mapper<'a> {
     #[must_use]
     pub fn owner(&self, file: &Path, dirs: &BTreeMap<PathBuf, DirTag>) -> Option<NodeId> {
         let entry = self.best(file).ok().flatten()?;
-        self.verdict(entry, file, dirs, false).node.ok()
+        self.verdict(entry, file, dirs, false)
+            .into_owner()
+            .map(|(node, _)| node)
     }
 }
 
@@ -221,7 +226,7 @@ pub fn scan_mapped(root: &Path, context: MapContext<'_>) -> Result<Ownership, Ow
 }
 
 /// What [`locate`](super::locate) needs in map mode: who owns `relative` (a path relative to the
-/// root, a directory answered as a file directly in it) and the glob that decided it.
+/// root, a directory answered as a file directly in it) and the rule that decided it.
 ///
 /// # Errors
 /// As [`scan_mapped`].
@@ -230,7 +235,7 @@ pub(super) fn explain_mapped(
     file: &Path,
     is_dir: bool,
     context: MapContext<'_>,
-) -> Result<(Explanation, Option<MapSite>), OwnershipError> {
+) -> Result<Owner, OwnershipError> {
     let relative = relative_to_root(root, file)?;
     let own = scan_mapped(root, context)?;
     let folded = own.folded.contains(&relative);
@@ -253,18 +258,22 @@ pub(super) fn explain_mapped(
             let entry = hit.filter(|_| !folded)?;
             mapper
                 .verdict(entry, &probe, &own.tag_dirs, false)
-                .node
-                .ok()
+                .into_owner()
+                .map(|(node, _)| node)
         });
-    let decided = node.is_some() || folded;
-    Ok((
-        Explanation {
-            node,
-            arch_file: decided.then(|| context.contract.to_path_buf()),
-            folded,
-        },
-        hit.filter(|_| decided).map(Entry::site),
-    ))
+    // why: an owner or a fold is always decided by a glob, so a missing glob can only mean unowned.
+    let Some(entry) = hit else {
+        return Ok(Owner::Unowned);
+    };
+    let rule = Rule::Map {
+        contract: context.contract.to_path_buf(),
+        site: entry.site(),
+    };
+    Ok(match node {
+        Some(node) => Owner::Owned { node, rule },
+        None if folded => Owner::Folded { rule },
+        None => Owner::Unowned,
+    })
 }
 
 #[cfg(test)]
@@ -491,22 +500,13 @@ mod tests {
         let ask = |file: &str, is_dir: bool| {
             explain_mapped(dir.path(), Path::new(file), is_dir, context).unwrap()
         };
-        let (found, site) = ask("src/a.ts", false);
-        assert_eq!(found.node.unwrap().as_str(), "ui");
-        assert_eq!(found.arch_file.as_deref(), Some(Path::new("c.mmd")));
-        assert_eq!(site.unwrap().glob, "src/");
-        assert_eq!(ask("src/hidden.ts", false).0.node.unwrap().as_str(), "ui");
-        assert_eq!(ask("src", true).0.node.unwrap().as_str(), "ui");
-        assert_eq!(
-            ask("elsewhere.ts", false),
-            (
-                Explanation {
-                    node: None,
-                    arch_file: None,
-                    folded: false
-                },
-                None
-            )
-        );
+        let found = ask("src/a.ts", false);
+        assert_eq!(found.node().unwrap().as_str(), "ui");
+        assert_eq!(found.arch_file(), Some(Path::new("c.mmd")));
+        assert_eq!(found.site().unwrap().glob, "src/");
+        assert_eq!(found.owned_by(), Some("map"));
+        assert_eq!(ask("src/hidden.ts", false).node().unwrap().as_str(), "ui");
+        assert_eq!(ask("src", true).node().unwrap().as_str(), "ui");
+        assert_eq!(ask("elsewhere.ts", false), Owner::Unowned);
     }
 }

@@ -3,14 +3,14 @@
 use std::ffi::OsStr;
 use std::fs;
 use std::io;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use super::mapping::explain_mapped;
 use super::{
-    ARCH_FILE, Discovered, Explanation, MapContext, OwnershipError, discover, explain, language_of,
+    ARCH_FILE, Discovered, MapContext, Owner, OwnershipError, discover, explain, language_of,
     relative_to_root,
 };
-use crate::model::{Exclusion, MapSite, NodeId};
+use crate::model::Exclusion;
 
 /// What a walked path is to driftwall.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -41,14 +41,10 @@ pub enum FileKind {
 pub struct Located {
     /// What the path is.
     pub kind: FileKind,
-    /// The owning node, by the tag rules of source files, also for an excluded or ignored file.
-    /// `None` when no tag covers the file, and for a tag file, a contract and a folded entry file.
-    pub node: Option<NodeId>,
-    /// The `.arch` file that decided it, relative to the root, or the contract when a `%% map`
-    /// glob did.
-    pub arch_file: Option<PathBuf>,
-    /// The `%% map` line and glob that decided it, in map mode.
-    pub map: Option<MapSite>,
+    /// Who owns it and which rule decided, by the tag rules of source files, also for an excluded
+    /// or ignored file. Unowned for a tag file, a contract, and a file no rule covers. A folded
+    /// entry file is [`Owner::Folded`].
+    pub owner: Owner,
 }
 
 /// Says what `file` is (see [`FileKind`]) and who owns it, like [`explain`] for the owner.
@@ -102,23 +98,14 @@ fn locate_with(
     if kind == FileKind::TagFile {
         return Ok(Located {
             kind,
-            node: None,
-            arch_file: None,
-            map: None,
+            owner: Owner::Unowned,
         });
     }
     let explained = context.map_or_else(
-        || explain(root, &relative).map(|found| (found, None)),
+        || explain(root, &relative),
         |context| explain_mapped(root, &relative, kind == FileKind::Directory, context),
     );
-    let (
-        Explanation {
-            node,
-            arch_file,
-            folded,
-        },
-        map,
-    ) = match explained {
+    let owner = match explained {
         // why: an asset or unread file must never fail, so a name that is no node id is unowned.
         Err(OwnershipError::InvalidModule { .. })
             if matches!(
@@ -126,26 +113,17 @@ fn locate_with(
                 FileKind::Asset | FileKind::Unread(_) | FileKind::Excluded(_) | FileKind::Ignored
             ) =>
         {
-            (
-                Explanation {
-                    node: None,
-                    arch_file: None,
-                    folded: false,
-                },
-                None,
-            )
+            Owner::Unowned
         }
         other => other?,
     };
     Ok(Located {
-        kind: if folded && kind == FileKind::Source {
+        kind: if owner.is_folded() && kind == FileKind::Source {
             FileKind::Folded
         } else {
             kind
         },
-        node,
-        arch_file,
-        map,
+        owner,
     })
 }
 
@@ -207,7 +185,7 @@ mod tests {
 
     fn answer(dir: &tempfile::TempDir, file: &str) -> (FileKind, Option<String>) {
         let found = locate(dir.path(), Path::new(file)).unwrap();
-        (found.kind, found.node.map(|node| node.to_string()))
+        (found.kind, found.owner.node().map(ToString::to_string))
     }
 
     fn repo() -> tempfile::TempDir {
