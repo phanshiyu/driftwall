@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 - 2026-11-25
 
 - A type alias is followed like a re-export. `pub type Review = crate::store::Review;` used to
   count as a definition in its own file, so a caller of the alias depended on the aliasing module
