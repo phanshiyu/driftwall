@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 - 2026-11-25
 
 - Interface budget: `%% budget store: interface 5` limits how many distinct symbols of a node code
   outside it uses in production code, so a node stays deep behind a narrow interface. Re-exports are
