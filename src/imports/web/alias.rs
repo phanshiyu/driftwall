@@ -12,8 +12,11 @@
 //! - When `baseUrl` is set, a specifier that no pattern resolves is also tried as
 //!   `<baseUrl>/<specifier>`.
 
+#[cfg(test)]
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+#[cfg(test)]
+use std::path::Path;
+use std::path::PathBuf;
 
 use crate::imports::syntax::paths::join_normalised;
 
@@ -204,6 +207,7 @@ impl AliasConfig {
 /// `configs` is keyed by repository-relative directory and holds alias configurations or the
 /// packages a `package.json` declares.
 #[must_use]
+#[cfg(test)]
 pub fn nearest<'a, T>(configs: &'a BTreeMap<PathBuf, T>, importer: &Path) -> Option<&'a T> {
     importer
         .parent()?

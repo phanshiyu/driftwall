@@ -33,7 +33,7 @@ fn run(source: &str, repo: &[&str], config: AliasConfig) -> FileImports {
             unowned: &BTreeSet::new(),
         },
         test_files: &BTreeSet::new(),
-        ecmascript: crate::imports::ecmascript::Env {
+        web: crate::imports::web::Env {
             aliases: &aliases,
             packages: &BTreeMap::new(),
             workspaces: &Workspaces::default(),
@@ -216,7 +216,7 @@ fn files_without_a_governing_config_see_no_aliases_and_the_specifier_is_a_packag
             unowned: &BTreeSet::new(),
         },
         test_files: &BTreeSet::new(),
-        ecmascript: crate::imports::ecmascript::Env {
+        web: crate::imports::web::Env {
             aliases: &aliases,
             packages: &BTreeMap::new(),
             workspaces: &Workspaces::default(),

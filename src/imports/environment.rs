@@ -3,11 +3,11 @@
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
-use super::ecmascript;
 use super::python::PythonLayout;
 use super::rust;
 use super::swift::SwiftModules;
 use super::syntax::resolution::Files;
+use super::web;
 
 /// What resolvers may consult besides the importing file: every known repository file and what
 /// each language reads of the repository's configuration. Built once per run, shared by every
@@ -20,7 +20,7 @@ pub struct Environment<'a> {
     /// the module `test_modules` of `rust`. Every import written in one is `test_only`.
     pub test_files: &'a BTreeSet<PathBuf>,
     /// The configuration of TypeScript, JavaScript, Svelte and HTML.
-    pub ecmascript: ecmascript::Env<'a>,
+    pub web: web::Env<'a>,
     /// The Python directories, names and configured import roots of the repository.
     pub python: &'a PythonLayout,
     /// The Rust crates, placed modules and dependencies of the repository.

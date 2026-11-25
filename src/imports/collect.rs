@@ -6,16 +6,18 @@ use std::path::{Path, PathBuf};
 
 use rayon::prelude::*;
 
-use super::ecmascript::{
-    self, alias_configs, package_dependencies, project_configs, vite_aliases, vite_roots,
-    workspaces,
-};
+use super::environment::Environment;
+use super::extract::extract_in;
 use super::python::{PythonLayout, python_roots};
 use super::rust::{self, cargo_dependencies, library_crates};
 use super::swift::{SwiftModules, swift_targets};
 use super::syntax::resolution::Files;
 use super::syntax::table::Table;
-use super::{Environment, Facades, FileImports, ImportsError, extract_in, reexport};
+use super::web::{
+    self, alias_configs, package_dependencies, project_configs, vite_aliases, vite_roots,
+    workspaces,
+};
+use super::{Facades, FileImports, ImportsError, reexport};
 use crate::model::Language;
 
 /// A file's path, its imports and its re-export table when it may have one.
@@ -26,6 +28,7 @@ type Collected = (PathBuf, FileImports, Option<Table>);
 ///
 /// # Errors
 /// The same as [`collect_with_assets`].
+#[cfg(test)]
 pub fn collect(
     root: &Path,
     files: &BTreeMap<PathBuf, Language>,
@@ -53,7 +56,7 @@ pub fn collect(
 ///
 /// # Errors
 /// Returns [`ImportsError::Io`] for a file that cannot be read or is not UTF-8, and the grammar
-/// and query errors of [`extract`](super::extract).
+/// and query errors of `extract`.
 pub fn collect_with_assets(
     root: &Path,
     files: &BTreeMap<PathBuf, Language>,
@@ -100,7 +103,7 @@ pub fn collect_with_facades(
             unowned,
         },
         test_files: &test_files,
-        ecmascript: ecmascript::Env {
+        web: web::Env {
             aliases: &aliases,
             packages: &packages,
             workspaces: &workspaces,

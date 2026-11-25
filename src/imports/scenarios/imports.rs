@@ -470,7 +470,7 @@ fn table_entries_match_their_language() {
         Language::Python,
         Language::Rust,
     ] {
-        assert_eq!(spec(language).map(|s| s.language), Some(language));
+        assert_eq!(spec(language).language, language);
     }
 }
 

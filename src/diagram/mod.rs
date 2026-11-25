@@ -69,7 +69,8 @@ mod tests {
     fn a_contract_with_exports_survives_a_render_round_trip() {
         let src = format!("{OWN_CONTRACT}%% exports model: Edge, NodeId\n%% exports lint: run\n");
         let contract = parse(&src).unwrap();
-        assert_eq!(contract.surfaces.len(), 2);
+        let own = parse(OWN_CONTRACT).unwrap().surfaces.len();
+        assert_eq!(contract.surfaces.len(), own + 2);
         let rendered = render(&contract);
         // why: render moves the appended exports above the rules, so only surfaces and fixpoint match.
         let again = parse(&rendered).unwrap();

@@ -73,7 +73,7 @@ fn a_binary_reaches_lint_through_the_library_name_read_from_cargo_toml() {
             unowned: &BTreeSet::new(),
         },
         test_files: &BTreeSet::new(),
-        ecmascript: fixtures::no_ecmascript(),
+        web: fixtures::no_web(),
         python: &PythonLayout::default(),
         rust: crate::imports::rust::Env {
             crates: &crates,

@@ -4,7 +4,7 @@
 //! Resolution decides which file an import names. This second step reads the re-export tables of
 //! the files that were named: when a file re-exports a name from another repository file, the
 //! symbol is attributed to the file that defines it. Each language fills a [`Table`] from syntax
-//! alone (the `reexport` module of `rust`, `ecmascript` and `python`); the walk here is shared.
+//! alone (the `reexport` module of `rust`, `web` and `python`); the walk here is shared.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -12,8 +12,9 @@ use std::path::{Path, PathBuf};
 use rayon::prelude::*;
 use tree_sitter::{Parser, Tree};
 
+use super::environment::Environment;
 use super::syntax::table::Table;
-use super::{Environment, FileImports, ecmascript, python, rust, spec};
+use super::{FileImports, python, rust, spec, web};
 use crate::model::{ImportKind, Language, Location, ResolvedImport, Symbol};
 
 /// The name a default export has.
@@ -55,7 +56,7 @@ pub fn table(source: &str, language: Language, file: &Path, env: &Environment<'_
     match language {
         Language::Rust => rust::reexport_table(&tree, source, file, &env.files, &env.rust),
         Language::TypeScript | Language::JavaScript => {
-            ecmascript::reexport_table(&tree, source, file, &env.files, &env.ecmascript)
+            web::reexport_table(&tree, source, file, &env.files, &env.web)
         }
         Language::Python => python::reexport_table(&tree, source, file, &env.files, env.python),
         _ => Table::default(),
@@ -63,7 +64,7 @@ pub fn table(source: &str, language: Language, file: &Path, env: &Environment<'_
 }
 
 fn parse(source: &str, language: Language, file: &Path) -> Option<Tree> {
-    let spec = spec(language)?;
+    let spec = spec::spec(language);
     let scan = (spec.scan)(source, file);
     let region = scan.regions.first()?;
     let mut parser = Parser::new();

@@ -53,7 +53,7 @@ fn run(
             unowned: &BTreeSet::new(),
         },
         test_files: &BTreeSet::new(),
-        ecmascript: crate::imports::ecmascript::Env {
+        web: crate::imports::web::Env {
             aliases: &aliases,
             packages,
             workspaces: &Workspaces::default(),
@@ -215,7 +215,7 @@ fn an_aliased_specifier_is_never_skipped_even_when_nothing_backs_it() {
             unowned: &BTreeSet::new(),
         },
         test_files: &BTreeSet::new(),
-        ecmascript: crate::imports::ecmascript::Env {
+        web: crate::imports::web::Env {
             aliases: &aliases,
             packages: &packages,
             workspaces: &Workspaces::default(),
@@ -450,7 +450,7 @@ fn rs_at(source: &str, file: &str) -> FileImports {
             unowned: &BTreeSet::new(),
         },
         test_files: &BTreeSet::new(),
-        ecmascript: crate::imports::ecmascript::Env {
+        web: crate::imports::web::Env {
             aliases: &aliases,
             packages: &packages,
             workspaces: &Workspaces::default(),

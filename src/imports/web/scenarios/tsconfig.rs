@@ -5,8 +5,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use super::*;
-use crate::imports::ecmascript::{MAX_EXTENDS_DEPTH, discover};
 use crate::imports::syntax::paths::directories;
+use crate::imports::web::{MAX_EXTENDS_DEPTH, discover};
 use crate::model::Language;
 
 const NONE: [&str; 0] = [];
@@ -53,7 +53,7 @@ fn imports(files: &BTreeMap<PathBuf, String>, importer: &str, source: &str) -> V
             unowned: &BTreeSet::new(),
         },
         test_files: &BTreeSet::new(),
-        ecmascript: crate::imports::ecmascript::Env {
+        web: crate::imports::web::Env {
             aliases: &aliases,
             packages: &BTreeMap::new(),
             workspaces: &Workspaces::default(),

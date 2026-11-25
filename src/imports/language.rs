@@ -3,9 +3,10 @@
 
 use std::path::Path;
 
+use super::environment::Environment;
 use super::syntax::resolution::{Reference, Resolution};
 use super::syntax::spec::Load;
-use super::{Environment, ecmascript, python, rust, shell, swift};
+use super::{python, rust, shell, swift, web};
 use crate::model::Language;
 
 /// What a language collects once per file before its matches are resolved.
@@ -36,11 +37,9 @@ pub fn resolve(
 ) -> Vec<Resolution> {
     match language {
         Language::TypeScript | Language::JavaScript | Language::Svelte => {
-            ecmascript::resolve(reference, importer, &env.files, &env.ecmascript)
+            web::resolve(reference, importer, &env.files, &env.web)
         }
-        Language::Html => {
-            ecmascript::resolve_inline(reference, importer, &env.files, &env.ecmascript)
-        }
+        Language::Html => web::resolve_inline(reference, importer, &env.files, &env.web),
         Language::Python => python::resolve(reference, importer, &env.files, env.python),
         Language::Rust => match scope {
             Scope::Rust(bindings) => {
@@ -68,7 +67,7 @@ pub fn resolve_load(
     env: &Environment<'_>,
 ) -> Resolution {
     match language {
-        Language::Html => ecmascript::resolve_load(load, importer, &env.files, &env.ecmascript),
+        Language::Html => web::resolve_load(load, importer, &env.files, &env.web),
         _ => Resolution::Ignored,
     }
 }
@@ -83,7 +82,7 @@ pub fn resolve_doc(
 ) -> Resolution {
     match language {
         Language::TypeScript | Language::JavaScript | Language::Svelte | Language::Html => {
-            ecmascript::specifier(specifier, importer, &env.files, &env.ecmascript)
+            web::specifier(specifier, importer, &env.files, &env.web)
         }
         _ => Resolution::Ignored,
     }
@@ -96,7 +95,7 @@ pub fn resolve_doc(
 pub fn test_file(language: Language, file: &Path) -> bool {
     match language {
         Language::TypeScript | Language::JavaScript | Language::Svelte | Language::Html => {
-            ecmascript::test_file(file)
+            web::test_file(file)
         }
         Language::Python => python::test_file(file),
         Language::Rust => rust::is_test_file(file),

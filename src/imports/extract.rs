@@ -6,16 +6,13 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use tree_sitter::{Node, Parser, Query, QueryCursor, StreamingIterator};
 
-use super::ecmascript;
+use super::environment::Environment;
 use super::language;
-use super::python::PythonLayout;
-use super::rust;
-use super::swift::SwiftModules;
 use super::syntax::literal::literal_text;
-use super::syntax::resolution::{Files, Reference, Resolution};
+use super::syntax::resolution::{Reference, Resolution};
 use super::syntax::spec::{Grammar, LanguageSpec, Region};
 use super::syntax::statement::Flags;
-use super::{Environment, FileImports, ImportsError, spec};
+use super::{FileImports, ImportsError, spec};
 use crate::model::{
     ImportKind, Language, Location, PackageKind, PackageUse, ResolvedImport, SkipReason, Skipped,
     Symbol, UnresolvedImport,
@@ -30,20 +27,26 @@ const NAME_CAPTURE: &str = "name";
 /// Extracts and resolves the imports of one file. Pure: it never touches the filesystem.
 ///
 /// `file` is the repository-relative path of the importing file and `known` holds the
-/// repository-relative paths of every repository file. A language with no table entry yields no
-/// imports. Syntax errors are tolerated: whatever imports tree-sitter can still see are returned.
+/// repository-relative paths of every repository file. Syntax errors are tolerated: whatever imports tree-sitter can still see are returned.
 /// No library crates are known, so Rust paths that start with a crate name are not followed; use
 /// [`extract_in`] to supply them.
 ///
 /// # Errors
 /// Returns [`ImportsError::Grammar`] or [`ImportsError::Query`] when a table entry is internally
 /// inconsistent.
+#[cfg(test)]
 pub fn extract(
     source: &str,
     language: Language,
     file: &Path,
     known: &BTreeSet<PathBuf>,
 ) -> Result<FileImports, ImportsError> {
+    use super::python::PythonLayout;
+    use super::rust;
+    use super::swift::SwiftModules;
+    use super::syntax::resolution::Files;
+    use super::web;
+
     let crates = BTreeMap::new();
     let aliases = BTreeMap::new();
     let python = PythonLayout::new(known, BTreeMap::new());
@@ -58,10 +61,10 @@ pub fn extract(
                 unowned: &BTreeSet::new(),
             },
             test_files: &BTreeSet::new(),
-            ecmascript: ecmascript::Env {
+            web: web::Env {
                 aliases: &aliases,
                 packages: &BTreeMap::new(),
-                workspaces: &ecmascript::Workspaces::default(),
+                workspaces: &web::Workspaces::default(),
                 projects: &BTreeMap::new(),
                 vite_roots: &BTreeMap::new(),
                 vite_aliases: &BTreeMap::new(),
@@ -88,9 +91,7 @@ pub fn extract_in(
     file: &Path,
     env: &Environment<'_>,
 ) -> Result<FileImports, ImportsError> {
-    let Some(spec) = spec(language) else {
-        return Ok(FileImports::default());
-    };
+    let spec = spec::spec(language);
     let scan = (spec.scan)(source, file);
     let mut found = Found::default();
     for region in &scan.regions {
@@ -356,8 +357,8 @@ mod cache_key_tests {
 
     #[test]
     fn grammar_names_are_unique_per_grammar() {
-        let ts = spec(Language::TypeScript).unwrap();
-        let js = spec(Language::JavaScript).unwrap();
+        let ts = spec(Language::TypeScript);
+        let js = spec(Language::JavaScript);
         let name = |scan: Scan| scan.regions[0].grammar.name;
         let names = [
             name((ts.scan)("", Path::new("a.ts"))),

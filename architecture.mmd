@@ -12,19 +12,22 @@ flowchart LR
     cli["cli: args, exit codes"]
   end
 
+  subgraph output["Output"]
+    report["report: text, json, sarif"]
+  end
+
   subgraph shared["Shared"]
     model["model: ids, edges, violations"]
-    report["report: text, json, sarif"]
   end
 
   subgraph sources["Sources"]
     subgraph reading["Reading code"]
       subgraph languages["Languages"]
-        ecmascript["ecmascript: TS, JS, Svelte, HTML; tsconfig, vite, workspaces"]
         python["python: imports, roots, stdlib"]
         rust["rust: use paths, modules, Cargo"]
         shell["shell: source and script references"]
         swift["swift: imports, SwiftPM targets"]
+        web["web: TS, JS, Svelte, HTML; tsconfig, vite, workspaces"]
       end
       imports["imports: collect a repo's imports, one language at a time"]
       syntax["syntax: tree-sitter specs, statements, shared resolution"]
@@ -34,13 +37,14 @@ flowchart LR
     ownership["ownership: walk, maps, ignores"]
   end
 
+  tests["tests: end-to-end, through the binary and the library"]
+
   cli --> init
   cli --> lint
   cli --> model
   cli --> ownership
   cli --> report
   diagram --> model
-  ecmascript --> markup
   imports --> model
   imports --> syntax
   init --> diagram
@@ -55,25 +59,43 @@ flowchart LR
   ownership --> model
   report --> model
   syntax --> model
+  tests -->|test| diagram
+  tests -->|test| imports
+  tests -->|test| init
+  tests -->|test| lint
+  tests -->|test| model
+  tests -->|test| ownership
+  tests -->|test| report
+  web --> markup
   imports --> languages
   languages -->|test| imports
   languages --> model
   languages --> syntax
 
-  %% order: entry > engine > sources > shared
+  %% exports imports: Facades, FileImports, ImportsError, collect_with_assets, collect_with_facades, swift_targets
+
+  %% order: entry > output > engine > sources > shared
   %% isolated: languages
   %% no-cycles
   %% no-cycles: boundaries
   %% tests: isolated
   %% facade imports
 
+  %% packages cli: anyhow, clap, serde, serde_json, tempfile
+  %% packages diagram: thiserror
+  %% packages imports: rayon, thiserror, tree_sitter
+  %% packages init: serde, serde_json, thiserror, toml
+  %% packages lint: thiserror
   %% packages markup:
-  %% forbid-packages model: tree_sitter*, ignore, rayon, clap, anyhow
-  %% forbid-packages report: tree_sitter*, ignore, rayon, clap, anyhow
-  %% forbid-packages diagram: tree_sitter*, ignore, rayon, clap, anyhow
-  %% forbid-packages lint: tree_sitter*, ignore, clap, anyhow
-  %% forbid-packages init: tree_sitter*, ignore, clap, anyhow
-  %% forbid-packages ownership: tree_sitter*, clap, anyhow
+  %% packages model: serde, thiserror
+  %% packages ownership: ignore, thiserror
+  %% packages python: jsonc_parser, serde_json, toml, tree_sitter, tree_sitter_python
+  %% packages report: serde, serde_json, thiserror
+  %% packages rust: rayon, serde, toml, tree_sitter, tree_sitter_rust
+  %% packages shell: tree_sitter, tree_sitter_bash
+  %% packages swift: tree_sitter, tree_sitter_swift
+  %% packages syntax: tree_sitter
+  %% packages web: jsonc_parser, serde, serde_json, tree_sitter, tree_sitter_javascript, tree_sitter_typescript
 
   %% map cli: src/cli/, src/lib.rs
   %% map lint: src/lint/
@@ -81,7 +103,8 @@ flowchart LR
   %% map diagram: src/diagram/
   %% map ownership: src/ownership/
   %% map imports: src/imports/
-  %% map ecmascript: src/imports/ecmascript/
+  %% map tests: tests/
+  %% map web: src/imports/web/
   %% map python: src/imports/python/
   %% map rust: src/imports/rust/
   %% map swift: src/imports/swift/

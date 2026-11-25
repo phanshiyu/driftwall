@@ -1,4 +1,5 @@
-//! Walks the repository and maps every file to its owning node via `.arch` files.
+//! Walks the repository and maps every file to its owning node, by the contract's `%% map` lines
+//! or, in a repository without them, by `.arch` tag files.
 
 mod arch;
 mod census;

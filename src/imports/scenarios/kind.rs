@@ -355,7 +355,7 @@ fn rs_with(source: &str, file: &str, repo: &[&str]) -> FileImports {
             unowned: &BTreeSet::new(),
         },
         test_files: &BTreeSet::new(),
-        ecmascript: crate::imports::ecmascript::Env {
+        web: crate::imports::web::Env {
             aliases: &aliases,
             packages: &BTreeMap::new(),
             workspaces: &Workspaces::default(),

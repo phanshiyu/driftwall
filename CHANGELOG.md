@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Test code is no longer held to a node's `%% exports` surface: `private-symbol` applies to
+  production imports only, as package rules already do. A test that an edge allows may drive a
+  node's internals, which is what a test is for; production callers stay held to the surface.
+
 ## 0.3.0 - 2026-11-25
 
 - `%% deny <from>: <to>[, <to>...]` takes a pair out of an open chain. In `%% order open`, every

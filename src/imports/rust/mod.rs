@@ -16,7 +16,9 @@ mod tree;
 pub use cargo::cargo_dependencies;
 pub use env::Env;
 pub use manifest::library_crates;
-pub use path_modules::{PathModules, path_modules};
+#[cfg(test)]
+pub use path_modules::PathModules;
+pub use path_modules::path_modules;
 pub use reexport::table as reexport_table;
 pub use resolve::resolve;
 pub use scope::Bindings;

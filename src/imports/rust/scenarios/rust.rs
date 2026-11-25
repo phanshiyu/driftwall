@@ -44,7 +44,7 @@ fn rs_in(
             unowned: &BTreeSet::new(),
         },
         test_files: &BTreeSet::new(),
-        ecmascript: fixtures::no_ecmascript(),
+        web: fixtures::no_web(),
         python: &PythonLayout::default(),
         rust: crate::imports::rust::Env {
             crates: library,

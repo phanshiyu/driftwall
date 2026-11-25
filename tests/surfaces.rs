@@ -520,3 +520,22 @@ fn rust_glob_import_is_private() {
     );
     assert!(violations[0]["message"].as_str().unwrap().contains("`*`"));
 }
+
+#[test]
+fn test_code_may_use_names_outside_a_surface() {
+    let dir = repo(&[
+        ("architecture.mmd", SURFACE_CONTRACT),
+        ("a/.arch", "node: a\n"),
+        ("a/main.ts", "import { Client } from \"../b/lib\";\n"),
+        (
+            "a/main.test.ts",
+            "import { secret } from \"../b/lib\";\nimport * as all from \"../b/lib\";\n",
+        ),
+        ("b/.arch", "node: b\n"),
+        ("b/lib.ts", TS_LIB),
+    ]);
+    let output = driftwall(&["lint", "--strict"], dir.path());
+    let text = String::from_utf8_lossy(&output.stdout);
+    assert_eq!(output.status.code(), Some(0), "{text}");
+    assert!(!text.contains("private-symbol"), "{text}");
+}

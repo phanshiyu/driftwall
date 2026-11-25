@@ -34,7 +34,7 @@ pub fn repo(files: &[(&str, &str)]) -> Repo {
             Some("svelte") => Some(Language::Svelte),
             Some("swift") => Some(Language::Swift),
             Some("sh" | "bash" | "zsh") => Some(Language::Shell),
-            Some("html" | "htm") if crate::imports::ecmascript::has_script(content) => {
+            Some("html" | "htm") if crate::imports::web::has_script(content) => {
                 Some(Language::Html)
             }
             _ => None,
@@ -138,8 +138,8 @@ pub fn no_rust() -> crate::imports::rust::Env<'static> {
 
 /// The TypeScript and JavaScript part of an environment for a test of another language: no
 /// configuration at all. Leaked, so a language's test names no other language.
-pub fn no_ecmascript() -> crate::imports::ecmascript::Env<'static> {
-    crate::imports::ecmascript::Env {
+pub fn no_web() -> crate::imports::web::Env<'static> {
+    crate::imports::web::Env {
         aliases: Box::leak(Box::default()),
         packages: Box::leak(Box::default()),
         workspaces: Box::leak(Box::default()),

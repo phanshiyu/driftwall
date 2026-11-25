@@ -31,18 +31,6 @@ pub struct PathModules {
 }
 
 impl PathModules {
-    /// The table of one declaration, for tests.
-    #[must_use]
-    pub fn single(root: &Path, names: &[&str], file: &Path) -> Self {
-        let mut table = Self::default();
-        table.insert(
-            root,
-            names.iter().map(|name| (*name).to_owned()).collect(),
-            file,
-        );
-        table
-    }
-
     /// The file `#[path]` placed the module `names` of the crate rooted at `root` in.
     #[must_use]
     pub fn file_of(&self, root: &Path, names: &[&str]) -> Option<&PathBuf> {

@@ -1,7 +1,7 @@
 //! driftwall: an architecture contract linter.
 //!
 //! A Mermaid diagram (`architecture.mmd`) declares nodes and the dependencies allowed between
-//! them. Directories are tagged to nodes with `.arch` files. The linter extracts the real import
+//! them. `%% map` lines in the contract (or `.arch` tag files) say which node owns each file. The linter extracts the real import
 //! graph and reports every place the code disagrees with the diagram.
 
 pub mod diagram;

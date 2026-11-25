@@ -2203,7 +2203,10 @@ the lines after the edges, sorted by node, names sorted.
 When a node has a surface, an import from another node (both owners declared, so unmapped and unknown
 owners never cascade) that uses a symbol outside it, or uses `*`, is a `private-symbol` error at the
 import, one per symbol. An import that uses no symbol (side-effect) is never private, and imports
-inside one node are never checked. Nodes without an `exports` line are unrestricted.
+inside one node are never checked. Nodes without an `exports` line are unrestricted. Test code
+(`test_only`, see "Import kind") is not held to a surface, as it is exempt from package rules: a
+surface is the interface for production callers, and a test that an edge allows may drive the
+node's internals.
 
 `*` is always a violation for a node with a surface: the importer reaches names that are never seen,
 so it cannot be checked. A Rust glob (`use crate::gitlab::*;`), TypeScript `import * as` and
@@ -3064,10 +3067,14 @@ unchanged. `init` prints the same note line after the line that says what it wro
 
 ## Module map
 
-The contract for this repository is `architecture.mmd`, enforced on itself once Rust support
-lands. `src/<node>/.arch` tags each module. `model` has no outbound edges. `report` only renders
-`model` types. `lint` and `init` are the only modules that combine `diagram`, `ownership` and
-`imports`.
+The contract for this repository is `architecture.mmd`, and `scripts/gate.sh` lints the repository
+against it on every commit. Its `%% map` lines say which directory each node owns; there are no
+`.arch` files. `cli` is the entry point (`src/cli/`, and `src/lib.rs`, which only declares the
+modules). `model` has no outbound edges. `report`, in its own `output` layer, only renders `model`
+types. `lint` and `init` are the only modules that combine `diagram`, `ownership` and `imports`.
+`markup` scans HTML and Svelte for script elements and is used by `ownership` (to tell an HTML
+source file from an asset) and by `web`. `imports` is a facade: `%% exports imports` lists the six
+names other nodes may use, and the rest of `imports` is compiled for tests only or private.
 
 `src/imports/` holds one directory per layer of reading code:
 
@@ -3083,13 +3090,13 @@ lands. `src/<node>/.arch` tags each module. `model` has no outbound edges. `repo
   (`spec.rs`), the types a resolver receives and answers with (`resolution.rs`), the re-export
   `Table`, the statement flags every language shares, the import queries, globs, string literals
   and repository paths.
-- `src/imports/ecmascript/`, `python/`, `rust/`, `swift/` and `shell/` are one language each, with
+- `src/imports/web/`, `python/`, `rust/`, `swift/` and `shell/` are one language each, with
   its resolver, its statement rules, its grammar, what it reads from the repository (`tsconfig`,
-  `package.json` and Vite for ECMAScript, import roots for Python, `Cargo.toml` and `#[path]` for
-  Rust, SwiftPM targets for Swift) and its re-export table. `ecmascript/markup.rs` is the part
+  `package.json` and Vite for `web`, import roots for Python, `Cargo.toml` and `#[path]` for
+  Rust, SwiftPM targets for Swift) and its re-export table. `web/markup.rs` is the part
   that reads Svelte and HTML through `src/markup/`.
 
-A language imports `syntax` and `model` and nothing else (ECMAScript also `markup`). It is handed
+A language imports `syntax` and `model` and nothing else (`web` also `markup`). It is handed
 the repository files and its own part of the `Environment`, and never sees another language.
 
 ## Enforcement over instructions

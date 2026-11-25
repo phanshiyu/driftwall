@@ -33,7 +33,7 @@ fn used_at(source: &str, file: &str) -> Vec<Used> {
             unowned: &BTreeSet::new(),
         },
         test_files: &BTreeSet::new(),
-        ecmascript: fixtures::no_ecmascript(),
+        web: fixtures::no_web(),
         python: &PythonLayout::default(),
         rust: crate::imports::rust::Env {
             crates: &crates,

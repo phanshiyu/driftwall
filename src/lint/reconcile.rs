@@ -443,8 +443,9 @@ fn redundant_findings(contract: &Contract) -> Vec<Violation> {
 }
 
 /// One finding per symbol `import` uses that the surface of the node it enters does not list.
-/// Nothing when that node declares no surface. An import that uses no symbol is never private,
-/// and `*` is always private: the importer reaches names that are never seen.
+/// Nothing when that node declares no surface, or when the import is test code. An import that
+/// uses no symbol is never private, and `*` is always private: the importer reaches names that are
+/// never seen.
 fn private_symbols(
     contract: &Contract,
     edge: &Edge,
@@ -454,6 +455,10 @@ fn private_symbols(
     let Some(surface) = contract.surfaces.get(&edge.to) else {
         return Vec::new();
     };
+    // why: a surface is for production callers; tests drive internals, as with package rules.
+    if import.test_only {
+        return Vec::new();
+    }
     let listed = surface.iter().map(String::as_str).collect::<Vec<_>>();
     import
         .symbols
@@ -1041,6 +1046,23 @@ mod tests {
             let c = with_surface(unlinked(), "a", &["Only"]);
             let used = imports_using(&[(MAIN, 1, "a/z.ts", &["hidden", "*"])]);
             assert_eq!(lint(&c, &owners(), &used), Vec::new());
+        }
+
+        #[test]
+        fn test_code_is_not_held_to_a_surface() {
+            let own = ownership(&[("a/x.rs", "a"), ("b/y.rs", "b")], &[]);
+            let c = with_surface(ab(), "b", &["Client"]);
+            let mut used = imports_using(&[("a/x.rs", 4, "b/y.rs", &["*", "hidden"])]);
+            for file in used.values_mut() {
+                for import in &mut file.resolved {
+                    import.test_only = true;
+                }
+            }
+            let found = lint(&c, &own, &used);
+            assert!(
+                found.iter().all(|v| v.kind != ViolationKind::PrivateSymbol),
+                "{found:?}"
+            );
         }
 
         #[test]

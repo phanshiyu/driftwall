@@ -1,6 +1,6 @@
 //! Extracts imports with tree-sitter and resolves them to repository files.
 //!
-//! Extraction is driven by the per-language table in [`spec()`]: a grammar, a query capturing import
+//! Extraction is driven by the per-language table in `spec()`: a grammar, a query capturing import
 //! specifiers, and a resolver. TypeScript, JavaScript, Python and Rust are filled in.
 //!
 //! TypeScript and JavaScript resolve relative specifiers, aliases defined by `compilerOptions`
@@ -30,7 +30,6 @@
 //! `statement`, and sits at the line its statement starts on.
 
 mod collect;
-mod ecmascript;
 mod environment;
 mod error;
 mod extract;
@@ -43,23 +42,33 @@ mod shell;
 mod spec;
 mod swift;
 mod syntax;
+mod web;
 
 #[cfg(test)]
 mod scenarios;
 
-pub use collect::{collect, collect_with_assets, collect_with_facades};
-pub use ecmascript::{
-    AliasConfig, Candidate, Pattern, Project, TargetTemplate, ViteAlias, Workspaces, alias_configs,
-    nearest, package_dependencies, project_configs, vite_aliases, vite_roots, workspaces,
-};
-pub use environment::Environment;
+pub use collect::{collect_with_assets, collect_with_facades};
 pub use error::ImportsError;
-pub use extract::{extract, extract_in};
 pub use file_imports::FileImports;
-pub use python::{PythonLayout, python_roots};
 pub use reexport::Facades;
-pub use rust::{Bindings, PathModules, cargo_dependencies, library_crates};
-pub use spec::spec;
-pub use swift::{SwiftModules, SwiftTarget, swift_targets};
-pub use syntax::resolution::{Files, Reference, Resolution};
-pub use syntax::spec::{Docs, Grammar, LanguageSpec, Load, Loads, Region, Scan};
+pub use swift::{SwiftTarget, swift_targets};
+
+// why: the pipeline tests in `scenarios/` and in each language reach these through `crate::imports`.
+#[cfg(test)]
+pub(crate) use collect::collect;
+#[cfg(test)]
+pub(crate) use environment::Environment;
+#[cfg(test)]
+pub(crate) use extract::{extract, extract_in};
+#[cfg(test)]
+pub(crate) use python::PythonLayout;
+#[cfg(test)]
+pub(crate) use rust::{PathModules, library_crates};
+#[cfg(test)]
+pub(crate) use spec::spec;
+#[cfg(test)]
+pub(crate) use swift::SwiftModules;
+#[cfg(test)]
+pub(crate) use syntax::resolution::Files;
+#[cfg(test)]
+pub(crate) use web::{AliasConfig, Pattern, Workspaces, nearest};

@@ -1,5 +1,4 @@
 # tooling and integration tests are not part of the architecture
 scripts/
-tests/
 .githooks/
 integrations/
