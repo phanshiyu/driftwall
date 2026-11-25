@@ -38,7 +38,8 @@
   `--focus B` to draw one boundary in full with the outside as boxes, including what it inherits:
   every declared edge that covers a pair with exactly one end inside `B` (written on `B`, on a
   boundary around it, or by a template) is drawn from `B` or its node, and the `==>|open|` arrows
-  between `B` and the layers below and above the layer that holds it, after narrowing and `%% deny`.
+  between `B` and every layer below and above the layer that holds it, after narrowing and `%% deny`
+  (not reduced: a focus picture names each layer `B` may use, not only the next one).
   A contract with a `%% order` line is drawn `flowchart TB` with invisible `U ~~~ L` links between
   consecutive layers that no arrow joins, so the layers stack in order instead of ranking by edges;
   without one it stays `LR`. `--short-labels` cuts every label to the text before its first `:`, in

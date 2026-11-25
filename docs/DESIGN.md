@@ -2839,10 +2839,10 @@ whatever order they declare things in.
     hold `B`, as a box), when some pair of nodes `(x, y)` from the two layers has the open allowance
     after narrowing and `%% deny`, asked of the same model code as the full picture (`open_access`
     and `denial`). Narrowing is that of the layer pair, so `features --> core` switches off
-    `security ==>|open| core` as it does `features ==>|open| core`. The arrows are reduced as in the
-    full picture, in each direction: `B ==>|open| L` is dropped when a layer `M` between has `B` to
-    `M` and `M` to `L` open, and `U ==>|open| B` when some `M` between has `U` to `M` and `M` to `B`
-    open. A chain that lists no layer holding `B` draws nothing, so an open arrow between layers
+    `security ==>|open| core` as it does `features ==>|open| core`. The arrows are not reduced:
+    a focus picture shows every layer the focus may use and every layer that may use it, so with
+    `app > features > shared > core` the focus on a feature draws both `security ==>|open| shared`
+    and `security ==>|open| core`, where the full picture draws only the step through `shared`. A chain that lists no layer holding `B` draws nothing, so an open arrow between layers
     inside `B` is not drawn.
 - `--depth` with `--focus`, and `--depth 0`, are argument errors: exit `2`.
 

@@ -586,7 +586,7 @@ fn focus_open_arrows_follow_narrowing_and_denials() {
 }
 
 #[test]
-fn focus_open_arrows_are_reduced_like_the_normal_picture() {
+fn focus_open_arrows_are_not_reduced() {
     let src = "flowchart LR
   subgraph app
     app-main
@@ -610,7 +610,7 @@ fn focus_open_arrows_are_reduced_like_the_normal_picture() {
         "{text:?}"
     );
     assert!(
-        !text.iter().any(|line| line.contains("==>|open| core")),
+        text.contains(&"security ==>|open| core".to_owned()),
         "{text:?}"
     );
 }

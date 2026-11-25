@@ -629,3 +629,38 @@ fn a_marker_takes_short_labels_in_any_order_and_rejects_unknown_arguments() {
     assert_eq!(bad.status.code(), Some(2));
     assert!(err(&bad).contains("line 1"), "{}", err(&bad));
 }
+
+#[test]
+fn focus_draws_every_open_layer_not_only_the_next_one() {
+    let contract = "flowchart LR
+  subgraph app
+    app-main
+  end
+  subgraph features
+    subgraph security
+      security-view
+    end
+  end
+  subgraph shared
+    shared-util
+  end
+  subgraph core
+    core-db
+  end
+  %% order open: app > features > shared > core
+";
+    let dir = repo(&[("architecture.mmd", contract)]);
+    let full = out(&run(dir.path(), &["render"]));
+    assert!(full.contains("features ==>|open| shared\n"), "{full}");
+    assert!(!full.contains("features ==>|open| core"), "{full}");
+    let output = run(dir.path(), &["render", "--focus", "security"]);
+    assert_eq!(output.status.code(), Some(0), "{}", err(&output));
+    let text = out(&output);
+    for arrow in [
+        "app ==>|open| security\n",
+        "security ==>|open| shared\n",
+        "security ==>|open| core\n",
+    ] {
+        assert!(text.contains(arrow), "missing {arrow}in:\n{text}");
+    }
+}

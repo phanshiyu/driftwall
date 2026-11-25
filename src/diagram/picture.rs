@@ -579,8 +579,8 @@ fn is_inside(scene: &Scene, end: &Drawn, view: &PictureView) -> bool {
 ///
 /// A pair of layers is drawn when the open allowance still applies to some pair of their nodes,
 /// after narrowing and denials, and not when a layer between them is open to both ends. In a focus
-/// picture the layer that holds the focus counts as the focus, and only the pairs with the focus at
-/// one end are drawn.
+/// picture the layer that holds the focus counts as the focus, only the pairs with the focus at one
+/// end are drawn, and every one of them is: a layer between does not stand in for a direct one.
 fn open_arrows(scene: &Scene, view: &PictureView) -> (BTreeSet<(String, String)>, BTreeSet<Drawn>) {
     let mut pairs: BTreeSet<(String, String)> = BTreeSet::new();
     let mut extras = BTreeSet::new();
@@ -595,7 +595,12 @@ fn open_arrows(scene: &Scene, view: &PictureView) -> (BTreeSet<(String, String)>
             }
             PictureView::Full | PictureView::Depth(_) => None,
         };
-        for (upper, lower) in reduced_open_pairs(scene.contract, &members) {
+        let pairs_drawn = if held.is_some() {
+            Pairs::Every
+        } else {
+            Pairs::Reduced
+        };
+        for (upper, lower) in open_pairs(scene.contract, &members, pairs_drawn) {
             if held.is_some_and(|holder| upper != holder && lower != holder) {
                 continue;
             }
@@ -671,9 +676,18 @@ fn layer_members<'a>(contract: &'a Contract, chain: &LayerOrder) -> Vec<Vec<&'a 
         .collect()
 }
 
-/// The pairs of layers, by place in the chain, that are open and not implied by a layer between
-/// them, for the nodes of each layer in `members`.
-fn reduced_open_pairs(contract: &Contract, members: &[Vec<&NodeId>]) -> Vec<(usize, usize)> {
+/// Which open pairs of layers [`open_pairs`] returns.
+#[derive(Clone, Copy)]
+enum Pairs {
+    /// Only those no layer between them implies: a picture of the stack.
+    Reduced,
+    /// Every one: a focus picture shows each layer the focus may use.
+    Every,
+}
+
+/// The pairs of layers, by place in the chain, that are open for the nodes of each layer in
+/// `members`, all of them or only those not implied by a layer between them.
+fn open_pairs(contract: &Contract, members: &[Vec<&NodeId>], pairs: Pairs) -> Vec<(usize, usize)> {
     // why: the allowance is the model's own question, so a picture and a lint cannot disagree.
     let open = |upper: usize, lower: usize| {
         let (Some(from), Some(to)) = (members.get(upper), members.get(lower)) else {
@@ -696,7 +710,8 @@ fn reduced_open_pairs(contract: &Contract, members: &[Vec<&NodeId>]) -> Vec<(usi
     let mut found = Vec::new();
     for upper in 0..members.len() {
         for lower in upper + 1..members.len() {
-            let implied = (upper + 1..lower).any(|mid| open(upper, mid) && open(mid, lower));
+            let implied = matches!(pairs, Pairs::Reduced)
+                && (upper + 1..lower).any(|mid| open(upper, mid) && open(mid, lower));
             if !implied && open(upper, lower) {
                 found.push((upper, lower));
             }
