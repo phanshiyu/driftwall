@@ -164,6 +164,29 @@ pub struct LintArgs {
     pub write_baseline: Option<PathBuf>,
 }
 
+/// What `lint` does with a debt baseline.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BaselineMode {
+    /// No baseline: report every finding.
+    None,
+    /// Accept the findings the file records, relative to the root.
+    Apply(PathBuf),
+    /// Record today's findings in the file, relative to the root.
+    Write(PathBuf),
+}
+
+impl LintArgs {
+    /// The baseline flags as one mode. Clap rejects both flags together, so at most one is set.
+    #[must_use]
+    pub fn baseline_mode(&self) -> BaselineMode {
+        match (&self.write_baseline, &self.baseline) {
+            (Some(file), _) => BaselineMode::Write(file.clone()),
+            (None, Some(file)) => BaselineMode::Apply(file.clone()),
+            (None, None) => BaselineMode::None,
+        }
+    }
+}
+
 /// Output formats of `driftwall lint`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum LintFormat {
@@ -196,4 +219,44 @@ pub struct InitArgs {
     /// Overwrite an existing contract or `.arch` file.
     #[arg(long)]
     pub force: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use clap::Parser;
+
+    use super::*;
+
+    fn mode(flags: &[&str]) -> Result<BaselineMode, clap::Error> {
+        let line = ["driftwall", "lint"]
+            .into_iter()
+            .chain(flags.iter().copied());
+        Cli::try_parse_from(line).map(|cli| match cli.command {
+            Command::Lint(args) => args.baseline_mode(),
+            other => panic!("not lint: {other:?}"),
+        })
+    }
+
+    #[test]
+    fn no_flag_is_no_baseline() {
+        assert_eq!(mode(&[]).unwrap(), BaselineMode::None);
+    }
+
+    #[test]
+    fn each_flag_names_its_mode() {
+        assert_eq!(
+            mode(&["--baseline", "debt.txt"]).unwrap(),
+            BaselineMode::Apply(PathBuf::from("debt.txt"))
+        );
+        assert_eq!(
+            mode(&["--write-baseline", "debt.txt"]).unwrap(),
+            BaselineMode::Write(PathBuf::from("debt.txt"))
+        );
+    }
+
+    #[test]
+    fn both_flags_are_a_usage_error() {
+        let error = mode(&["--baseline", "a", "--write-baseline", "b"]).unwrap_err();
+        assert_eq!(error.kind(), clap::error::ErrorKind::ArgumentConflict);
+    }
 }

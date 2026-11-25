@@ -8,10 +8,10 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, anyhow, bail};
 use driftwall::init::{self, InitOptions, InitSummary, MappingOutput, WriteOptions};
 use driftwall::lint::{self, LintOptions};
-use driftwall::model::{Applied, Baseline, BlindSummary};
+use driftwall::model::{Applied, Baseline, BlindSummary, LintReport};
 use driftwall::report;
 
-use crate::args::{Command, InitArgs, LintArgs, LintFormat};
+use crate::args::{BaselineMode, Command, InitArgs, LintArgs, LintFormat};
 use crate::outcome::Outcome;
 use crate::{diff, locate, views};
 
@@ -54,25 +54,37 @@ fn run_lint(args: &LintArgs) -> Result<Run> {
     let observation = lint::observe(&args.path, &options)?;
     let lint_report = &observation.report;
     let blind = observation.blind_spots.summary();
-    if let Some(file) = &args.write_baseline {
-        return write_baseline(&args.path, file, &Baseline::from_report(lint_report));
+    match args.baseline_mode() {
+        BaselineMode::Write(file) => {
+            write_baseline(&args.path, &file, &Baseline::from_report(lint_report))
+        }
+        BaselineMode::None => {
+            let stdout = match args.format {
+                LintFormat::Text => with_note(report::render_text(lint_report), &blind),
+                LintFormat::Json => report::render_json(lint_report, &blind)?,
+                LintFormat::Sarif => report::render_sarif(lint_report)?,
+            };
+            Ok(Run {
+                stdout,
+                outcome: Outcome::of_lint(lint_report, args.strict),
+            })
+        }
+        BaselineMode::Apply(file) => run_baselined(args, &file, lint_report, &blind),
     }
-    let Some(file) = &args.baseline else {
-        let stdout = match args.format {
-            LintFormat::Text => with_note(report::render_text(lint_report), &blind),
-            LintFormat::Json => report::render_json(lint_report, &blind)?,
-            LintFormat::Sarif => report::render_sarif(lint_report)?,
-        };
-        return Ok(Run {
-            stdout,
-            outcome: Outcome::of_lint(lint_report, args.strict),
-        });
-    };
+}
+
+/// Lints against the baseline `file`: only debt it does not record fails.
+fn run_baselined(
+    args: &LintArgs,
+    file: &Path,
+    lint_report: &LintReport,
+    blind: &BlindSummary,
+) -> Result<Run> {
     let baseline = read_baseline(&args.path.join(file), file)?;
     let Applied { report, outcome } = baseline.apply(lint_report.clone(), file);
     let stdout = match args.format {
-        LintFormat::Text => with_note(report::render_text_baselined(&report, &outcome), &blind),
-        LintFormat::Json => report::render_json_baselined(&report, &blind, &outcome)?,
+        LintFormat::Text => with_note(report::render_text_baselined(&report, &outcome), blind),
+        LintFormat::Json => report::render_json_baselined(&report, blind, &outcome)?,
         LintFormat::Sarif => report::render_sarif_baselined(&report, &outcome)?,
     };
     Ok(Run {
