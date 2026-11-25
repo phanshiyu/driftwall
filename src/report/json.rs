@@ -257,6 +257,7 @@ mod tests {
                 "isolation-breach",
                 "stale-isolation",
                 "stale-baseline",
+                "denied-edge",
             ]
         );
     }

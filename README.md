@@ -203,6 +203,7 @@ syntax and behaviour are in [docs/DESIGN.md](docs/DESIGN.md).
 | `%% exports api: post` | Only these names of `api` may be imported from outside. | [Symbols and public surfaces](docs/DESIGN.md#symbols-and-public-surfaces) |
 | `%% order: entry > engine > shared` | Layers, top to bottom. Imports may not point upward, even with no arrow drawn. | [Layer order](docs/DESIGN.md#layer-order) |
 | `%% order open: app > features > core` | Open layers: each layer may use any layer below with no arrow. An arrow from a layer to a lower one limits that pair of layers to the arrows you draw. | [Open order](docs/DESIGN.md#open-order) |
+| `%% deny ui: core` | In an open chain, `ui` may never use `core`, though the chain allows it. An import is `denied-edge`, and an arrow for the pair is an error. | [Denial](docs/DESIGN.md#denial) |
 | `%% isolated: features` | The children of `features` (feature boundaries nested inside it, or nodes in it) may not depend on each other, and no arrow can allow it. Subgraphs may nest. | [Isolated boundaries](docs/DESIGN.md#isolated-boundaries), [Nested boundaries](docs/DESIGN.md#nested-boundaries) |
 | `%% each features: controller --> service` | The same arrows inside every feature of `features`, written once: each child boundary `billing` gets `billing-controller --> billing-service`, skipped where it lacks a part. A role no feature has is an error. | [Edge templates](docs/DESIGN.md#edge-templates) |
 | `%% no-cycles` | The declared arrows may not form a cycle. | [No cycles](docs/DESIGN.md#no-cycles) |

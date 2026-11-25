@@ -299,3 +299,20 @@ fn isolation_breach_header_is_specific() {
         "billing/a.ts:1: error[isolation-breach]: boundary `features` is isolated (`%% isolated` on line 6): `billing` (in `billing`) imports `search` (in `search`) in 2 places, and `billing` and `search` may not depend on each other"
     );
 }
+
+#[test]
+fn denied_edge_header_is_specific() {
+    let contract = "flowchart LR\n  subgraph features[\"Features\"]\n    billing[\"billing\"]\n  end\n  subgraph core[\"Core\"]\n    search[\"search\"]\n  end\n  %% order open: features > core\n  %% deny billing: search\n";
+    let files = [
+        ("architecture.mmd", contract),
+        ("billing/.arch", "node: billing\n"),
+        ("search/.arch", "node: search\n"),
+        ("search/lib.ts", "export const find = 1;\n"),
+        ("billing/a.ts", IMPORT_SEARCH),
+        ("billing/b.ts", IMPORT_SEARCH),
+    ];
+    assert_eq!(
+        header(&files, "denied-edge"),
+        "billing/a.ts:1: error[denied-edge]: `billing` imports `search` in 2 places but architecture.mmd:9 `%% deny billing: search` forbids it"
+    );
+}

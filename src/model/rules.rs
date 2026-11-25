@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use serde::Serialize;
 
-use super::{EdgeKind, NodeId, NodeInfo, children};
+use super::{Contract, Edge, EdgeKind, Endpoint, NodeId, NodeInfo, children};
 
 /// `%% order: a > b > c`: boundaries from the top (entry points) to the bottom (foundations).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
@@ -80,6 +80,61 @@ pub struct RulesSummary {
     /// The `%% each` edge templates in file order. Empty, and omitted from JSON, without one.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub each: Vec<EachSummary>,
+    /// The `%% deny` denials in file order, one per `(from, to)` pair. Empty, and omitted from
+    /// JSON, without one.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub deny: Vec<DenySummary>,
+}
+
+/// One denial as the overview presents it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct DenySummary {
+    /// The importing end as written, a node or a boundary.
+    pub from: String,
+    /// The imported end as written, a node or a boundary.
+    pub to: String,
+    /// Line of the directive.
+    pub line: u32,
+}
+
+/// `%% deny <from>: <to>`: no node of `from` may use a node of `to`, whatever an open chain allows,
+/// see "Denial" in `docs/DESIGN.md`. A line naming several targets is one denial per target.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Denial {
+    /// Line of the directive.
+    pub line: u32,
+    /// The importing end: a node, or a boundary with every node inside it at any depth.
+    pub from: Endpoint,
+    /// The imported end.
+    pub to: Endpoint,
+}
+
+impl Denial {
+    /// Whether the denial covers the pair `edge`: its source is on the importing side, its target
+    /// on the imported side, and the two nodes differ.
+    #[must_use]
+    pub fn covers(&self, nodes: &BTreeMap<NodeId, NodeInfo>, edge: &Edge) -> bool {
+        edge.from != edge.to
+            && self.from.contains(nodes, &edge.from)
+            && self.to.contains(nodes, &edge.to)
+    }
+
+    /// The denial as written, `%% deny ui: core`.
+    #[must_use]
+    pub fn text(&self) -> String {
+        format!("%% deny {}: {}", self.from, self.to)
+    }
+}
+
+impl Contract {
+    /// The first denial, in file order, that covers the pair `edge`.
+    #[must_use]
+    pub fn denial(&self, edge: &Edge) -> Option<&Denial> {
+        self.rules
+            .deny
+            .iter()
+            .find(|denial| denial.covers(&self.nodes, edge))
+    }
 }
 
 /// An `%% each` template as the overview presents it.
@@ -144,6 +199,7 @@ impl RulesSummary {
             && self.isolated.is_empty()
             && self.facades.is_empty()
             && self.each.is_empty()
+            && self.deny.is_empty()
     }
 }
 
@@ -182,6 +238,15 @@ impl Rules {
                     boundary: rule.boundary.clone(),
                     line: rule.line,
                     arrows: rule.arrows.iter().map(EachArrow::text).collect(),
+                })
+                .collect(),
+            deny: self
+                .deny
+                .iter()
+                .map(|denial| DenySummary {
+                    from: denial.from.to_string(),
+                    to: denial.to.to_string(),
+                    line: denial.line,
                 })
                 .collect(),
         }
@@ -305,6 +370,8 @@ pub struct Rules {
     pub facades: BTreeMap<NodeId, u32>,
     /// The `%% each` edge templates in file order, see "Edge templates".
     pub each: Vec<EachRule>,
+    /// The `%% deny` denials in file order, one per `(from, to)` pair, see "Denial".
+    pub deny: Vec<Denial>,
 }
 
 impl Rules {
@@ -319,5 +386,6 @@ impl Rules {
             && self.isolated.is_empty()
             && self.facades.is_empty()
             && self.each.is_empty()
+            && self.deny.is_empty()
     }
 }

@@ -29,8 +29,8 @@ pub use moved::{BoundaryMove, MoveCause, Moved};
 pub use open_order::OpenAccess;
 pub use package_rule::{PackagePattern, PackageRule, PackageRuleKind};
 pub use rules::{
-    Budget, EachArrow, EachRule, EachSummary, InterfaceEntry, IsolatedSummary, Layer, LayerOrder,
-    Measure, NodeBudget, Rules, RulesSummary,
+    Budget, Denial, DenySummary, EachArrow, EachRule, EachSummary, InterfaceEntry, IsolatedSummary,
+    Layer, LayerOrder, Measure, NodeBudget, Rules, RulesSummary,
 };
 pub use status::{Declaration, EdgeStatus, Seen, edge_status};
 
@@ -725,6 +725,8 @@ pub enum ViolationKind {
     UnknownNode,
     /// Code in node A imports node B and the diagram has no A to B edge.
     UndeclaredEdge,
+    /// Code imports a pair that a `%% deny` line forbids.
+    DeniedEdge,
     /// A solid diagram edge has no import backing it.
     StaleEdge,
     /// A planned (dotted) edge is now used by code and should be made solid.

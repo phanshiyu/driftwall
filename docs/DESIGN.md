@@ -60,7 +60,7 @@ flowchart LR
 - A comment whose first word is `exports` is the surface directive (see "Symbols and public
   surfaces"), and one whose first word is `map` is the mapping directive (see "Contract map").
   The comments whose first word is `order:` or `order open:` (see "Layer order"), `isolated:` (see
-  "Isolated boundaries"), `each` (see "Edge templates"), `no-cycles` or `no-cycles:` (see "No cycles"), `budget` (see "Budgets") `tests:` (see "Test isolation") or `facade` (see "Re-exports") are the rule directives
+  "Isolated boundaries"), `each` (see "Edge templates"), `deny` (see "Denial"), `no-cycles` or `no-cycles:` (see "No cycles"), `budget` (see "Budgets") `tests:` (see "Test isolation") or `facade` (see "Re-exports") are the rule directives
   of "Contract rules". The colon must follow the word directly, so a comment such as `%% tests -->
   ...` stays plain. The comments whose first word is `packages` or `forbid-packages` are package rules (see
   "Package rules"). Every other comment is plain.
@@ -284,7 +284,8 @@ does on it. `lint` reports the status as a finding, and `brief` and `neighbors` 
 the same status, from the same function (`edge_status` in the `model` module), so the two views
 cannot disagree.
 
-The declaration is one of: no edge (`none`), an edge of a kind (see "Test edges" and "Type edges"
+The declaration is one of: no edge (`none`), a pair a `%% deny` line covers (`denied`, see
+"Denial"; it comes before every other, as a contract refuses an edge on such a pair), an edge of a kind (see "Test edges" and "Type edges"
 for the kinds), or a pair an `%% order open` chain allows without an edge (`open`, see "Open
 order"). Code does one of: nothing (`unseen`), or has sites on the pair. Of the sites three facts
 matter: whether one is allowed by the kind (`allowed`), whether one is not test-only (`production`),
@@ -296,6 +297,7 @@ on a `|test|` edge is production but not allowed. An unrestricted edge allows ev
 | Declaration | Observation | Status | Finding | Severity |
 | --- | --- | --- | --- | --- |
 | none | any site (an open chain that narrows the pair counts as none) | `undeclared` | `undeclared-edge`, once per site, except a site that is an `upward-edge` or an `isolation-breach`, which has only that finding | error |
+| a `%% deny` covers the pair | any site | `denied` | `denied-edge`, once per site | error |
 | open chain allows | any site | `open` | none | |
 | solid, unlabelled `-->` | unseen | `stale` | `stale-edge` | warning |
 | solid, unlabelled | sites, none production | `test-only` | `test-only-edge` | warning |
@@ -325,9 +327,9 @@ judges, not the pair.
 
 The finding kind of each status, and the exit code that follows, are those of "Rules"; `ok`,
 `open` and `planned` have no finding. In `brief` and `neighbors` text the line of an edge ends,
-where `UNDECLARED` stands, with a marker for each status that has a finding: `UNDECLARED`, `STALE`,
+where `UNDECLARED` stands, with a marker for each status that has a finding: `UNDECLARED`, `DENIED`, `STALE`,
 `PLANNED-REALIZED`, `TEST-ONLY`. `ok`, `open` and `planned` have none. JSON edges (and boundary
-edges) gain `"status"`, one of `ok`, `open`, `undeclared`, `stale`, `planned`, `planned-realized`,
+edges) gain `"status"`, one of `ok`, `open`, `undeclared`, `denied`, `stale`, `planned`, `planned-realized`,
 `test-only`. It is additive: `kind` is unchanged and `null` still means undeclared.
 
 ### Contract rules
@@ -336,7 +338,7 @@ Rules that are not about one pair of nodes are directives, one `%%` line each, p
 contract and stored in `Contract::rules`. Each is checked deterministically from data driftwall
 already has. A directive that is malformed, names something undeclared, or is given twice (one
 `%% order`, one `%% tests`, one `%% no-cycles`, one `%% no-cycles: boundaries`, one `%% budget` per
-node, a node once in `%% facade`, a boundary once in `%% isolated`) is a contract error with its line, like any other syntax outside the subset: silently
+node, a node once in `%% facade`, a boundary once in `%% isolated`, a `(from, to)` once in `%% deny`) is a contract error with its line, like any other syntax outside the subset: silently
 ignoring one would let a typo become a missing rule. `render` writes them back, after the edges.
 `brief` and `neighbors` show them, see below.
 
@@ -463,6 +465,57 @@ layer-to-layer arrows. In an open chain they are implicit and arrows only narrow
 - `diff` reports a chain changing between plain and open as the directive line removed and added
   (see "Diff beyond the contract").
 - `render` writes `%% order open: ...` back.
+
+##### Denial
+
+An open chain allows every downward pair of layers, and an arrow between two layers narrows that
+pair to the drawn arrows. There was no way to say "layer `ui` may not use layer `core` at all"
+without drawing an arrow, so a denial says it.
+
+`%% deny <from>: <to>[, <to>...]`. The first word after `%%` is exactly `deny`; the line may stand
+anywhere in the file and is parsed like the other directives. A comment whose first word is
+something else (`denylist`, `deny:`) is plain, and a line whose first word is `deny` that does not
+have this form (no colon, no id before it, an empty or invalid target) is a contract error with its
+line. `<from>` and each `<to>` are declared node or boundary ids, checked after the whole file is
+read, a node winning over a boundary of the same id as in edges. Each `(from, to)` is one denial: a
+line with three targets is three denials, and `render` writes one denial per line.
+
+```
+%% order open: app > ui > shared > core
+%% deny ui: core
+%% deny ui-checkout: shared-cache
+```
+
+- Meaning. A denial covers every pair of nodes `(x, y)` where `x` is `<from>` or a member of it at
+  any depth (see "Nested boundaries") and `y` is `<to>` or a member of it, and `x` and `y` differ.
+  An open-chain allowance never applies to a covered pair. Nothing else changes: declared edges,
+  plain chains, the upward rule and isolation work as before, and the pairs of a layer that the
+  denial does not cover keep the allowance (above: `ui` may still use `shared`; `ui-checkout` is
+  denied `shared-cache` only, not the rest of `shared`).
+- Lint. An import site on a covered pair, of any kind (production, test, type-only, embed, asset),
+  is the error `denied-edge` at the site, and nothing else for that site: no `undeclared-edge`, as
+  with `upward-edge` and `isolation-breach`, because the fix `undeclared-edge` names, an arrow,
+  is a contract error here. Neither is a `private-symbol` asked of it. A site that is also an
+  `upward-edge` or an `isolation-breach` keeps those findings, which are distinct rules. The
+  message is "`ui-shell` imports `core-db` (src/core/db.ts) but architecture.mmd:14 `%% deny ui:
+  core` forbids it", the denial naming the pair's own `from` and `to` as written. The hint: remove the
+  import, or ask the user to approve removing the denial. The baseline key is `<from> --> <to>`,
+  the nodes, with ` (test)` for a test-only site, like `undeclared-edge`.
+- Contract errors, exit `2`, at the line of the denial: an unknown id; an empty target list or any
+  other malformed line; the same `(from, to)` twice, in one line or across lines, naming the first
+  line; a declared edge of any kind (node edge, boundary edge, an `%% each` expansion, dotted,
+  `test`, `type`) that covers a pair the denial covers, since the contract would contradict
+  itself, naming the edge and its line; and a denial that covers no pair an open chain allows,
+  after narrowing, a dead rule that removes nothing: "no open chain lets `ui` use `core`". Targets
+  of one line are judged one by one.
+- Edge status. A pair a denial covers has the status `denied`, whatever code does on it: it
+  replaces `undeclared` and `open` for the pair (see "Edge status"). A denied pair has no `via`, and
+  its JSON `kind` is `null`.
+- `brief` and `neighbors`. The `rules:` block lists each denial with its line, `deny: ui -> core
+  (line 14)`, and JSON `rules` gains `deny`, a list of `{"from": "ui", "to": "core", "line": 14}`
+  in file order, absent when the contract has none.
+- `diff` reports an added or removed denial as the directive line (`%% deny ui: core`), see "Diff
+  beyond the contract". `render` writes denials back, after the `%% each` lines.
 
 #### No cycles
 
@@ -2141,6 +2194,7 @@ module and no symbol and adds nothing to `uses:`.
 | `unmapped-file` | error | source file has no inherited `.arch` tag (no matching `%% map` glob, with a map) |
 | `unknown-node` | error | `.arch` names a node the diagram does not declare |
 | `undeclared-edge` | error | code imports across nodes and the diagram has no such edge (an `%% order open` chain allows the downward ones it has not narrowed, see "Open order") |
+| `denied-edge` | error | code imports a pair that a `%% deny` line forbids, see "Denial" |
 | `stale-edge` | warning | solid edge with no import backing it |
 | `planned-realized` | warning | dotted edge now backed by production code, promote it to solid (a dotted test or type edge to `-->|test|` or `-->|type|`) |
 | `redundant-edge` | warning | node edge that a boundary edge already covers with a kind at least as wide, see "Boundary edges" |
@@ -2216,6 +2270,7 @@ test debt and production debt are separate entries. Paths use `/`.
 | `unmapped-file` | `<file>` | 1 |
 | `unknown-node` | `<tag file> <node>` | tags in that file naming it |
 | `undeclared-edge` | `<from> --> <to>` | import sites |
+| `denied-edge` | `<from> --> <to>` | import sites |
 | `stale-edge` | `<from> <arrow> <to>`, arrow as declared | 1 |
 | `planned-realized` | `<from> <arrow> <to>` | 1 |
 | `test-only-edge` | `<from> <arrow> <to>` | 1 |
@@ -2603,7 +2658,7 @@ renders and the old one does not (`  + %% order: app > core`) and the reverse (`
 is the line as `render` writes it, so spacing, the order of nodes inside a line and the order of
 lines are not changes; a directive whose content changed is a removed line and an added line. The
 directives are `%% order`, `%% order open`, `%% isolated`, `%% each`, `%% budget`, `%% tests`,
-`%% packages`, `%% forbid-packages`, `%% facade` and `%% no-cycles` (both forms). `%% exports` keeps
+`%% packages`, `%% forbid-packages`, `%% facade`, `%% deny` (one line per denial) and `%% no-cycles` (both forms). `%% exports` keeps
 its own `+ exports` lines and `%% map` lines are reported through the files they move (below), so
 neither is repeated here. The same section lists a node whose boundaries changed, one line each,
 `  node billing moved from boundary shared to features`. A boundary is written as the chain that
@@ -2664,7 +2719,7 @@ driftwall diff --base <REF> [PATH] [--contract FILE] [--format text|json] [--exi
 (`file`, `line`), `message`, `hint`. A violation with a baseline key also carries `key`, `<kind> <key>`, see "Grouped findings".
 
 A finding at an import site written in test code (`test_only`, see "Import kind") says so: `undeclared-edge`,
-`private-symbol` and `upward-edge` carry the mark; no other kind does. The text puts `(test code)` after the kind, `src/a.test.ts:3: error[undeclared-edge]
+`private-symbol`, `upward-edge` and `denied-edge` carry the mark; no other kind does. The text puts `(test code)` after the kind, `src/a.test.ts:3: error[undeclared-edge]
 (test code): ...`, so `file:line:` stays the start of the line. The JSON violation has `"test_only": true`,
 the key being absent on any other finding, so existing consumers see no change. A SARIF result has
 `"properties": {"testOnly": true}`, also only then. Whether a test site is allowed is decided by the edge
@@ -2697,7 +2752,8 @@ agents and for code scanning, which needs a result per line.
 - **The header message** is the first site's message with its site-specific part, the target file,
   replaced by `in N places`: `` `a` imports `b` (src/b/x.rs) but ... `` becomes
   `` `a` imports `b` in N places but ... ``. Where the target sits elsewhere the sentence is kept
-  whole: `upward-edge` and `isolation-breach` write `(boundary `u`) in N places`,
+  whole: `denied-edge` is rewritten like `undeclared-edge` (`` `a` imports `b` in N places but ... forbids it ``),
+  `upward-edge` and `isolation-breach` write `(boundary `u`) in N places`,
   `production-imports-test` writes `` imports test file `t` in N places ``, and `forbidden-package`
   (which has no target) writes `` imports `pkg` in N places ``. A kind or message the generaliser
   does not recognise ends in ` (N places)` instead, so a group always reads as a group. Kinds that

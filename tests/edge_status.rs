@@ -149,6 +149,7 @@ mod support {
         match status {
             "ok" | "open" | "planned" => None,
             "undeclared" => Some("undeclared-edge"),
+            "denied" => Some("denied-edge"),
             "stale" => Some("stale-edge"),
             "planned-realized" => Some("planned-realized"),
             "test-only" => Some("test-only-edge"),
@@ -211,6 +212,7 @@ mod support {
             let kind = text(&violation["kind"]);
             if ![
                 "undeclared-edge",
+                "denied-edge",
                 "stale-edge",
                 "planned-realized",
                 "test-only-edge",
@@ -335,4 +337,44 @@ fn a_pair_an_open_chain_allows_is_open_and_has_no_finding() {
     let (expected, _, declared) = from_brief(&brief);
     assert!(expected.is_empty());
     assert!(from_lint(&json(&dir, "lint"), &declared).is_empty());
+}
+
+/// A denied pair is `denied` in `brief` and `denied-edge` in `lint`, next to an open pair, an
+/// undeclared one and a declared one, so the two views still agree on every edge.
+#[test]
+fn a_denied_pair_is_denied_in_brief_and_denied_edge_in_lint() {
+    let dir = repo(&[
+        (
+            "architecture.mmd",
+            "flowchart LR\n  subgraph top[\"Top\"]\n    app\n  end\n  subgraph mid[\"Mid\"]\n    svc\n  end\n  subgraph bottom[\"Bottom\"]\n    base\n    base2\n  end\n  loose\n  %% order open: top > mid > bottom\n  svc --> base2\n  %% deny app: base\n",
+        ),
+        ("app/.arch", "node: app\n"),
+        ("svc/.arch", "node: svc\n"),
+        ("base/.arch", "node: base\n"),
+        ("base2/.arch", "node: base2\n"),
+        ("loose/.arch", "node: loose\n"),
+        (
+            "app/main.ts",
+            "import { x } from '../base/m';\nimport { x as y } from '../svc/m';\nimport { x as z } from '../loose/m';\nexport const w = [x, y, z];\n",
+        ),
+        (
+            "svc/main.ts",
+            "import { x } from '../base2/m';\nexport const w = x;\n",
+        ),
+        ("svc/m.ts", LIB),
+        ("base/m.ts", LIB),
+        ("base2/m.ts", LIB),
+        ("loose/m.ts", LIB),
+    ]);
+    let brief = json(&dir, "brief");
+    let (expected, statuses, declared) = from_brief(&brief);
+    for status in ["denied", "open", "undeclared", "ok"] {
+        assert!(
+            statuses.contains(status),
+            "no edge is {status}: {statuses:?}"
+        );
+    }
+    assert_eq!(expected.len(), 2, "{expected:?}");
+    assert!(expected.contains(&("denied-edge".to_owned(), "app --> base".to_owned())));
+    assert_eq!(from_lint(&json(&dir, "lint"), &declared), expected);
 }

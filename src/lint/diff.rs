@@ -99,7 +99,7 @@ fn diff(old: &Contract, new: &Contract) -> ContractDiff {
 
 /// The directive keywords whose rendered lines `diff` compares. `exports` and `map` are left out:
 /// surfaces have their own lines and a map change shows as the files it moves.
-const RULE_KEYWORDS: [&str; 9] = [
+const RULE_KEYWORDS: [&str; 10] = [
     "order",
     "isolated",
     "no-cycles",
@@ -109,6 +109,7 @@ const RULE_KEYWORDS: [&str; 9] = [
     "budget",
     "packages",
     "forbid-packages",
+    "deny",
 ];
 
 /// The rule directive lines of `contract` as `render` writes them, trimmed.
@@ -176,6 +177,19 @@ mod tests {
     #[test]
     fn identical_contracts_have_an_empty_diff() {
         assert!(diff_of(BASE, BASE).is_empty());
+    }
+
+    #[test]
+    fn an_added_and_a_removed_denial_are_rule_changes() {
+        let layers = "flowchart LR\n  subgraph up[\"Up\"]\n    a\n  end\n  subgraph down[\"Down\"]\n    b\n    c\n  end\n  %% order open: up > down\n";
+        let old = format!("{layers}  %% deny a: b\n");
+        let new = format!("{layers}  %% deny a: c\n");
+        let d = diff_of(&old, &new);
+        assert_eq!(d.rules_added, ["%% deny a: c"]);
+        assert_eq!(d.rules_removed, ["%% deny a: b"]);
+        assert!(!d.is_empty());
+        assert!(diff_of(&old, &old).is_empty());
+        assert!(!diff_of(layers, &old).is_empty());
     }
 
     #[test]

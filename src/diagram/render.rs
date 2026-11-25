@@ -214,6 +214,15 @@ mod tests {
     }
 
     #[test]
+    fn denials_round_trip_node_and_boundary_ends() {
+        let src = "flowchart LR\n  subgraph a[\"a\"]\n    x\n    z\n  end\n  subgraph b[\"b\"]\n    y\n  end\n  %% order open: a > b\n  %% deny a: b, y\n  %% deny x: y\n";
+        // why: the rendered file is the canonical one, with one denial per line.
+        let canonical = parse(&render(&parse(src).unwrap())).unwrap();
+        assert_eq!(canonical.rules.deny.len(), 3);
+        assert_round_trips(&canonical);
+    }
+
+    #[test]
     fn empty_contract_round_trips() {
         let c = Contract::default();
         assert_round_trips(&c);

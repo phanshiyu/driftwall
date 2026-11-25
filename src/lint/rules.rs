@@ -11,6 +11,7 @@ pub(super) const fn severity(kind: ViolationKind) -> Severity {
         ViolationKind::UnmappedFile
         | ViolationKind::UnknownNode
         | ViolationKind::UndeclaredEdge
+        | ViolationKind::DeniedEdge
         | ViolationKind::PrivateSymbol
         | ViolationKind::UpwardEdge
         | ViolationKind::IsolationBreach
@@ -42,6 +43,9 @@ pub(super) const fn hint(kind: ViolationKind) -> &'static str {
         }
         ViolationKind::UndeclaredEdge => {
             "remove the import, or ask the user to approve adding the edge to the contract"
+        }
+        ViolationKind::DeniedEdge => {
+            "remove the import, or ask the user to approve removing the denial"
         }
         ViolationKind::StaleEdge => {
             "remove the edge from the contract, or restore the dependency in code"

@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- `%% deny <from>: <to>[, <to>...]` takes a pair out of an open chain. In `%% order open`, every
+  downward pair of layers is allowed and an arrow narrows a pair; there was no way to say that
+  layer `ui` may not use layer `core` at all. A denial covers every node of `from` (a node, or a
+  boundary at any depth) against every node of `to`, and an import on a covered pair is the error
+  `denied-edge`, of any kind of site and with no other finding for it. Contract errors, exit 2,
+  at the line of the denial: an unknown id, a malformed line, the same pair twice, a declared edge
+  that covers a covered pair, and a denial that no open chain makes necessary. `brief` and
+  `neighbors` show the denials in `rules:` (JSON `rules.deny`) and mark a denied pair `DENIED`
+  (JSON status `denied`), `diff` reports added and removed denials, and a baseline holds
+  `denied-edge` like `undeclared-edge`. See "Denial" in `docs/DESIGN.md`.
+
 - One finding per site for `isolation-breach` and `upward-edge`. Such a site no longer also reports
   `undeclared-edge`: declaring the arrow is a contract error under `%% isolated` and `%% order`, so
   that hint pointed at a fix that cannot work, and a feature-module repo reported 93 errors for 55

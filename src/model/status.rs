@@ -12,6 +12,8 @@ pub enum Declaration {
     None,
     /// No edge, but an `%% order open` chain allows the pair like a solid edge.
     Open,
+    /// A `%% deny` line covers the pair: no open chain or edge can allow it.
+    Denied,
     /// An edge of this kind allows the pair.
     Edge(EdgeKind),
 }
@@ -79,6 +81,8 @@ pub enum EdgeStatus {
     Open,
     /// Code uses the pair and nothing declares it: `undeclared-edge`.
     Undeclared,
+    /// Code uses a pair that a `%% deny` line covers: `denied-edge`.
+    Denied,
     /// Declared solid, and no site its kind allows: `stale-edge`.
     Stale,
     /// Declared dotted and not realised, which is fine. No finding.
@@ -97,6 +101,7 @@ impl EdgeStatus {
         match self {
             Self::Ok | Self::Open | Self::Planned => None,
             Self::Undeclared => Some(ViolationKind::UndeclaredEdge),
+            Self::Denied => Some(ViolationKind::DeniedEdge),
             Self::Stale => Some(ViolationKind::StaleEdge),
             Self::PlannedRealized => Some(ViolationKind::PlannedRealized),
             Self::TestOnly => Some(ViolationKind::TestOnlyEdge),
@@ -111,6 +116,7 @@ pub const fn edge_status(declaration: Declaration, seen: Seen) -> EdgeStatus {
     match declaration {
         Declaration::None => EdgeStatus::Undeclared,
         Declaration::Open => EdgeStatus::Open,
+        Declaration::Denied => EdgeStatus::Denied,
         Declaration::Edge(kind) => declared_status(kind, seen),
     }
 }
@@ -223,10 +229,11 @@ mod tests {
     }
 
     #[test]
-    fn undeclared_and_open_ignore_the_sites() {
+    fn undeclared_open_and_denied_ignore_the_sites() {
         for seen in SEEN {
             assert_eq!(edge_status(Declaration::None, seen), EdgeStatus::Undeclared);
             assert_eq!(edge_status(Declaration::Open, seen), EdgeStatus::Open);
+            assert_eq!(edge_status(Declaration::Denied, seen), EdgeStatus::Denied);
         }
     }
 

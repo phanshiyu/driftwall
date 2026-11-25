@@ -141,6 +141,7 @@ const fn has_rewrite(kind: ViolationKind) -> bool {
     matches!(
         kind,
         ViolationKind::UndeclaredEdge
+            | ViolationKind::DeniedEdge
             | ViolationKind::PrivateSymbol
             | ViolationKind::UpwardEdge
             | ViolationKind::IsolationBreach
@@ -156,9 +157,12 @@ fn generalise(first: &Violation, body: &str, places: &str) -> Option<String> {
     let rewrite =
         |from: String, to: String| body.contains(&from).then(|| body.replacen(&from, &to, 1));
     match (first.kind, target) {
-        (ViolationKind::UndeclaredEdge | ViolationKind::PrivateSymbol, Some(t)) => {
-            rewrite(format!(" ({t}) "), format!(" {places} "))
-        }
+        (
+            ViolationKind::UndeclaredEdge
+            | ViolationKind::DeniedEdge
+            | ViolationKind::PrivateSymbol,
+            Some(t),
+        ) => rewrite(format!(" ({t}) "), format!(" {places} ")),
         (ViolationKind::UpwardEdge, Some(t)) => rewrite(format!(", {t}) "), format!(") {places} ")),
         (ViolationKind::IsolationBreach, Some(t)) => {
             rewrite(format!(", {t}),"), format!(") {places},"))

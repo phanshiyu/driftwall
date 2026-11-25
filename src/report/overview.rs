@@ -136,6 +136,13 @@ fn rules_block(rules: &RulesSummary) -> String {
     for each in &rules.each {
         let _ = writeln!(out, "  each {}: {}", each.boundary, each.arrows.join(", "));
     }
+    for denial in &rules.deny {
+        let _ = writeln!(
+            out,
+            "  deny: {} -> {} (line {})",
+            denial.from, denial.to, denial.line
+        );
+    }
     if !rules.facades.is_empty() {
         let _ = writeln!(out, "  facade: {}", rules.facades.join(", "));
     }
@@ -441,6 +448,7 @@ fn layer_str(layer: &Layer) -> String {
 const fn marker(status: EdgeStatus) -> &'static str {
     match status {
         EdgeStatus::Undeclared => " UNDECLARED",
+        EdgeStatus::Denied => " DENIED",
         EdgeStatus::Stale => " STALE",
         EdgeStatus::PlannedRealized => " PLANNED-REALIZED",
         EdgeStatus::TestOnly => " TEST-ONLY",

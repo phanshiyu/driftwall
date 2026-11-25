@@ -137,8 +137,8 @@ fn edge_summaries(
             // why: the winner of the precedence of "Boundary edges" speaks for the pair.
             let winner = contract.covers(edge).into_iter().next();
             // why: an open chain allows the pair as a solid edge, named by its line, not declared.
-            let open = winner
-                .is_none()
+            let denied = contract.denial(edge).is_some();
+            let open = (winner.is_none() && !denied)
                 .then(|| contract.open_access(edge))
                 .flatten()
                 .and_then(|access| match access {
@@ -190,6 +190,10 @@ fn pair_status(
     open: bool,
     boundary: &[Seen],
 ) -> EdgeStatus {
+    // why: a denial covers a pair no edge declares (the contract refuses one), so it speaks first.
+    if contract.denial(edge).is_some() {
+        return edge_status(Declaration::Denied, Seen::Unseen);
+    }
     if let Some(kind) = contract.edges.get(edge) {
         let seen = sites.iter().fold(Seen::Unseen, |seen, site| {
             seen.with_site(*kind, site.kind, site.test_only)

@@ -5,9 +5,9 @@ use std::path::{Path, PathBuf};
 
 use crate::imports::FileImports;
 use crate::model::{
-    BoundaryEdge, Contract, Cover, Declaration, Declared, Edge, EdgeKind, EdgeStatus, ImportKind,
-    LintReport, Location, OpenAccess, Ownership, ResolvedImport, Seen, Symbol, Violation,
-    ViolationKind, edge_status, path_key,
+    BoundaryEdge, Contract, Cover, Declaration, Declared, Denial, Edge, EdgeKind, EdgeStatus,
+    ImportKind, LintReport, Location, OpenAccess, Ownership, ResolvedImport, Seen, Symbol,
+    Violation, ViolationKind, edge_status, path_key,
 };
 
 use super::isolation;
@@ -44,6 +44,11 @@ pub fn reconcile(
 
     let crossings = crossings(contract, ownership, imports);
     for (edge, import) in &crossings {
+        // why: a denied site has one finding, and nothing allows it, so nothing else is asked.
+        if let Some(denial) = contract.denial(edge) {
+            violations.push(denied_site(denial, edge, import, contract_file));
+            continue;
+        }
         let covers = contract.covers(edge);
         // why: the arrow `undeclared-edge` asks for is a contract error here, so one finding.
         let one_finding = layers::upward_site(contract, edge, import).is_some()
@@ -120,6 +125,29 @@ pub fn reconcile(
     violations.sort();
     violations.dedup();
     LintReport { violations }
+}
+
+/// The `denied-edge` finding of a site on a pair that `denial` covers.
+fn denied_site(
+    denial: &Denial,
+    edge: &Edge,
+    import: &ResolvedImport,
+    contract_file: &Path,
+) -> Violation {
+    let (from, to) = (&edge.from, &edge.to);
+    site_violation(
+        ViolationKind::DeniedEdge,
+        import,
+        format!(
+            "`{from}` imports `{to}` ({}) but {}:{} `%% deny {}: {}` forbids it",
+            import.target.display(),
+            contract_file.display(),
+            denial.line,
+            denial.from,
+            denial.to,
+        ),
+    )
+    .keyed(format!("{from} --> {to}"))
 }
 
 /// The message of a pair nothing covers. `access` says whether an open chain narrowed the pair.
@@ -238,7 +266,11 @@ fn declared_edge_finding(
     let found = status.finding()?;
     let message = match status {
         // why: no declared edge is undeclared; `reconcile` reports those per site.
-        EdgeStatus::Ok | EdgeStatus::Open | EdgeStatus::Planned | EdgeStatus::Undeclared => {
+        EdgeStatus::Ok
+        | EdgeStatus::Open
+        | EdgeStatus::Planned
+        | EdgeStatus::Undeclared
+        | EdgeStatus::Denied => {
             return None;
         }
         EdgeStatus::Stale if kind.is_restricted() => {

@@ -498,7 +498,7 @@ impl Parser {
                 });
             }
         }
-        Ok(Contract {
+        let contract = Contract {
             nodes: self.nodes,
             edges,
             boundary_edges,
@@ -506,7 +506,9 @@ impl Parser {
             maps: self.maps,
             rules,
             package_rules: self.package_rules,
-        })
+        };
+        rules::check_denials_remove_something(&contract)?;
+        Ok(contract)
     }
 }
 

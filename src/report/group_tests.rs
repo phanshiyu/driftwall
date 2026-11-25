@@ -140,6 +140,26 @@ fn upward_edge_header_wording() {
 }
 
 #[test]
+fn denied_edge_header_wording() {
+    let mut found = Vec::new();
+    for (file, line) in [("src/a.rs", 1), ("src/b.rs", 2)] {
+        let mut v = site(
+            ViolationKind::DeniedEdge,
+            file,
+            line,
+            "`ui-shell` imports `core-db` (src/core/db.rs) but m.mmd:14 `%% deny ui: core` forbids it",
+            "ui-shell --> core-db",
+        );
+        v.site.target = Some(PathBuf::from("src/core/db.rs"));
+        found.push(v);
+    }
+    assert!(
+        text(found)
+            .contains("imports `core-db` in 2 places but m.mmd:14 `%% deny ui: core` forbids it")
+    );
+}
+
+#[test]
 fn isolation_breach_header_wording() {
     let mut found = Vec::new();
     for (file, line) in [("src/a.rs", 1), ("src/b.rs", 2)] {

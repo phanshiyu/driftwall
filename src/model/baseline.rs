@@ -12,10 +12,11 @@ use thiserror::Error;
 use super::{LintReport, Location, Severity, Violation, ViolationKind};
 
 /// Every kind a baseline can hold, in no particular order.
-const BASELINABLE: [ViolationKind; 19] = [
+const BASELINABLE: [ViolationKind; 20] = [
     ViolationKind::UnmappedFile,
     ViolationKind::UnknownNode,
     ViolationKind::UndeclaredEdge,
+    ViolationKind::DeniedEdge,
     ViolationKind::StaleEdge,
     ViolationKind::PlannedRealized,
     ViolationKind::TestOnlyEdge,
@@ -51,6 +52,7 @@ impl ViolationKind {
             Self::UnmappedFile => "unmapped-file",
             Self::UnknownNode => "unknown-node",
             Self::UndeclaredEdge => "undeclared-edge",
+            Self::DeniedEdge => "denied-edge",
             Self::StaleEdge => "stale-edge",
             Self::PlannedRealized => "planned-realized",
             Self::TestOnlyEdge => "test-only-edge",

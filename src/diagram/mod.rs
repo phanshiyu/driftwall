@@ -14,6 +14,8 @@ mod rules;
 #[cfg(test)]
 mod boundary_tests;
 #[cfg(test)]
+mod deny_tests;
+#[cfg(test)]
 mod each_tests;
 #[cfg(test)]
 mod facade_tests;

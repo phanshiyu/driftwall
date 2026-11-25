@@ -6,8 +6,8 @@ use super::cycles::find_cycle;
 use super::each;
 use super::error::DiagramError;
 use crate::model::{
-    BoundaryEdge, Budget, EachArrow, EachRule, Edge, EdgeKind, Endpoint, LayerOrder, NodeId,
-    NodeInfo, Rules, children_apart,
+    BoundaryEdge, Budget, Contract, Denial, EachArrow, EachRule, Edge, EdgeKind, Endpoint,
+    LayerOrder, NodeId, NodeInfo, OpenAccess, Rules, children_apart,
 };
 
 /// A rule directive found on a comment line, with the text after its keyword.
@@ -28,6 +28,8 @@ pub(super) enum Directive<'a> {
     Facade(&'a str),
     /// `%% each <boundary>: <arrow>, <arrow>`: the text after the keyword.
     Each(&'a str),
+    /// `%% deny <from>: <to>, <to>`: the text after the keyword.
+    Deny(&'a str),
 }
 
 /// The rule directive a comment line is, or `None` for anything else.
@@ -57,6 +59,11 @@ pub(super) fn directive(text: &str) -> Option<Directive<'_>> {
         && rest.starts_with(char::is_whitespace)
     {
         return Some(Directive::Each(rest.trim()));
+    }
+    if let Some(rest) = body.strip_prefix("deny")
+        && (rest.is_empty() || rest.starts_with(char::is_whitespace))
+    {
+        return Some(Directive::Deny(rest.trim()));
     }
     if let Some(rest) = body.strip_prefix("budget")
         && (rest.is_empty() || rest.starts_with(char::is_whitespace))
@@ -103,6 +110,9 @@ pub(super) fn render(rules: &Rules) -> Vec<String> {
             arrows.join(", ")
         ));
     }
+    for denial in &rules.deny {
+        lines.push(format!("  {}", denial.text()));
+    }
     for (node, budget) in &rules.budgets {
         let limits: Vec<String> = [
             ("fan-out", budget.fan_out),
@@ -129,6 +139,14 @@ pub(super) struct RuleParser {
     isolated: BTreeMap<String, u32>,
     facades: BTreeMap<NodeId, u32>,
     each: Vec<EachRule>,
+    deny: Vec<PendingDenial>,
+}
+
+/// A `%% deny` pair whose ids are not yet checked against the declared nodes and boundaries.
+struct PendingDenial {
+    line: u32,
+    from: NodeId,
+    to: NodeId,
 }
 
 impl RuleParser {
@@ -147,6 +165,7 @@ impl RuleParser {
             Directive::Tests(rest) => self.tests(rest, line),
             Directive::Isolated(rest) => self.isolated(rest, line),
             Directive::Facade(rest) => self.facade(rest, line),
+            Directive::Deny(rest) => self.deny(rest, line),
             Directive::Each(rest) => {
                 self.each.push(each::parse(rest, line)?);
                 Ok(())
@@ -174,6 +193,44 @@ impl RuleParser {
                 )));
             }
             self.isolated.insert(id.to_string(), line);
+        }
+        Ok(())
+    }
+
+    fn deny(&mut self, rest: &str, line: u32) -> Result<(), DiagramError> {
+        let malformed = |reason: String| DiagramError::MalformedRule {
+            line,
+            rule: "deny".to_owned(),
+            reason,
+        };
+        let usage = "expected `%% deny <from>: <to>, <to>`";
+        let Some((raw_from, raw_to)) = rest.split_once(':') else {
+            return Err(malformed(usage.to_owned()));
+        };
+        if raw_to.trim().is_empty() {
+            return Err(malformed(usage.to_owned()));
+        }
+        let id = |raw: &str| {
+            NodeId::new(raw.trim()).map_err(|source| DiagramError::InvalidId { line, source })
+        };
+        let from = id(raw_from)?;
+        for raw in raw_to.split(',') {
+            let to = id(raw)?;
+            if let Some(first) = self
+                .deny
+                .iter()
+                .find(|pending| pending.from == from && pending.to == to)
+            {
+                return Err(malformed(format!(
+                    "`{from}` to `{to}` is already denied on line {}",
+                    first.line
+                )));
+            }
+            self.deny.push(PendingDenial {
+                line,
+                from: from.clone(),
+                to,
+            });
         }
         Ok(())
     }
@@ -355,6 +412,8 @@ impl RuleParser {
             }
         }
         check_isolated(&self.isolated, nodes, edges, edge_lines, boundary_edges)?;
+        let deny = resolve_denials(&self.deny, nodes, boundaries)?;
+        check_denied_arrows(&deny, nodes, edges, edge_lines, boundary_edges)?;
         for (node, budget) in &self.budgets {
             if !nodes.contains_key(node) {
                 return Err(DiagramError::MalformedRule {
@@ -388,8 +447,108 @@ impl RuleParser {
             isolated: self.isolated,
             facades: self.facades,
             each: self.each,
+            deny,
         })
     }
+}
+
+/// Resolves the ids of every denial: a declared node, else a declared boundary, else an error.
+fn resolve_denials(
+    pending: &[PendingDenial],
+    nodes: &BTreeMap<NodeId, NodeInfo>,
+    boundaries: &BTreeMap<String, u32>,
+) -> Result<Vec<Denial>, DiagramError> {
+    let endpoint = |id: &NodeId, line: u32| {
+        if nodes.contains_key(id) {
+            Ok(Endpoint::Node(id.clone()))
+        } else if boundaries.contains_key(id.as_str()) {
+            Ok(Endpoint::Boundary(id.to_string()))
+        } else {
+            Err(DiagramError::MalformedRule {
+                line,
+                rule: "deny".to_owned(),
+                reason: format!("`{id}` is not a declared node or boundary"),
+            })
+        }
+    };
+    pending
+        .iter()
+        .map(|denial| {
+            Ok(Denial {
+                line: denial.line,
+                from: endpoint(&denial.from, denial.line)?,
+                to: endpoint(&denial.to, denial.line)?,
+            })
+        })
+        .collect()
+}
+
+/// No declared edge of any kind may cover a pair a denial covers (see "Denial" in
+/// `docs/DESIGN.md`): the contract would contradict itself. The first such edge by line is named.
+fn check_denied_arrows(
+    deny: &[Denial],
+    nodes: &BTreeMap<NodeId, NodeInfo>,
+    edges: &BTreeMap<Edge, EdgeKind>,
+    edge_lines: &BTreeMap<Edge, u32>,
+    boundary_edges: &[BoundaryEdge],
+) -> Result<(), DiagramError> {
+    for denial in deny {
+        let from_nodes = edges
+            .iter()
+            .filter(|(edge, _)| denial.covers(nodes, edge))
+            .map(|(edge, kind)| {
+                let line = edge_lines.get(edge).copied().unwrap_or(denial.line);
+                (line, format!("{} {} {}", edge.from, kind.arrow(), edge.to))
+            });
+        let from_boundaries = boundary_edges
+            .iter()
+            .filter(|declared| {
+                declared
+                    .pairs(nodes)
+                    .iter()
+                    .any(|pair| denial.covers(nodes, pair))
+            })
+            .map(|declared| (declared.line, declared.text()));
+        if let Some((line, text)) = from_nodes.chain(from_boundaries).min() {
+            return Err(DiagramError::MalformedRule {
+                line: denial.line,
+                rule: "deny".to_owned(),
+                reason: format!(
+                    "`{text}` on line {line} is declared, but the denial covers it: the contract contradicts itself"
+                ),
+            });
+        }
+    }
+    Ok(())
+}
+
+/// A denial must remove something: some pair it covers that an open chain allows, after
+/// narrowing. One that removes nothing is a dead rule, a contract error at its line. Checked on
+/// the whole contract, as the chains, the edges and the members are needed together.
+pub(super) fn check_denials_remove_something(contract: &Contract) -> Result<(), DiagramError> {
+    let nodes = &contract.nodes;
+    for denial in &contract.rules.deny {
+        let allowed = denial.from.members(nodes).into_iter().any(|from| {
+            denial.to.members(nodes).into_iter().any(|to| {
+                let pair = Edge {
+                    from: from.clone(),
+                    to: to.clone(),
+                };
+                matches!(contract.open_access(&pair), Some(OpenAccess::Allowed(_)))
+            })
+        });
+        if !allowed {
+            return Err(DiagramError::MalformedRule {
+                line: denial.line,
+                rule: "deny".to_owned(),
+                reason: format!(
+                    "no open chain lets `{}` use `{}`, so the denial removes nothing",
+                    denial.from, denial.to
+                ),
+            });
+        }
+    }
+    Ok(())
 }
 
 /// Why `later` disagrees with `first`, or `None` when they agree: every two boundaries both list
