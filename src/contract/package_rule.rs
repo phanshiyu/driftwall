@@ -2,10 +2,12 @@
 
 use std::fmt;
 
-use super::NodeId;
+use serde::Serialize;
+
+use super::{NodeId, Template};
 
 /// Which of the two package directives a rule is.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
 pub enum PackageRuleKind {
     /// `%% packages`: the third-party packages the node may use.
     Allow,
@@ -25,7 +27,7 @@ impl PackageRuleKind {
 }
 
 /// One entry of a package rule: a package name, or a prefix when it ends in `*`.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
 pub struct PackagePattern(String);
 
 impl PackagePattern {
@@ -81,12 +83,30 @@ pub struct PackageRule {
     pub kind: PackageRuleKind,
     /// The names, in the order written. Empty only for an allow-list.
     pub names: Vec<PackagePattern>,
+    /// The `%% each` line this rule expands for the node, or `None` for a written line. Its `line`
+    /// is the line of the `%% each`.
+    pub template: Option<Template>,
+}
+
+impl PackageRule {
+    /// The directive that declares the rule, as findings name it: `%% packages db`, or for an
+    /// expansion `%% each features: packages service`.
+    #[must_use]
+    pub fn label(&self) -> String {
+        self.template.as_ref().map_or_else(
+            || format!("%% {} {}", self.kind.directive(), self.node),
+            |template| format!("%% each {}: {}", template.boundary, template.arrow),
+        )
+    }
 }
 
 impl PartialEq for PackageRule {
     fn eq(&self, other: &Self) -> bool {
         // why: render moves lines around, and a round trip must still compare equal.
-        self.node == other.node && self.kind == other.kind && self.names == other.names
+        self.node == other.node
+            && self.kind == other.kind
+            && self.names == other.names
+            && self.template == other.template
     }
 }
 

@@ -39,7 +39,12 @@ fn boundary(id: &str) -> Endpoint {
 }
 
 fn denial(line: u32, from: Endpoint, to: Endpoint) -> Denial {
-    Denial { line, from, to }
+    Denial {
+        line,
+        from,
+        to,
+        template: None,
+    }
 }
 
 #[test]

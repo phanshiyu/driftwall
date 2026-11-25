@@ -222,7 +222,7 @@ fn templates_render_back_and_expansions_do_not() {
     assert_eq!(again.nodes, contract.nodes);
     assert_eq!(again.boundary_edges.len(), contract.boundary_edges.len());
     assert_eq!(again.rules.each.len(), 1);
-    assert_eq!(again.rules.each[0].arrows, contract.rules.each[0].arrows);
+    assert_eq!(again.rules.each[0].body, contract.rules.each[0].body);
     assert_eq!(render(&again), rendered);
 }
 

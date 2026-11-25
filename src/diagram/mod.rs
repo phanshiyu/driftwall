@@ -16,7 +16,11 @@ mod sync;
 #[cfg(test)]
 mod boundary_tests;
 #[cfg(test)]
+mod built_tests;
+#[cfg(test)]
 mod deny_tests;
+#[cfg(test)]
+mod each_rules_tests;
 #[cfg(test)]
 mod each_tests;
 #[cfg(test)]
@@ -34,7 +38,7 @@ pub use error::DiagramError;
 pub use parse::parse;
 pub use picture::{PictureError, picture};
 pub use render::render;
-pub use sync::sync;
+pub use sync::{sync, wants_built};
 
 #[cfg(test)]
 mod package_tests;

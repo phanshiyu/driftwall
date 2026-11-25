@@ -106,14 +106,18 @@ fn forbidden(
     let kind = used.kind.as_str();
     let file = contract_file.display();
     if let Some(rule) = rules(PackageRuleKind::Forbid).find(|rule| rule.matches(used)) {
-        return Some(violation(
-            ViolationKind::ForbiddenPackage,
-            Some(used.at.clone()),
-            format!(
-                "`{node}` imports `{name}` ({kind}) but {file}:{} `%% forbid-packages {node}` forbids it",
-                rule.line
-            ),
-        ).keyed(format!("{node} {name}")));
+        return Some(
+            violation(
+                ViolationKind::ForbiddenPackage,
+                Some(used.at.clone()),
+                format!(
+                    "`{node}` imports `{name}` ({kind}) but {file}:{} `{}` forbids it",
+                    rule.line,
+                    rule.label()
+                ),
+            )
+            .keyed(format!("{node} {name}")),
+        );
     }
     let allowed: Vec<&PackageRule> = rules(PackageRuleKind::Allow).collect();
     let first = allowed.first()?;
@@ -134,8 +138,9 @@ fn forbidden(
             ViolationKind::ForbiddenPackage,
             Some(used.at.clone()),
             format!(
-                "`{node}` imports `{name}` ({kind}) but {file}:{} `%% packages {node}` {lists}",
-                first.line
+                "`{node}` imports `{name}` ({kind}) but {file}:{} `{}` {lists}",
+                first.line,
+                first.label()
             ),
         )
         .keyed(format!("{node} {name}")),
@@ -156,8 +161,9 @@ fn stale_entries(rule: &PackageRule, uses: &[&PackageUse], contract_file: &Path)
                     line: rule.line,
                 }),
                 format!(
-                    "`%% packages {}` lists `{entry}` but no code of `{}` uses it",
-                    rule.node, rule.node
+                    "`{}` lists `{entry}` but no code of `{}` uses it",
+                    rule.label(),
+                    rule.node
                 ),
             )
             .keyed(format!("{} {entry}", rule.node))

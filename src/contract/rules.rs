@@ -4,7 +4,9 @@ use std::collections::BTreeMap;
 
 use serde::Serialize;
 
-use super::{Contract, Edge, EdgeKind, Endpoint, NodeId, NodeInfo};
+use super::{
+    Contract, Edge, EdgeKind, Endpoint, NodeId, NodeInfo, PackagePattern, PackageRuleKind, Template,
+};
 
 /// `%% order: a > b > c`: boundaries from the top (entry points) to the bottom (foundations).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
@@ -44,6 +46,10 @@ pub struct Denial {
     pub from: Endpoint,
     /// The imported end.
     pub to: Endpoint,
+    /// The `%% each` deny arrow this denial expands, or `None` for a `%% deny` line. An expansion
+    /// has a node or a fixed end at each side, see "Edge templates" in `docs/DESIGN.md`.
+    #[serde(skip)]
+    pub template: Option<Template>,
 }
 
 impl Denial {
@@ -56,10 +62,14 @@ impl Denial {
             && self.to.contains(nodes, &edge.to)
     }
 
-    /// The denial as written, `%% deny ui: core`.
+    /// The denial as written, `%% deny ui: core`, or for an expansion the template line it comes
+    /// from, `%% each features: deny view: request`.
     #[must_use]
     pub fn text(&self) -> String {
-        format!("%% deny {}: {}", self.from, self.to)
+        self.template.as_ref().map_or_else(
+            || format!("%% deny {}: {}", self.from, self.to),
+            |template| format!("%% each {}: {}", template.boundary, template.arrow),
+        )
     }
 }
 
@@ -93,16 +103,72 @@ impl EachArrow {
     }
 }
 
-/// `%% each <boundary>: <arrow>, ...`: edges declared for every child boundary of `boundary`, see
-/// "Edge templates" in `docs/DESIGN.md`.
+/// What an `%% each` line declares for every child boundary.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub enum EachBody {
+    /// `<arrow>, <arrow>`: edges, in the order written.
+    Arrows(Vec<EachArrow>),
+    /// `packages <role>: <name>, ...` or `forbid-packages <role>: <name>, ...`: a package rule for
+    /// the node of the role in each child.
+    Packages {
+        /// Allow-list or deny-list.
+        kind: PackageRuleKind,
+        /// The role whose node in each child the rule restricts.
+        role: String,
+        /// The names, in the order written.
+        names: Vec<PackagePattern>,
+    },
+    /// `deny <end>: <end>, ...`: one denial per target for each child.
+    Deny {
+        /// The importing end, a role or a fixed id.
+        from: String,
+        /// The imported ends, roles or fixed ids, in the order written.
+        to: Vec<String>,
+    },
+}
+
+/// `%% each <boundary>: <body>`: edges, package rules or denials declared for every child boundary
+/// of `boundary`, see "Edge templates" in `docs/DESIGN.md`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct EachRule {
     /// Line of the directive.
     pub line: u32,
-    /// The boundary whose direct child boundaries the arrows apply to.
+    /// The boundary whose direct child boundaries the body applies to.
     pub boundary: String,
-    /// The arrows, in the order written.
-    pub arrows: Vec<EachArrow>,
+    /// What the line declares.
+    pub body: EachBody,
+}
+
+impl EachRule {
+    /// The text after `%% each <boundary>:` as written, `controller --> service` for arrows.
+    #[must_use]
+    pub fn list(&self) -> String {
+        match &self.body {
+            EachBody::Arrows(arrows) => arrows
+                .iter()
+                .map(EachArrow::text)
+                .collect::<Vec<_>>()
+                .join(", "),
+            EachBody::Packages { kind, role, names } => {
+                let names: Vec<&str> = names.iter().map(PackagePattern::as_str).collect();
+                format!("{} {role}: {}", kind.directive(), names.join(", "))
+                    .trim_end()
+                    .to_owned()
+            }
+            EachBody::Deny { from, to } => format!("deny {from}: {}", to.join(", ")),
+        }
+    }
+
+    /// The directive word of a line that declares rules instead of arrows: `packages`,
+    /// `forbid-packages` or `deny`.
+    #[must_use]
+    pub const fn form(&self) -> Option<&'static str> {
+        match &self.body {
+            EachBody::Arrows(_) => None,
+            EachBody::Packages { kind, .. } => Some(kind.directive()),
+            EachBody::Deny { .. } => Some("deny"),
+        }
+    }
 }
 
 /// `%% budget <node>: fan-out <n>, files <n>, lines <n>`: the limits of one node, each optional.

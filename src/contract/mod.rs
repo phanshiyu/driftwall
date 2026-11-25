@@ -22,7 +22,7 @@ pub use boundary::{
 pub use map::{GlobError, MapGlob, MapRule, MapTarget, Specificity};
 pub use open_order::{EachLimit, Narrowing, OpenAccess};
 pub use package_rule::{PackagePattern, PackageRule, PackageRuleKind};
-pub use rules::{Budget, Denial, EachArrow, EachRule, LayerOrder, Rules};
+pub use rules::{Budget, Denial, EachArrow, EachBody, EachRule, LayerOrder, Rules};
 
 /// Contract path used when none is given, relative to the repository root.
 pub const DEFAULT_CONTRACT: &str = "architecture.mmd";

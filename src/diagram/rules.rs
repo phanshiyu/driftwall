@@ -6,8 +6,8 @@ use super::cycles::find_cycle;
 use super::each;
 use super::error::DiagramError;
 use crate::contract::{
-    BoundaryEdge, Budget, Contract, Denial, EachArrow, EachRule, Edge, EdgeKind, Endpoint,
-    LayerOrder, Narrowing, NodeId, NodeInfo, OpenAccess, Rules, children_apart,
+    BoundaryEdge, Budget, Contract, Denial, EachRule, Edge, EdgeKind, Endpoint, LayerOrder,
+    Narrowing, NodeId, NodeInfo, OpenAccess, Rules, children_apart,
 };
 
 /// A rule directive found on a comment line, with the text after its keyword.
@@ -103,14 +103,10 @@ pub(super) fn render(rules: &Rules) -> Vec<String> {
         lines.push(format!("  %% facade {}", nodes.join(", ")));
     }
     for rule in &rules.each {
-        let arrows: Vec<String> = rule.arrows.iter().map(EachArrow::text).collect();
-        lines.push(format!(
-            "  %% each {}: {}",
-            rule.boundary,
-            arrows.join(", ")
-        ));
+        lines.push(format!("  %% each {}: {}", rule.boundary, rule.list()));
     }
-    for denial in &rules.deny {
+    // why: an expansion is written by its `%% each` line, never on its own.
+    for denial in rules.deny.iter().filter(|denial| denial.template.is_none()) {
         lines.push(format!("  {}", denial.text()));
     }
     for (node, budget) in &rules.budgets {
@@ -402,6 +398,7 @@ impl RuleParser {
         edges: &BTreeMap<Edge, EdgeKind>,
         edge_lines: &BTreeMap<Edge, u32>,
         boundary_edges: &[BoundaryEdge],
+        expanded: Vec<Denial>,
     ) -> Result<Rules, DiagramError> {
         for order in &self.order {
             check_order(order, nodes, boundaries, edges, edge_lines, boundary_edges)?;
@@ -412,7 +409,26 @@ impl RuleParser {
             }
         }
         check_isolated(&self.isolated, nodes, edges, edge_lines, boundary_edges)?;
-        let deny = resolve_denials(&self.deny, nodes, boundaries)?;
+        let mut deny = resolve_denials(&self.deny, nodes, boundaries)?;
+        for denial in expanded {
+            if let Some(first) = deny
+                .iter()
+                .find(|first| first.from == denial.from && first.to == denial.to)
+            {
+                return Err(DiagramError::MalformedRule {
+                    line: denial.line,
+                    rule: "deny".to_owned(),
+                    reason: format!(
+                        "`{}` to `{}` is already denied on line {} (expanded by `{}`)",
+                        denial.from,
+                        denial.to,
+                        first.line,
+                        denial.text()
+                    ),
+                });
+            }
+            deny.push(denial);
+        }
         check_denied_arrows(&deny, nodes, edges, edge_lines, boundary_edges)?;
         for (node, budget) in &self.budgets {
             if !nodes.contains_key(node) {
@@ -478,6 +494,7 @@ fn resolve_denials(
                 line: denial.line,
                 from: endpoint(&denial.from, denial.line)?,
                 to: endpoint(&denial.to, denial.line)?,
+                template: None,
             })
         })
         .collect()
@@ -514,12 +531,27 @@ fn check_denied_arrows(
                 line: denial.line,
                 rule: "deny".to_owned(),
                 reason: format!(
-                    "`{text}` on line {line} is declared, but the denial covers it: the contract contradicts itself"
+                    "`{text}` on line {line} is declared, but the denial covers it{}: the contract contradicts itself",
+                    expansion_note(denial)
                 ),
             });
         }
     }
     Ok(())
+}
+
+/// What an error says about the `%% each` line that expanded `denial`, or nothing for a `%% deny`.
+fn expansion_note(denial: &Denial) -> String {
+    denial
+        .template
+        .as_ref()
+        .map_or_else(String::new, |template| {
+            format!(
+                " (expanded by `{}` for `{}`)",
+                denial.text(),
+                template.child
+            )
+        })
 }
 
 /// A denial must remove something: some pair it covers that an open chain allows, after
@@ -545,8 +577,10 @@ pub(super) fn check_denials_remove_something(contract: &Contract) -> Result<(), 
                 line: denial.line,
                 rule: "deny".to_owned(),
                 reason: format!(
-                    "no open chain lets `{}` use `{}`, so the denial removes nothing",
-                    denial.from, denial.to
+                    "no open chain lets `{}` use `{}`, so the denial removes nothing{}",
+                    denial.from,
+                    denial.to,
+                    expansion_note(denial)
                 ),
             });
         }

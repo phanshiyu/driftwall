@@ -58,6 +58,12 @@ pub fn run(args: &RenderArgs) -> Result<Run> {
             outcome: Outcome::Findings,
         });
     }
+    let contract = lint::read_contract(&args.path, &options.contract)?;
+    let owning = if args.built {
+        Some(lint::scan_ownership(&args.path, &options.contract, &contract)?.owning_nodes())
+    } else {
+        None
+    };
     let view = match (args.depth, &args.focus) {
         (Some(depth), _) => PictureView::Depth(depth),
         (None, Some(boundary)) => PictureView::Focus(boundary.clone()),
@@ -65,9 +71,10 @@ pub fn run(args: &RenderArgs) -> Result<Run> {
     };
     Ok(Run {
         stdout: diagram::picture(
-            &lint::read_contract(&args.path, &options.contract)?,
+            &contract,
             &view,
             args.short_labels,
+            owning.as_ref(),
             &source_name(&options.contract),
         )?,
         outcome: Outcome::Clean,
@@ -80,7 +87,18 @@ fn sync(args: &RenderArgs, contract: &Path, file: &Path) -> Result<MarkdownSync>
         fs::read_to_string(file).with_context(|| format!("cannot read {}", file.display()))?;
     let sync = || -> Result<MarkdownSync> {
         let parsed = lint::read_contract(&args.path, contract)?;
-        Ok(diagram::sync(&markdown, &parsed, &source_name(contract))?)
+        // why: a file with no `--built` block is synced from the contract alone, as it always was.
+        let owning = if diagram::wants_built(&markdown) {
+            Some(lint::scan_ownership(&args.path, contract, &parsed)?.owning_nodes())
+        } else {
+            None
+        };
+        Ok(diagram::sync(
+            &markdown,
+            &parsed,
+            owning.as_ref(),
+            &source_name(contract),
+        )?)
     };
     sync().with_context(|| format!("{}", file.display()))
 }

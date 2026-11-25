@@ -141,7 +141,7 @@ files that have a `<script>` element. Other files are not read. The exact file e
 | `driftwall brief [PATH]` | Print the whole architecture and its current state. Made for agents. Flags: `--contract FILE`, `--format text\|json`. |
 | `driftwall neighbors NODE [PATH]` | Print one component with every edge in or out, and the file and line of each import. Flags: `--contract FILE`, `--format text\|json`, `--files`, `--all-sites`. |
 | `driftwall diff --base REF [PATH]` | Show how the contract changed since a git ref, so a human can review it. Flags: `--contract FILE`, `--format text\|json`, `--exit-code` (exit 1 on any change), `--baseline FILE` (also report debt added). |
-| `driftwall render [PATH]` | Print a generated Mermaid picture of the contract, from the contract alone. Flags: `--contract FILE`, `--depth N` (boundaries at depth N as one box each), `--focus BOUNDARY` (one boundary in full, the rest as boxes), `--short-labels` (labels cut at the first `:`), `--update FILE.md` and `--check FILE.md` (keep `<!-- driftwall render -->` blocks of a Markdown file current; `--check` exits 1 when one is stale). |
+| `driftwall render [PATH]` | Print a generated Mermaid picture of the contract, from the contract alone. Flags: `--contract FILE`, `--depth N` (boundaries at depth N as one box each), `--focus BOUNDARY` (one boundary in full, the rest as boxes), `--short-labels` (labels cut at the first `:`), `--built` (read the repository's ownership: a part that owns no file is dashed and marked `(no files)`, an arrow to it is dotted), `--update FILE.md` and `--check FILE.md` (keep `<!-- driftwall render -->` blocks of a Markdown file current; `--check` exits 1 when one is stale). |
 
 To keep an overview in your docs that cannot drift, put a block in a Markdown file and let CI check
 it ([Contract picture](docs/DESIGN.md#contract-picture)):
@@ -220,6 +220,7 @@ syntax and behaviour are in [docs/DESIGN.md](docs/DESIGN.md).
 | `%% deny ui: core` | In an open chain, `ui` may never use `core`, though the chain allows it. An import is `denied-edge`, and an arrow for the pair is an error. | [Denial](docs/DESIGN.md#denial) |
 | `%% isolated: features` | The children of `features` (feature boundaries nested inside it, or nodes in it) may not depend on each other, and no arrow can allow it. Subgraphs may nest. | [Isolated boundaries](docs/DESIGN.md#isolated-boundaries), [Nested boundaries](docs/DESIGN.md#nested-boundaries) |
 | `%% each features: controller --> service` | The same arrows inside every feature of `features`, written once: each child boundary `billing` gets `billing-controller --> billing-service`, skipped where it lacks a part. An end may also be a declared id: `view --> ui` lets only the view of each feature use `ui`. A role no feature has is an error. | [Edge templates](docs/DESIGN.md#edge-templates) |
+| `%% each features: packages service: serde`, `forbid-packages view: sqlx`, `deny view: request` | Package rules and denials for the part of every feature, one line each: `billing-service` and `search-service` get the allow-list, each view the deny-list, each view may not use `request`. A part a feature lacks is skipped, a role no feature has is an error, and each expansion is checked like the written rule. | [Edge templates](docs/DESIGN.md#edge-templates) |
 | `%% no-cycles` | The declared arrows may not form a cycle. | [No cycles](docs/DESIGN.md#no-cycles) |
 | `%% budget lint: fan-out 5, files 20, interface 8` | Warn when a component grows past a limit (`fan-out`, `files`, `lines`, `interface`: how many of its symbols other components use). | [Budgets](docs/DESIGN.md#budgets) |
 | `%% tests: isolated` | Production code may not import test files. | [Test isolation](docs/DESIGN.md#test-isolation) |
@@ -359,8 +360,8 @@ flowchart LR
   %% facade imports
   %% budget cli: fan-out 8, files 15, lines 1900
   %% budget code: files 8, lines 1100, interface 26
-  %% budget contract: files 8, lines 2300, interface 32
-  %% budget diagram: fan-out 2, files 24, lines 9500, interface 6
+  %% budget contract: files 8, lines 2300, interface 33
+  %% budget diagram: fan-out 2, files 24, lines 9500, interface 7
   %% budget imports: fan-out 7, files 30, lines 5800, interface 6
   %% budget init: fan-out 6, files 23, lines 5700, interface 5
   %% budget lint: fan-out 6, files 30, lines 7400, interface 7

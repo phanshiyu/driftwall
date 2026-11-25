@@ -19,6 +19,28 @@
   re-exports is public. One finding per facade node, with no source location and the facade line
   in the message; the baseline key is the node. `--strict` fails on it, and `lint` text, JSON and
   SARIF carry it like every kind.
+
+- Package rules and denials per role in `%% each`: `%% each features: packages service: serde,
+  tokio`, `%% each features: forbid-packages view: sqlx` and `%% each features: deny view:
+  request`. Each expands for every feature that has the role (`billing-service`, `search-service`)
+  into an ordinary `%% packages`, `%% forbid-packages` or `%% deny` rule, so "the service may not
+  use `maud`" is one line and no feature is forgotten. A keyword followed by `<end>:` is the rule
+  form, so a role called `deny` in an arrow still parses. A role that no feature has, a name listed
+  by a written line and the template, a denied pair twice, a denial against a declared edge and a
+  denial that removes nothing are contract errors at the `%% each` line, naming the feature. `brief`
+  shows the expanded rules, JSON `rules.each` gains `form` for these lines, and `diff` reports the
+  template lines. See "Edge templates" in `docs/DESIGN.md`.
+
+- `driftwall render --built` shows what is built, not only the design. It reads the repository's
+  ownership as `lint` does: a part that owns no source file gets ` (no files)` in its label and a
+  dashed border, an arrow with such an end is dotted (a template arrow for a feature that is not
+  split yet, `view --> ui` before its view owns a file), and the open arrows use the
+  ownership-aware narrowing of `lint`. With `--depth`, a box is empty when none of its parts owns a
+  file. The flag works in Markdown markers (`<!-- driftwall render --focus billing --built -->`) and
+  is repeated in the header; such a block goes stale when code changes ownership, so `render
+  --check` on it needs the repository, not only the contract. Without the flag `render` is
+  unchanged. See "Contract picture" in `docs/DESIGN.md`.
+
 - Test code is no longer held to a node's `%% exports` surface: `private-symbol` applies to
   production imports only, as package rules already do. A test that an edge allows may drive a
   node's internals, which is what a test is for; production callers stay held to the surface.

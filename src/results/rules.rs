@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use serde::Serialize;
 
-use crate::contract::{EachArrow, NodeId, NodeInfo, Rules, children};
+use crate::contract::{EachArrow, EachBody, NodeId, NodeInfo, Rules, children};
 
 /// Where a node sits in the layer order: its boundary and the boundary's place among those listed.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -76,8 +76,12 @@ pub struct EachSummary {
     pub boundary: String,
     /// Line of the directive.
     pub line: u32,
-    /// The arrows as written, `controller --> service`.
+    /// The arrows as written, `controller --> service`. A line that declares rules has one entry,
+    /// the rule as written after the colon, `forbid-packages service: maud`.
     pub arrows: Vec<String>,
+    /// `packages`, `forbid-packages` or `deny` for a line that declares rules, absent for arrows.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub form: Option<&'static str>,
 }
 
 /// An `%% isolated` boundary with the children that may not use each other.
@@ -207,7 +211,11 @@ impl Rules {
                 .map(|rule| EachSummary {
                     boundary: rule.boundary.clone(),
                     line: rule.line,
-                    arrows: rule.arrows.iter().map(EachArrow::text).collect(),
+                    arrows: match &rule.body {
+                        EachBody::Arrows(arrows) => arrows.iter().map(EachArrow::text).collect(),
+                        _ => vec![rule.list()],
+                    },
+                    form: rule.form(),
                 })
                 .collect(),
             deny: self

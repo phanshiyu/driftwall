@@ -142,12 +142,11 @@ fn denied_site(
         ViolationKind::DeniedEdge,
         import,
         format!(
-            "`{from}` imports `{to}` ({}) but {}:{} `%% deny {}: {}` forbids it",
+            "`{from}` imports `{to}` ({}) but {}:{} `{}` forbids it",
             import.target.display(),
             contract_file.display(),
             denial.line,
-            denial.from,
-            denial.to,
+            denial.text(),
         ),
     )
     .keyed(format!("{from} --> {to}"))

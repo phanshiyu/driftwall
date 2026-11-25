@@ -1,8 +1,10 @@
 //! Keeping a Markdown copy of a picture in sync, see "Contract picture" in `docs/DESIGN.md`:
 //! `driftwall render --update FILE.md` and `--check FILE.md`.
 
+use std::collections::BTreeSet;
+
 use super::picture::{PictureError, picture};
-use crate::contract::Contract;
+use crate::contract::{Contract, NodeId};
 use crate::results::{MarkdownSync, PictureView};
 
 const START: &str = "<!-- driftwall render";
@@ -10,7 +12,11 @@ const END: &str = "<!-- driftwall render end -->";
 
 /// What one line of the file is, as far as blocks go.
 enum Marker {
-    Start { view: PictureView, short: bool },
+    Start {
+        view: PictureView,
+        short: bool,
+        built: bool,
+    },
     End,
 }
 
@@ -32,11 +38,16 @@ fn marker(text: &str, line: u32) -> Option<Result<Marker, PictureError>> {
     let mut words = args.split_whitespace();
     let mut view = None;
     let mut short = false;
+    let mut built = false;
     // why: the flags may come in any order, and each at most once.
     while let Some(word) = words.next() {
         let found = match word {
             "--short-labels" if !short => {
                 short = true;
+                continue;
+            }
+            "--built" if !built => {
+                built = true;
                 continue;
             }
             "--depth" => words
@@ -54,7 +65,20 @@ fn marker(text: &str, line: u32) -> Option<Result<Marker, PictureError>> {
     Some(Ok(Marker::Start {
         view: view.unwrap_or(PictureView::Full),
         short,
+        built,
     }))
+}
+
+/// Whether some block of `markdown` has `--built` in its marker, so drawing it needs the
+/// repository's ownership. A marker that is malformed does not count: [`sync`] reports it.
+#[must_use]
+pub fn wants_built(markdown: &str) -> bool {
+    markdown.lines().zip(1_u32..).any(|(raw, line)| {
+        matches!(
+            marker(raw, line),
+            Some(Ok(Marker::Start { built: true, .. }))
+        )
+    })
 }
 
 /// A block that has started: its line, its view and its line ending.
@@ -62,19 +86,23 @@ struct Open {
     line: u32,
     view: PictureView,
     short: bool,
+    built: bool,
     eol: &'static str,
 }
 
-/// Rewrites the inside of every block of `markdown` with the picture its marker asks for, from
-/// `contract` (`source` is the contract file name).
+/// Rewrites the inside of every block of `markdown` with the picture its marker asks for.
+///
+/// The pictures are drawn from `contract` (`source` is the contract file name). `owning` is the
+/// set of nodes that own a source file, which a block with `--built` needs.
 ///
 /// # Errors
 /// A start with no end, an end with no start, a start inside a block, unknown arguments in a
-/// marker, no block at all, or a picture that cannot be drawn (depth 0, a focus that is no
-/// boundary).
+/// marker, no block at all, a block with `--built` when `owning` is `None`, or a picture that
+/// cannot be drawn (depth 0, a focus that is no boundary).
 pub fn sync(
     markdown: &str,
     contract: &Contract,
+    owning: Option<&BTreeSet<NodeId>>,
     source: &str,
 ) -> Result<MarkdownSync, PictureError> {
     let mut text = String::new();
@@ -92,7 +120,7 @@ pub fn sync(
                     first: block.line,
                 });
             }
-            (Some(Marker::Start { view, short }), None) => {
+            (Some(Marker::Start { view, short, built }), None) => {
                 text.push_str(raw);
                 inside.clear();
                 let eol = if raw.ends_with("\r\n") { "\r\n" } else { "\n" };
@@ -100,12 +128,18 @@ pub fn sync(
                     line,
                     view,
                     short,
+                    built,
                     eol,
                 });
             }
             (Some(Marker::End), None) => return Err(PictureError::StrayEnd { line }),
             (Some(Marker::End), Some(block)) => {
-                let drawn = picture(contract, &block.view, block.short, source)?;
+                let built = match (block.built, owning) {
+                    (true, None) => return Err(PictureError::NeedsOwnership { line: block.line }),
+                    (true, Some(_)) => owning,
+                    (false, _) => None,
+                };
+                let drawn = picture(contract, &block.view, block.short, built, source)?;
                 let fresh = format!("```mermaid\n{drawn}```\n").replace('\n', block.eol);
                 if fresh != inside {
                     stale.push(block.line);

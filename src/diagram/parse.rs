@@ -260,17 +260,7 @@ impl Parser {
         if !(list.trim().is_empty() && kind == PackageRuleKind::Allow) {
             for raw in list.split(',') {
                 let name = PackagePattern::parse(raw).map_err(|e| malformed(e.to_owned()))?;
-                let key = (node.clone(), name.as_str().to_owned());
-                if let Some((first_kind, first_line)) = self.package_names.get(&key) {
-                    return Err(malformed(if *first_kind == kind {
-                        format!("`{name}` for `{node}` is already listed on line {first_line}")
-                    } else {
-                        format!(
-                            "`{name}` for `{node}` is on line {first_line} of the other list: it cannot be both allowed and forbidden"
-                        )
-                    }));
-                }
-                self.package_names.insert(key, (kind, line));
+                claim_name(&mut self.package_names, kind, &node, &name, line).map_err(malformed)?;
                 names.push(name);
             }
         }
@@ -279,6 +269,7 @@ impl Parser {
             node,
             kind,
             names,
+            template: None,
         });
         Ok(())
     }
@@ -452,7 +443,7 @@ impl Parser {
         })
     }
 
-    fn finish(self) -> Result<Contract, DiagramError> {
+    fn finish(mut self) -> Result<Contract, DiagramError> {
         if !self.header_seen {
             return Err(DiagramError::MissingHeader);
         }
@@ -485,17 +476,32 @@ impl Parser {
             }
         }
         let mut boundary_edges = boundary_edges;
-        boundary_edges.extend(each::expand(
-            self.rules.each_rules(),
-            &self.nodes,
-            &self.boundaries,
-        )?);
+        let expanded = each::expand(self.rules.each_rules(), &self.nodes, &self.boundaries)?;
+        boundary_edges.extend(expanded.edges);
+        for rule in expanded.packages {
+            for name in &rule.names {
+                claim_name(
+                    &mut self.package_names,
+                    rule.kind,
+                    &rule.node,
+                    name,
+                    rule.line,
+                )
+                .map_err(|reason| DiagramError::MalformedPackages {
+                    line: rule.line,
+                    directive: rule.kind.directive(),
+                    reason: format!("{reason} (expanded by `{}`)", rule.label()),
+                })?;
+            }
+            self.package_rules.push(rule);
+        }
         let rules = self.rules.finish(
             &self.nodes,
             &self.boundaries,
             &edges,
             &edge_lines,
             &boundary_edges,
+            expanded.deny,
         )?;
         for rule in &self.package_rules {
             if !self.nodes.contains_key(&rule.node) {
@@ -519,6 +525,29 @@ impl Parser {
         rules::check_denials_remove_something(&contract)?;
         Ok(contract)
     }
+}
+
+/// Records that `node` lists `name` in a `kind` rule on `line`, or says why it cannot: the name is
+/// already listed for the node, in either list.
+fn claim_name(
+    claimed: &mut BTreeMap<(NodeId, String), (PackageRuleKind, u32)>,
+    kind: PackageRuleKind,
+    node: &NodeId,
+    name: &PackagePattern,
+    line: u32,
+) -> Result<(), String> {
+    let key = (node.clone(), name.as_str().to_owned());
+    if let Some((first_kind, first_line)) = claimed.get(&key) {
+        return Err(if *first_kind == kind {
+            format!("`{name}` for `{node}` is already listed on line {first_line}")
+        } else {
+            format!(
+                "`{name}` for `{node}` is on line {first_line} of the other list: it cannot be both allowed and forbidden"
+            )
+        });
+    }
+    claimed.insert(key, (kind, line));
+    Ok(())
 }
 
 /// The text after the keyword when `text` is a `%% <keyword>` directive: a comment whose first word

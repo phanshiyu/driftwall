@@ -92,6 +92,10 @@ pub struct RenderArgs {
     /// Cut every node and boundary label to the text before its first `:`.
     #[arg(long, conflicts_with_all = ["update", "check"])]
     pub short_labels: bool,
+    /// Draw what is built: a node that owns no source file is dashed and marked `(no files)`, and
+    /// an arrow with such an end is dotted. Reads the repository's ownership.
+    #[arg(long, conflicts_with_all = ["update", "check"])]
+    pub built: bool,
 }
 
 /// Output formats of the commands that present the architecture or a contract change.

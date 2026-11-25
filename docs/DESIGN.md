@@ -531,7 +531,9 @@ line with three targets is three denials, and `render` writes one denial per lin
   (line 14)`, and JSON `rules` gains `deny`, a list of `{"from": "ui", "to": "core", "line": 14}`
   in file order, absent when the contract has none.
 - `diff` reports an added or removed denial as the directive line (`%% deny ui: core`), see "Diff
-  beyond the contract". `render` writes denials back, after the `%% each` lines.
+  beyond the contract". `render` writes denials back, after the `%% each` lines. A denial may also be declared for every
+  feature, `%% each features: deny view: request` (see "Edge templates"): each expansion is a
+  denial of the pair of nodes, with every contract error above, at the `%% each` line.
 
 #### No cycles
 
@@ -672,6 +674,45 @@ inside the `|...|` label does not end the arrow). An end is a role, a node id su
   that expand to the same edge), which is the duplicate-edge error naming both lines. A comment
   whose first word is `each` and that does not have this form is a contract error, never a plain
   comment.
+
+- Package and deny rules. Besides arrows a line may declare, for every feature, a package rule of
+  "Package rules" or a denial of "Denial", one directive per line:
+
+  ```
+  %% each features: packages service: serde, tokio
+  %% each features: forbid-packages view: sqlx, node:*
+  %% each features: deny view: request
+  ```
+
+  `packages <role>: <name>[, ...]` is an allow-list (the list may be empty, as `%% packages
+  config:`), `forbid-packages <role>: <name>[, ...]` a deny-list (at least one name), and `deny
+  <end>: <end>[, ...]` one denial per target. The form is recognised by the keyword, whitespace and
+  one word followed by a second colon; without that second colon the line is the arrow form, so a
+  role called `deny`, `packages` or `forbid-packages` in an arrow (`deny --> service`) keeps its
+  meaning. Expansion is per direct child `C`, as for arrows. `<role>` is the node `C-<role>`, and a
+  child without the role is skipped. A role that resolves in no child is a contract error with the
+  message of arrows. In `deny` each end is a role or a fixed id with the resolution rules of arrows
+  (a role wins, a name that is no role must be a declared node or boundary, and the errors of
+  "Fixed ends" apply): at least one end of every pair is a role, a pair of two fixed ends is an
+  error ("write it as an ordinary `%% deny`") and so is a role against itself. An expansion is an
+  ordinary rule of its kind, written nowhere, with every check of that rule:
+  - Package names add up with the written lines for the same node. A name that a written line and
+    a template both list for a node (or two templates), in either list, is the duplicate error of
+    "Package rules", at the `%% each` line. The findings are those of the rules, naming the node
+    and the template (`architecture.mmd:12 `%% each features: forbid-packages view` forbids it`),
+    and an allow-list entry that no code uses is `stale-package` at the `%% each` line.
+  - Each denial expansion gets the contract errors of "Denial", at the `%% each` line and naming
+    the feature (`(expanded by `%% each features: deny view: request` for `billing`)`): an
+    unknown id (a role no child has, or an end that is not declared), the pair denied twice (a
+    written `%% deny` or another template), a contradiction with a declared edge of any kind, and a
+    dead denial that no open chain makes necessary. Lint reports the site as `denied-edge`, naming
+    the template line.
+  - `render` (the contract writer) writes the template lines back, never the expansions.
+    `brief` and `neighbors` show the expanded rules as they show written ones (`deny: billing-view
+    -> request (line 12)`, with the line of the `%% each`), and `rules:` writes the line as it
+    is: JSON `rules.each` has `arrows`, a single entry `forbid-packages service: maud` for these
+    lines, and `form`, `packages`, `forbid-packages` or `deny`, absent for arrows. `diff` reports
+    the line as a rule added or removed, like every other template.
 
 Lint treats an expansion as a declared edge of its kind:
 
@@ -869,6 +910,10 @@ change of the rule) follow "Rules (violation kinds)".
 matches is the warning `stale-package` at the line of the rule, naming the entry and the node, like
 `stale-map`. `forbid-packages` entries are never stale: a deny-list that nothing violates is its
 purpose. A node that owns no file at all has every entry stale.
+
+A rule may also be declared for the same part of every feature with `%% each features: packages
+service: serde` and `forbid-packages view: sqlx`, see "Edge templates": each expansion is an
+ordinary rule of the node `<feature>-<role>`, whose names add up with the written lines.
 
 `brief`, `neighbors` and `where` show the package uses (see "CLI surface").
 
@@ -2793,7 +2838,7 @@ driftwall where <FILE> [--root DIR] [--contract FILE] [--format text|json]
 driftwall brief [PATH] [--contract FILE] [--format text|json]
 driftwall neighbors <NODE> [PATH] [--contract FILE] [--format text|json] [--files] [--all-sites]
 driftwall diff --base <REF> [PATH] [--contract FILE] [--format text|json] [--exit-code] [--baseline FILE]
-driftwall render [PATH] [--contract FILE] [--depth N | --focus BOUNDARY] [--short-labels]
+driftwall render [PATH] [--contract FILE] [--depth N | --focus BOUNDARY] [--short-labels] [--built]
 driftwall render [PATH] [--contract FILE] (--update FILE.md | --check FILE.md)
 ```
 
@@ -2812,13 +2857,13 @@ kinds as before; the mark only tells the reader that the site is test code.
 A contract with seven features of three or four parts each draws far too wide in Mermaid, and a
 hand-drawn overview drifts from it. `driftwall render` prints a generated Mermaid `flowchart` of the
 contract, and keeps a Markdown copy of it in sync deterministically. It needs the contract only,
-not the code, and exits `0`, or `2` for a contract that does not parse and for the argument errors
-below.
+not the code unless `--built` is given (see below), and exits `0`, or `2` for a contract that does
+not parse and for the argument errors below.
 
 The picture is a picture, not a contract: it has no `%%` directive and no map. Its first line is
 the comment `%% generated by driftwall render <args> from <contract file name>; do not edit`, with
-`<args>` empty, or `--depth N` or `--focus B`, then `--short-labels`, each as given, and the file
-name without its directory. Boundary labels are the ones the contract writes (the id when it wrote
+`<args>` empty, or `--depth N` or `--focus B`, then `--short-labels`, then `--built`, each as given,
+and the file name without its directory. Boundary labels are the ones the contract writes (the id when it wrote
 none), node labels too. Everything is sorted by id, so equal contracts give byte-identical output
 whatever order they declare things in.
 
@@ -2838,6 +2883,36 @@ whatever order they declare things in.
   nothing is left the id is the label. A node with no label has none. It changes nothing else, and
   conflicts with `--update` and `--check`, whose blocks say it in their marker.
 
+- `--built`. The picture shows what is built, not only the design. Without the flag, `render` reads
+  the contract alone and its output is byte for byte what it was. A node that is declared and owns
+  nothing (an unsplit feature whose `view` part is still empty) is drawn like a real one, and
+  `view --> ui` for that feature is a solid arrow, though the repository does not do it yet. With
+  the flag `render` reads the repository's ownership as `lint` does: the one ownership mechanism
+  (`%% map` or `.arch` files, see "Ownership") and the same model code, and a node owns a source
+  file when the scan gives it one (`Ownership::owning_nodes`, the set that `lint` hands to
+  `Narrowing::Owned`).
+  - A node that owns no source file is drawn with ` (no files)` appended to its label (the id when
+    it has none, after `--short-labels` cut the label) and a dashed border: a Mermaid `classDef
+    empty stroke-dasharray: 5 5` and one `class <id>,<id> empty` line, written once at the end,
+    ids sorted, and not at all when every drawn node owns a file.
+  - An edge, whether written, a boundary edge or an `%% each` expansion, with an end that owns no
+    source file is drawn dotted and keeps its label. An end that is a node owns a file when the
+    node does, an end that is a boundary when at least one of its nodes does. In a `--focus`
+    picture the covered pairs are judged one by one, so a pair of nodes that both own a file is
+    solid and the arrows that merge are solid if any of them is. A template arrow that is not
+    active for a feature under the per-feature narrowing of "Open order" (a role node with no
+    file) has such an end for that feature, so it is dotted for that feature alone: `view --> ui`
+    is solid for the split `billing` and dotted for the unsplit `orders`.
+  - The open arrows use the ownership-aware narrowing that `lint` uses (`Narrowing::Owned`,
+    "Open order"), not the design's: an expansion whose role node owns no file does not narrow, so
+    the open arrow of a layer pair that only such an expansion narrowed is drawn. Denials
+    apply as always.
+  - With `--depth`, a box is empty (marked and dashed like a node) only when none of its nodes
+    owns a file. Merging stays as before, solid if any merged edge is solid. `--focus` draws the
+    boxes outside the focus by the same rule.
+  - `--built` conflicts with `--update` and `--check`, whose blocks say it in their marker (see
+    below). `render` needs the repository root (`PATH`), not only the contract, and an ownership
+    error of `lint` stops it the same way (exit `2`).
 - Default. Every boundary is a `subgraph` with its label, nesting kept, every node is drawn with its
   label, and every declared edge is an arrow with its kind: written node edges, boundary edges
   (a subgraph id is an edge end, Mermaid accepts it) and the expansions of `%% each`. `-->` for a
@@ -2890,21 +2965,25 @@ whatever order they declare things in.
 - `--depth` with `--focus`, and `--depth 0`, are argument errors: exit `2`.
 
 Keeping a copy in Markdown. A block is a line `<!-- driftwall render [--depth N | --focus B]
-[--short-labels] -->`, the flags in any order and each at most once, any lines, then `<!-- driftwall render end -->`, each alone on its line.
+[--short-labels] [--built] -->`, the flags in any order and each at most once, any lines, then `<!-- driftwall render end -->`, each alone on its line.
 
 - `driftwall render --update FILE.md` replaces the inside of each block with a `` ```mermaid ``
   fence holding the picture made with that block's own arguments, and leaves every other byte of the
   file as it was (the line ending of a block's start marker is used for its fence). `FILE.md` is
   read relative to the working directory; the contract is found from `PATH` and `--contract` as for
-  the other commands. A file already current is not written.
+  the other commands. A file already current is not written. Only a file with a `--built` block
+  reads the repository's ownership; the others are drawn from the contract alone.
 - `driftwall render --check FILE.md` changes nothing. It prints `FILE.md:LINE: stale driftwall render
   block` for the start-marker line of each block that is not current, in file order, and exits `1`;
-  `0` when every block is current. CI runs it to fail a doc that drifted.
+  `0` when every block is current. CI runs it to fail a doc that drifted. A block with `--built` goes stale when code changes
+  ownership (a part gets its first file, or loses its last), not only when the contract changes, so
+  its check needs the repository checked out as `lint` sees it, and the picture has to be updated
+  with the change that moves the files.
 - Exit `2`: a start with no end, an end with no start, a start inside a block, arguments in a marker
-  that are not `--depth N`, `--focus B` and `--short-labels`, each at most once and `--depth` and
+  that are not `--depth N`, `--focus B`, `--short-labels` and `--built`, each at most once and `--depth` and
   `--focus` not together, a file with no block, a `--depth 0` or unknown
   `--focus` in a marker, an unreadable file, and `--update` or `--check` combined with each other, with
-  `--depth` or with `--focus`. The message names the file and the line.
+  `--depth`, `--focus`, `--short-labels` or `--built`. The message names the file and the line.
 
 ```
 <!-- driftwall render --depth 1 -->
@@ -3122,7 +3201,8 @@ asks `ownership` what a path is and `lint` which packages a source file uses). `
 are the only modules that combine `diagram`, `ownership` and `imports`. `where`'s result
 types (`Located`, `FileKind`, `Owner`, `Rule`, `WhereAnswer`) live in `results`, so `report` renders
 them and `cli` never touches `ownership`. `cli` also calls `diagram` directly for `render`, which
-reads the contract alone.
+reads the contract alone, and with `--built` asks `lint::scan_ownership` for the nodes that own a
+file, the one place that scans ownership for a lint, and hands that set to `diagram`.
 
 `ownership` picks the mechanism of "One mechanism per repository" in one place, `Mechanism::of`
 (maps when the contract has a `%% map` line, `.arch` tags otherwise), and every caller scans,

@@ -88,9 +88,16 @@ pub fn render(contract: &Contract) -> String {
         lines.extend(rules);
     }
 
-    if !contract.package_rules.is_empty() {
+    // why: an expansion is written by its `%% each` line, never on its own.
+    let written = || {
+        contract
+            .package_rules
+            .iter()
+            .filter(|rule| rule.template.is_none())
+    };
+    if written().next().is_some() {
         lines.push(String::new());
-        for rule in &contract.package_rules {
+        for rule in written() {
             let names: Vec<&str> = rule.names.iter().map(PackagePattern::as_str).collect();
             let line = format!(
                 "  %% {} {}: {}",

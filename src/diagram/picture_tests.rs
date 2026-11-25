@@ -7,7 +7,7 @@ use crate::results::PictureView;
 
 /// The picture with the labels as written.
 fn picture(contract: &Contract, view: &PictureView, source: &str) -> Result<String, PictureError> {
-    super::picture(contract, view, false, source)
+    super::picture(contract, view, false, None, source)
 }
 
 const HEAD: &str = "flowchart LR
@@ -314,7 +314,7 @@ const BLOCK: &str =
     "# Title\n\n<!-- driftwall render --depth 1 -->\nold\n<!-- driftwall render end -->\n\ntext\n";
 
 fn synced(markdown: &str) -> Result<crate::results::MarkdownSync, PictureError> {
-    sync(markdown, &contract(&EDGES), "architecture.mmd")
+    sync(markdown, &contract(&EDGES), None, "architecture.mmd")
 }
 
 #[test]
@@ -785,7 +785,7 @@ const LABELLED: &str = "flowchart LR
 ";
 
 fn labelled(view: &PictureView, short: bool) -> String {
-    super::picture(&parse(LABELLED).unwrap(), view, short, "a.mmd").unwrap()
+    super::picture(&parse(LABELLED).unwrap(), view, short, None, "a.mmd").unwrap()
 }
 
 #[test]
@@ -824,6 +824,7 @@ fn a_marker_takes_the_flags_in_any_order() {
         sync(
             &format!("<!-- driftwall render {args} -->\n{end}"),
             &contract,
+            None,
             "a.mmd",
         )
     };

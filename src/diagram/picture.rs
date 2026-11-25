@@ -22,13 +22,20 @@ pub enum PictureError {
     /// `--focus` names a node.
     #[error("`{0}` is a node, not a boundary")]
     NotABoundary(String),
-    /// A marker line has arguments other than `--depth N` or `--focus BOUNDARY`.
+    /// A marker line has arguments other than `--depth N`, `--focus BOUNDARY`, `--short-labels` and
+    /// `--built`.
     #[error("line {line}: unknown arguments in the marker: `{args}`")]
     BadMarker {
         /// Line of the marker.
         line: u32,
         /// The text after `driftwall render`.
         args: String,
+    },
+    /// A marker with `--built` and no ownership to draw it from.
+    #[error("line {line}: `--built` needs the repository's ownership")]
+    NeedsOwnership {
+        /// Line of the start marker.
+        line: u32,
     },
     /// A start marker with no end marker after it.
     #[error("line {line}: `<!-- driftwall render -->` has no `<!-- driftwall render end -->`")]
@@ -54,6 +61,12 @@ pub enum PictureError {
     #[error("no `<!-- driftwall render -->` block")]
     NoBlock,
 }
+
+/// What `--built` appends to the label of a node or box that owns no source file.
+const NO_FILES: &str = " (no files)";
+
+/// The Mermaid class of the nodes and boxes that own no source file: a dashed border.
+const EMPTY_CLASS: &str = "empty";
 
 /// What a picture node or box stands for.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -88,10 +101,16 @@ struct Scene<'a> {
     chains: BTreeMap<String, Vec<String>>,
     /// Whether a label is cut to the text before its first `:`.
     short_labels: bool,
+    /// With `--built`, the nodes that own at least one source file.
+    built: Option<&'a BTreeSet<NodeId>>,
 }
 
 impl<'a> Scene<'a> {
-    fn new(contract: &'a Contract, short_labels: bool) -> Self {
+    fn new(
+        contract: &'a Contract,
+        short_labels: bool,
+        built: Option<&'a BTreeSet<NodeId>>,
+    ) -> Self {
         let mut chains: BTreeMap<String, Vec<String>> = BTreeMap::new();
         for info in contract.nodes.values() {
             let chain: Vec<&str> = info.boundaries().collect();
@@ -109,7 +128,26 @@ impl<'a> Scene<'a> {
             contract,
             chains,
             short_labels,
+            built,
         }
+    }
+
+    /// Whether `node` owns a source file, or the picture does not look at the code.
+    fn owns(&self, node: &NodeId) -> bool {
+        self.built.is_none_or(|owning| owning.contains(node))
+    }
+
+    /// Whether the node or one of the nodes of the boundary `id` owns a source file.
+    fn built_end(&self, end: &Endpoint) -> bool {
+        self.contract
+            .nodes
+            .keys()
+            .any(|node| end.contains(&self.contract.nodes, node) && self.owns(node))
+    }
+
+    /// How an open chain's narrowing reads the code: as owned with `--built`, else as drawn.
+    fn narrowing(&self) -> Narrowing<'a> {
+        self.built.map_or(Narrowing::Design, Narrowing::Owned)
     }
 
     /// The boundaries around an end, outermost first, the end itself last when it is a boundary.
@@ -228,21 +266,43 @@ impl Level {
         }
     }
 
-    fn write(&self, scene: &Scene, depth: usize, lines: &mut Vec<String>) {
+    /// Writes the level, and adds to `empty` the ids drawn without files under `--built`.
+    fn write(
+        &self,
+        scene: &Scene,
+        depth: usize,
+        lines: &mut Vec<String>,
+        empty: &mut BTreeSet<String>,
+    ) {
         let pad = "  ".repeat(depth);
         for (id, inner) in &self.subs {
             lines.push(format!("{pad}subgraph {id}[\"{}\"]", scene.label(id)));
-            inner.write(scene, depth + 1, lines);
+            inner.write(scene, depth + 1, lines, empty);
             lines.push(format!("{pad}end"));
         }
         for id in &self.boxes {
-            lines.push(format!("{pad}{id}[\"{}\"]", scene.label(id)));
+            let none = !scene.built_end(&Endpoint::Boundary(id.clone()));
+            let suffix = if none { NO_FILES } else { "" };
+            if none {
+                empty.insert(id.clone());
+            }
+            lines.push(format!("{pad}{id}[\"{}{suffix}\"]", scene.label(id)));
         }
         for id in &self.nodes {
-            let label = NodeId::new(id)
-                .ok()
-                .and_then(|node| scene.contract.nodes.get(&node))
+            let node = NodeId::new(id).ok();
+            let label = node
+                .as_ref()
+                .and_then(|node| scene.contract.nodes.get(node))
                 .and_then(|info| info.label.as_deref());
+            let unbuilt = node.is_some_and(|node| !scene.owns(&node));
+            if unbuilt {
+                empty.insert(id.clone());
+                lines.push(format!(
+                    "{pad}{id}[\"{}{NO_FILES}\"]",
+                    label.map_or_else(|| id.clone(), |label| scene.text(label, id))
+                ));
+                continue;
+            }
             lines.push(label.map_or_else(
                 || format!("{pad}{id}"),
                 |label| format!("{pad}{id}[\"{}\"]", scene.text(label, id)),
@@ -251,8 +311,11 @@ impl Level {
     }
 }
 
-/// The Mermaid `flowchart` picture of `contract` for `view`, generated from `source` (the contract
-/// file name, used in the first comment line).
+/// The Mermaid `flowchart` picture of `contract` for `view`, generated from `source`.
+///
+/// `source` is the contract file name, used in the first comment line. With `built`, the nodes that
+/// own a source file (see "Contract picture" in `docs/DESIGN.md`), the picture shows what is built
+/// and not only the design.
 ///
 /// # Errors
 /// [`PictureError`] for depth 0 and for a focus that is not a boundary of the contract.
@@ -260,9 +323,10 @@ pub fn picture(
     contract: &Contract,
     view: &PictureView,
     short_labels: bool,
+    built: Option<&BTreeSet<NodeId>>,
     source: &str,
 ) -> Result<String, PictureError> {
-    let scene = Scene::new(contract, short_labels);
+    let scene = Scene::new(contract, short_labels, built);
     let mut args = match view {
         PictureView::Full => String::new(),
         PictureView::Depth(0) => return Err(PictureError::ZeroDepth),
@@ -280,6 +344,9 @@ pub fn picture(
     };
     if short_labels {
         args.push_str(" --short-labels");
+    }
+    if built.is_some() {
+        args.push_str(" --built");
     }
     // why: Mermaid ranks by edges, so a contract with a layer order is drawn top to bottom in it.
     let direction = if contract.rules.order.is_empty() {
@@ -309,13 +376,19 @@ pub fn picture(
             Drawn::Boundary(_) => {}
         }
     }
-    root.write(&scene, 1, &mut lines);
+    let mut empty = BTreeSet::new();
+    root.write(&scene, 1, &mut lines, &mut empty);
     lines.extend(arrows.into_iter().map(|line| format!("  {line}")));
     lines.extend(
         invisible_links(&scene, view, &joined, &extras)
             .into_iter()
             .map(|(upper, lower)| format!("  {upper} ~~~ {lower}")),
     );
+    if !empty.is_empty() {
+        let ids: Vec<&str> = empty.iter().map(String::as_str).collect();
+        lines.push(format!("  classDef {EMPTY_CLASS} stroke-dasharray: 5 5"));
+        lines.push(format!("  class {} {EMPTY_CLASS}", ids.join(",")));
+    }
     let mut text = lines.join("\n");
     text.push('\n');
     Ok(text)
@@ -408,14 +481,17 @@ fn arrows(scene: &Scene, view: &PictureView) -> Arrows {
     let mut merged: BTreeMap<(String, String), (Drawn, Drawn, Merged)> = BTreeMap::new();
     let mut extras = BTreeSet::new();
     for (from, to, kind, written) in declared {
+        // why: a node edge or a boundary edge with an end that owns no file is dotted, like a planned one.
         let ends = match view {
             PictureView::Focus(focus) => focus_ends(scene, focus, (&from, &to), written),
             PictureView::Full | PictureView::Depth(_) => {
-                vec![(scene.map(&from, view), scene.map(&to, view))]
+                let unbuilt = !scene.built_end(&from) || !scene.built_end(&to);
+                vec![(scene.map(&from, view), scene.map(&to, view), unbuilt)]
             }
         };
-        let (dotted, label) = parts(kind);
-        for (a, b) in ends {
+        let (planned, label) = parts(kind);
+        for (a, b, unbuilt) in ends {
+            let dotted = planned || unbuilt;
             if a == b && matches!(a, Drawn::Box(_)) {
                 continue;
             }
@@ -495,7 +571,8 @@ fn invisible_links(
     links
 }
 
-/// The drawn ends of a declared edge under `--focus focus`: one `(from, to)` for every covered pair
+/// The drawn ends of a declared edge under `--focus focus`, each with whether the pair has a node
+/// that owns no file under `--built`: one `(from, to)` for every covered pair
 /// with exactly one node inside the focus, and for every pair inside it. An end the edge wrote inside the focus is drawn as it
 /// is, an end that is the focus or holds it is the focus, and an outside end is drawn as an
 /// outside end of the picture, found from the covered node when the edge's own end holds the focus.
@@ -504,7 +581,7 @@ fn focus_ends(
     focus: &str,
     (from, to): (&Endpoint, &Endpoint),
     boundary_edge: Option<&BoundaryEdge>,
-) -> Vec<(Drawn, Drawn)> {
+) -> Vec<(Drawn, Drawn, bool)> {
     let pairs = match (from, to, boundary_edge) {
         (Endpoint::Node(a), Endpoint::Node(b), None) => vec![Edge {
             from: a.clone(),
@@ -538,7 +615,13 @@ fn focus_ends(
             let to_in = scene.inside(&Endpoint::Node(pair.to.clone()), focus);
             from_in != to_in || (from_in && !around(from) && !around(to))
         })
-        .map(|pair| (side(from, &pair.from), side(to, &pair.to)))
+        .map(|pair| {
+            (
+                side(from, &pair.from),
+                side(to, &pair.to),
+                !scene.owns(&pair.from) || !scene.owns(&pair.to),
+            )
+        })
         .collect()
 }
 
@@ -600,7 +683,7 @@ fn open_arrows(scene: &Scene, view: &PictureView) -> (BTreeSet<(String, String)>
         } else {
             Pairs::Reduced
         };
-        for (upper, lower) in open_pairs(scene.contract, &members, pairs_drawn) {
+        for (upper, lower) in open_pairs(scene, &members, pairs_drawn) {
             if held.is_some_and(|holder| upper != holder && lower != holder) {
                 continue;
             }
@@ -687,7 +770,8 @@ enum Pairs {
 
 /// The pairs of layers, by place in the chain, that are open for the nodes of each layer in
 /// `members`, all of them or only those not implied by a layer between them.
-fn open_pairs(contract: &Contract, members: &[Vec<&NodeId>], pairs: Pairs) -> Vec<(usize, usize)> {
+fn open_pairs(scene: &Scene, members: &[Vec<&NodeId>], pairs: Pairs) -> Vec<(usize, usize)> {
+    let contract = scene.contract;
     // why: the allowance is the contract's own question, so a picture and a lint cannot disagree.
     let open = |upper: usize, lower: usize| {
         let (Some(from), Some(to)) = (members.get(upper), members.get(lower)) else {
@@ -701,7 +785,7 @@ fn open_pairs(contract: &Contract, members: &[Vec<&NodeId>], pairs: Pairs) -> Ve
                 };
                 contract.denial(&pair).is_none()
                     && matches!(
-                        contract.open_access(&pair, Narrowing::Design),
+                        contract.open_access(&pair, scene.narrowing()),
                         Some(OpenAccess::Allowed(_))
                     )
             })
