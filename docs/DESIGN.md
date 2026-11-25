@@ -277,6 +277,56 @@ changed kind, in the same text forms as node edges (`a --> b` becomes `features 
 `added_boundary_edges`, `removed_boundary_edges` and `changed_boundary_edges` with the endpoints as
 strings.
 
+### Edge status
+
+Every edge has one status, a function of what the contract declares for the pair and of what code
+does on it. `lint` reports the status as a finding, and `brief` and `neighbors` print and serialise
+the same status, from the same function (`edge_status` in the `model` module), so the two views
+cannot disagree.
+
+The declaration is one of: no edge (`none`), an edge of a kind (see "Test edges" and "Type edges"
+for the kinds), or a pair an `%% order open` chain allows without an edge (`open`, see "Open
+order"). Code does one of: nothing (`unseen`), or has sites on the pair. Of the sites three facts
+matter: whether one is allowed by the kind (`allowed`), whether one is not test-only (`production`),
+and, implied by both, that there is one. `allowed` and `production` are independent: a `|type|` edge
+allows a production type-only site, a `|test|` edge a test-only one, and a runtime production site
+on a `|test|` edge is production but not allowed. An unrestricted edge allows every site, so there
+`production` implies `allowed`.
+
+| Declaration | Observation | Status | Finding | Severity |
+| --- | --- | --- | --- | --- |
+| none | any site (an open chain that narrows the pair counts as none) | `undeclared` | `undeclared-edge`, once per site | error |
+| open chain allows | any site | `open` | none | |
+| solid, unlabelled `-->` | unseen | `stale` | `stale-edge` | warning |
+| solid, unlabelled | sites, none production | `test-only` | `test-only-edge` | warning |
+| solid, unlabelled | a production site | `ok` | none | |
+| solid `|test|`, `|type|`, `|type, test|` | no allowed site (unseen, or only sites the kind does not allow) | `stale` | `stale-edge` | warning |
+| solid `|test|`, `|type|`, `|type, test|` | an allowed site | `ok` | none | |
+| dotted, unlabelled `-.->` | unseen | `planned` | none | |
+| dotted, unlabelled | sites, none production | `test-only` | `test-only-edge` (with the dotted hint) | warning |
+| dotted, unlabelled | a production site | `planned-realized` | `planned-realized` | warning |
+| dotted `|test|`, `|type|`, `|type, test|` | an allowed site | `planned-realized` | `planned-realized` | warning |
+| dotted `|test|`, `|type|`, `|type, test|` | no allowed site | `planned` | none | |
+
+"Declared, but only sites its kind does not allow" is not a status of its own. On a solid
+restricted edge it is `stale` (the table above: a disallowed site does not realise the edge), on a
+dotted one `planned`. What is distinct is the finding about each such site: an `undeclared-edge`
+error whose message names the restricted edge. That finding is about a site, not about the edge, so
+an edge can have it and any status. Only a pair with no edge at all has the status `undeclared`.
+
+A boundary edge has one status over all the pairs it covers, from the union of their sites (stale
+only when no covered pair is realised, see "Boundary edges"); the expansions of one `%% each` arrow
+share one status, judged together (see "Edge templates"). In `brief` and `neighbors` a pair that
+a boundary edge allows has the status of that boundary edge, as it is the boundary edge that `lint`
+judges, not the pair.
+
+The finding kind of each status, and the exit code that follows, are those of "Rules"; `ok`,
+`open` and `planned` have no finding. In `brief` and `neighbors` text the line of an edge ends,
+where `UNDECLARED` stands, with a marker for each status that has a finding: `UNDECLARED`, `STALE`,
+`PLANNED-REALIZED`, `TEST-ONLY`. `ok`, `open` and `planned` have none. JSON edges (and boundary
+edges) gain `"status"`, one of `ok`, `open`, `undeclared`, `stale`, `planned`, `planned-realized`,
+`test-only`. It is additive: `kind` is unchanged and `null` still means undeclared.
+
 ### Contract rules
 
 Rules that are not about one pair of nodes are directives, one `%%` line each, parsed with the
