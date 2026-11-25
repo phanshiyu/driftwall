@@ -77,10 +77,7 @@ fn a_downward_import_across_three_layers_needs_no_arrow() {
 #[test]
 fn an_upward_import_is_reported_and_not_excused() {
     let found = findings(&contract(""), &[("n_core", "n_app")]);
-    assert_eq!(
-        kinds(&found),
-        [ViolationKind::UndeclaredEdge, ViolationKind::UpwardEdge]
-    );
+    assert_eq!(kinds(&found), [ViolationKind::UpwardEdge]);
 }
 
 #[test]

@@ -45,7 +45,11 @@ pub fn reconcile(
     let crossings = crossings(contract, ownership, imports);
     for (edge, import) in &crossings {
         let covers = contract.covers(edge);
+        // why: the arrow `undeclared-edge` asks for is a contract error here, so one finding.
+        let one_finding = layers::upward_site(contract, edge, import).is_some()
+            || siblings::breaches(contract, edge);
         match covers.first() {
+            _ if one_finding => {}
             // why: an open chain allows the pair as a solid edge would, until an arrow narrows it.
             None => match contract.open_access(edge) {
                 Some(OpenAccess::Allowed(_)) => {}

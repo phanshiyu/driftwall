@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- One finding per site for `isolation-breach` and `upward-edge`. Such a site no longer also reports
+  `undeclared-edge`: declaring the arrow is a contract error under `%% isolated` and `%% order`, so
+  that hint pointed at a fix that cannot work, and a feature-module repo reported 93 errors for 55
+  sites. The hints now name only fixes that work, and an upward test-only site says to ask for the
+  test edge `a -->|test| b`, which makes it clean. A site that is both keeps both findings. Edge
+  status is unchanged: such a pair is still `undeclared` in `brief` and `neighbors`. A baseline
+  recorded with 0.2.0 may report `stale-baseline` for `undeclared-edge` entries those sites used to
+  need; rewrite it with `driftwall lint --write-baseline`.
+
 ## 0.2.0 - 2026-11-25
 
 - Interface budget: `%% budget store: interface 5` limits how many distinct symbols of a node code

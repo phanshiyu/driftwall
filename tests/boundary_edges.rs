@@ -189,9 +189,7 @@ fn an_upward_import_is_reported_the_same_with_either_arrow() {
     assert_eq!(nodes, boundary);
     let kinds = findings(&boundary);
     assert!(
-        kinds
-            .iter()
-            .any(|k| k.starts_with("undeclared-edge c1/up.ts")),
+        !kinds.iter().any(|k| k.starts_with("undeclared-edge")),
         "{kinds:?}"
     );
     assert!(

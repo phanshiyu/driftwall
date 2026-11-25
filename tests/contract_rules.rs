@@ -86,8 +86,8 @@ fn an_upward_import_is_an_upward_edge_error_with_its_site() {
     let output = driftwall(&dir, &["lint", "--format", "json"]);
     assert_eq!(code(&output), 1);
     let value = json(&output);
-    assert_eq!(kinds(&value), ["undeclared-edge", "upward-edge"]);
-    let upward = &value["violations"][1];
+    assert_eq!(kinds(&value), ["upward-edge"]);
+    let upward = &value["violations"][0];
     assert_eq!(upward["severity"], "error");
     assert_eq!(upward["at"]["file"], "lib/lib.ts");
     assert_eq!(upward["at"]["line"], 1);
@@ -150,7 +150,7 @@ fn several_chains_are_checked_separately_and_all_shown() {
         true,
     );
     let out = driftwall(&dir, &["lint", "--format", "json"]);
-    assert_eq!(kinds(&json(&out)), ["undeclared-edge", "upward-edge"]);
+    assert_eq!(kinds(&json(&out)), ["upward-edge"]);
     let text = stdout(&driftwall(&dir, &["brief"]));
     assert!(
         text.contains("rules:\n  order: entry > core\n  order: core > mid\n"),

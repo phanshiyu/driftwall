@@ -181,9 +181,9 @@ fn a_cross_feature_import_is_an_isolation_breach_even_with_the_nodes_declared() 
     );
     let output = run(&dir, &["lint", "--format", "json"]);
     let value = json(&output);
-    // why: the pair is also undeclared, and the two findings have two fixes.
-    assert_eq!(kinds(&value), ["undeclared-edge", "isolation-breach"]);
-    let breach = &value["violations"][1];
+    // why: an arrow between the features cannot exist, so no undeclared-edge asks for one.
+    assert_eq!(kinds(&value), ["isolation-breach"]);
+    let breach = &value["violations"][0];
     assert_eq!(breach["at"]["file"], "billing-service/cross.ts");
     let message = breach["message"].as_str().unwrap();
     assert!(message.contains("`features`") && message.contains("`billing`"));

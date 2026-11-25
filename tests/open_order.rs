@@ -94,7 +94,7 @@ fn an_upward_import_is_reported() {
     let dir = repo("", &[("core_n", "app_n")]);
     let output = run(&dir, &["lint", "--format", "json"]);
     assert_eq!(output.status.code(), Some(1));
-    assert_eq!(kinds(&json(&output)), ["undeclared-edge", "upward-edge"]);
+    assert_eq!(kinds(&json(&output)), ["upward-edge"]);
 }
 
 #[test]

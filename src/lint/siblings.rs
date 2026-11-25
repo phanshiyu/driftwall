@@ -9,6 +9,14 @@ use crate::model::{
 
 use super::rules::{site_violation, violation};
 
+/// Whether a site on `edge` is an `isolation-breach`, for any isolated boundary. Such a site is not
+/// also an `undeclared-edge`: an arrow between the children is a contract error.
+pub(super) fn breaches(contract: &Contract, edge: &Edge) -> bool {
+    contract.rules.isolated.iter().any(|(boundary, _)| {
+        children_apart(&contract.nodes, boundary, &edge.from, &edge.to).is_some()
+    })
+}
+
 /// One `isolation-breach` per import site that goes from a node in one child of an isolated
 /// boundary to a node in a different child, and one `stale-isolation` per isolated boundary with
 /// fewer than two children. Nothing without `%% isolated`.

@@ -12,38 +12,55 @@ pub(super) fn upward_findings(
     contract: &Contract,
     crossings: &[(Edge, &ResolvedImport)],
 ) -> Vec<Violation> {
-    // why: agreeing chains say the same of a pair, so the first upward chain speaks for all.
     crossings
         .iter()
-        .filter_map(|(edge, import)| {
-            let (order, from_boundary, to_boundary) =
-                contract.rules.order.iter().find_map(|order| {
-                    let layer = |node| order.place(contract.nodes.get(node)?);
-                    let (from_boundary, from_rank) = layer(&edge.from)?;
-                    let (to_boundary, to_rank) = layer(&edge.to)?;
-                    (from_rank > to_rank).then_some((order, from_boundary, to_boundary))
-                })?;
-            let exempt = import.test_only
-                && contract
-                    .covers(edge)
-                    .iter()
-                    .any(|cover| matches!(cover.kind, EdgeKind::Test | EdgeKind::PlannedTest));
-            (!exempt).then(|| {
-                site_violation(
-                    ViolationKind::UpwardEdge,
-                    import,
-                    format!(
-                        "`{from}` (boundary `{from_boundary}`) imports `{to}` (boundary `{to_boundary}`, {}) but the `%% order` on line {} puts `{to_boundary}` above `{from_boundary}`",
-                        import.target.display(),
-                        order.line,
-                        from = edge.from,
-                        to = edge.to,
-                    ),
-                )
-                .keyed(format!("{} --> {}", edge.from, edge.to))
-            })
-        })
+        .filter_map(|(edge, import)| upward_site(contract, edge, import))
         .collect()
+}
+
+/// The `upward-edge` finding of one crossing, if it is one. A site that is one is not also an
+/// `undeclared-edge`: declaring the arrow is a contract error, so that fix cannot work.
+pub(super) fn upward_site(
+    contract: &Contract,
+    edge: &Edge,
+    import: &ResolvedImport,
+) -> Option<Violation> {
+    // why: agreeing chains say the same of a pair, so the first upward chain speaks for all.
+    let (order, from_boundary, to_boundary) = contract.rules.order.iter().find_map(|order| {
+        let layer = |node| order.place(contract.nodes.get(node)?);
+        let (from_boundary, from_rank) = layer(&edge.from)?;
+        let (to_boundary, to_rank) = layer(&edge.to)?;
+        (from_rank > to_rank).then_some((order, from_boundary, to_boundary))
+    })?;
+    let exempt = import.test_only
+        && contract
+            .covers(edge)
+            .iter()
+            .any(|cover| matches!(cover.kind, EdgeKind::Test | EdgeKind::PlannedTest));
+    if exempt {
+        return None;
+    }
+    let mut found = site_violation(
+        ViolationKind::UpwardEdge,
+        import,
+        format!(
+            "`{from}` (boundary `{from_boundary}`) imports `{to}` (boundary `{to_boundary}`, {}) but the `%% order` on line {} puts `{to_boundary}` above `{from_boundary}`",
+            import.target.display(),
+            order.line,
+            from = edge.from,
+            to = edge.to,
+        ),
+    )
+    .keyed(format!("{} --> {}", edge.from, edge.to));
+    if import.test_only {
+        // why: a `|test|` edge may reach upward, so for test code it is the fix that works.
+        found.hint = Some(format!(
+            "remove the import, or ask the user to approve the test edge `{from} -->|test| {to}` in the contract",
+            from = edge.from,
+            to = edge.to,
+        ));
+    }
+    Some(found)
 }
 
 #[cfg(test)]

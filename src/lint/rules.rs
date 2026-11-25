@@ -67,10 +67,10 @@ pub(super) const fn hint(kind: ViolationKind) -> &'static str {
             "reduce the node (for `interface`, narrow it behind fewer entry points), or ask the user to raise its `%% budget` line in the contract"
         }
         ViolationKind::UpwardEdge => {
-            "remove the import or move the code to a node in the same or a lower layer; the `%% order` line is the user's to change"
+            "remove the import, or ask the user to approve changing the `%% order` line"
         }
         ViolationKind::IsolationBreach => {
-            "remove the import, or move the shared code to a node outside the isolated boundary; an arrow between the children is a contract error, and the `%% isolated` line is the user's to change"
+            "remove the import, or move the shared code to a node outside the isolated boundary, or ask the user to approve changing the `%% isolated` line"
         }
         ViolationKind::StaleIsolation => {
             "remove the boundary from the `%% isolated` line, or give it a second child"

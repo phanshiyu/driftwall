@@ -140,6 +140,7 @@ mod support {
       subgraph core[\"Core\"]
     store[\"store\"]
       end
+      notes[\"notes\"]
       %% order: core > features
       %% isolated: features
       %% budget billing: files 0
@@ -154,10 +155,12 @@ mod support {
                 ("billing/.arch", "node: billing\n"),
                 (
                     "billing/main.ts",
-                    "import _ from 'lodash';\nimport { find } from '../search/lib';\nimport { keep } from '../store/lib';\nexport const bill = [_, find, keep];\n",
+                    "import _ from 'lodash';\nimport { find } from '../search/lib';\nimport { keep } from '../store/lib';\nimport { note } from '../notes/lib';\nexport const bill = [_, find, keep, note];\n",
                 ),
                 ("search/.arch", "node: search\n"),
                 ("search/lib.ts", "export const find = 1;\n"),
+                ("notes/.arch", "node: notes\n"),
+                ("notes/lib.ts", "export const note = 1;\n"),
                 ("store/.arch", "node: store\n"),
                 (
                     "store/lib.ts",
@@ -397,7 +400,7 @@ fn every_rule_kind_the_fixture_trips_is_recorded_and_then_suppressed() {
         "over-budget 1 billing files",
         "stale-facade 1 store",
         "stale-package 1 search left-pad",
-        "undeclared-edge 1 billing --> search",
+        "undeclared-edge 1 billing --> notes",
         "upward-edge 1 billing --> store",
     ] {
         assert!(text.contains(entry), "{entry} missing from\n{text}");

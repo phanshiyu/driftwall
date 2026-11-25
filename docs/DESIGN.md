@@ -295,7 +295,7 @@ on a `|test|` edge is production but not allowed. An unrestricted edge allows ev
 
 | Declaration | Observation | Status | Finding | Severity |
 | --- | --- | --- | --- | --- |
-| none | any site (an open chain that narrows the pair counts as none) | `undeclared` | `undeclared-edge`, once per site | error |
+| none | any site (an open chain that narrows the pair counts as none) | `undeclared` | `undeclared-edge`, once per site, except a site that is an `upward-edge` or an `isolation-breach`, which has only that finding | error |
 | open chain allows | any site | `open` | none | |
 | solid, unlabelled `-->` | unseen | `stale` | `stale-edge` | warning |
 | solid, unlabelled | sites, none production | `test-only` | `test-only-edge` | warning |
@@ -312,7 +312,10 @@ on a `|test|` edge is production but not allowed. An unrestricted edge allows ev
 restricted edge it is `stale` (the table above: a disallowed site does not realise the edge), on a
 dotted one `planned`. What is distinct is the finding about each such site: an `undeclared-edge`
 error whose message names the restricted edge. That finding is about a site, not about the edge, so
-an edge can have it and any status. Only a pair with no edge at all has the status `undeclared`.
+an edge can have it and any status. Only a pair with no edge at all has the status `undeclared`. The
+status is about the declaration only: a pair whose sites are `upward-edge` or `isolation-breach`
+findings (which have no `undeclared-edge`, see "Layer order" and "Isolated boundaries") is still
+`undeclared` in `brief` and `neighbors`.
 
 A boundary edge has one status over all the pairs it covers, from the union of their sites (stale
 only when no covered pair is realised, see "Boundary edges"); the expansions of one `%% each` arrow
@@ -372,9 +375,11 @@ contract need not draw every arrow to forbid the wrong direction.
 - Every import site that crosses from a node in a lower listed boundary to a node in a higher
   one in some chain is an `upward-edge` error at the site, whatever the contract declares: an arrow
   does not excuse it. One finding per site (when chains agree, every chain listing both boundaries
-  says the same, and the message names the first such chain's line), like `undeclared-edge`, and an undeclared pair is both: the
-  missing edge and the wrong direction are two findings with two fixes. The message names the two
-  nodes and boundaries.
+  says the same, and the message names the first such chain's line). A site that is an `upward-edge` is
+  never also an `undeclared-edge`, whatever the pair declares: the arrow that finding asks for is a
+  contract error (below), so it would point at a fix that cannot work. The hint names fixes that work:
+  remove the import, or ask the user to approve changing the `%% order` line. The message names the
+  two nodes and boundaries.
 - A declared arrow that points upward in some chain (dotted ones too) is a contract error at its
   line, naming the order line: the contract contradicts itself, so there is no lint to run. A boundary
   edge (see "Boundary edges") is judged on every pair it covers: if any pair goes from a lower listed
@@ -390,8 +395,10 @@ contract need not draw every arrow to forbid the wrong direction.
   reaching up explicitly, one pair at a time, and the arrow is not a contract error. Without
   that edge, test code is held to the order like production code (a test of a low layer that
   drives it from the entry point must say so with a test edge). The exemption is for sites the
-  edge allows: a production site on the same pair is not allowed by the edge, so it is `undeclared-edge`
-  as well as `upward-edge`.
+  edge allows: a production site on the same pair is not allowed by the edge, so it is an `upward-edge`
+  (and only that, see above). A test-only `upward-edge` is the one whose fix can be an arrow, so its hint
+  says: remove the import, or ask the user to approve the test edge `a -->|test| b` (the real node
+  ids); with that edge declared the site is clean.
 
 ##### Open order
 
@@ -506,8 +513,11 @@ meets the lint error can add an arrow between two features; with it the arrow is
   `isolation-breach` error at the site, whatever the contract declares: no arrow excuses it, because
   no such arrow can exist (below). Type-only, test-only, embed and asset sites are sites like any
   other. The message names the isolated boundary, the two children and the two nodes: "boundary
-  `features` is isolated: `billing-service` (in `billing`) imports `search-view` (in `search`)". One finding per site, and an
-  undeclared pair is also `undeclared-edge`, as with `upward-edge`: two findings with two fixes.
+  `features` is isolated: `billing-service` (in `billing`) imports `search-view` (in `search`)". One finding per site, and never also
+  an `undeclared-edge`, as with `upward-edge`: the arrow it asks for is a contract error. The hint:
+  remove the import, or move the shared code to a node outside the isolated boundary, or ask the user
+  to approve changing the `%% isolated` line. A site that is both an `isolation-breach` and an
+  `upward-edge` keeps both, which are distinct rules.
 - Test sites are not exempt. A test of one feature that imports another feature's code is the same
   coupling in tests, and the point of the rule is that a feature can be read, changed or removed by
   looking inside it. The shared test helper belongs in a node outside the isolated boundary. A test
