@@ -1,12 +1,13 @@
 //! The pure core of the linter: compares three in-memory views and reports disagreements.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use crate::imports::FileImports;
 use crate::model::{
-    BoundaryEdge, Contract, Cover, Declared, Edge, EdgeKind, LintReport, Location, OpenAccess,
-    Ownership, ResolvedImport, Symbol, Violation, ViolationKind, path_key,
+    BoundaryEdge, Contract, Cover, Declaration, Declared, Edge, EdgeKind, EdgeStatus, ImportKind,
+    LintReport, Location, OpenAccess, Ownership, ResolvedImport, Seen, Symbol, Violation,
+    ViolationKind, edge_status, path_key,
 };
 
 use super::isolation;
@@ -200,31 +201,19 @@ fn edge_violation(
 /// The findings about declared edges: stale, planned and realised, and solid but realised by tests
 /// only. A site an edge does not allow is not counted: it is its own `undeclared-edge`.
 fn edge_findings(contract: &Contract, crossings: &[(Edge, &ResolvedImport)]) -> Vec<Violation> {
-    let realised: BTreeSet<&Edge> = crossings.iter().map(|(edge, _)| edge).collect();
-    let allowed: BTreeSet<&Edge> = crossings
-        .iter()
-        .filter(|(edge, import)| {
-            contract
-                .edges
-                .get(edge)
-                .is_some_and(|kind| kind.allows(import.kind, import.test_only))
-        })
-        .map(|(edge, _)| edge)
-        .collect();
-    let production: BTreeSet<&Edge> = crossings
-        .iter()
-        .filter(|(_, import)| !import.test_only)
-        .map(|(edge, _)| edge)
-        .collect();
+    let mut seen: BTreeMap<&Edge, Seen> = BTreeMap::new();
+    for (edge, import) in crossings {
+        if let Some(kind) = contract.edges.get(edge) {
+            let entry = seen.entry(edge).or_insert(Seen::Unseen);
+            *entry = entry.with_site(*kind, import.kind, import.test_only);
+        }
+    }
     let mut violations = Vec::new();
     for (edge, kind) in &contract.edges {
-        let seen = Seen {
-            realised: realised.contains(edge),
-            allowed: allowed.contains(edge),
-            production: production.contains(edge),
-        };
+        let observed = seen.get(edge).copied().unwrap_or(Seen::Unseen);
+        let status = edge_status(Declaration::Edge(*kind), observed);
         let ends = (edge.from.as_str(), edge.to.as_str());
-        if let Some((found, message)) = declared_edge_finding(*kind, ends, seen) {
+        if let Some((found, message)) = declared_edge_finding(*kind, ends, status) {
             let key = format!("{} {} {}", edge.from, kind.arrow(), edge.to);
             violations.push(edge_violation(found, *kind, message, key));
         }
@@ -232,106 +221,110 @@ fn edge_findings(contract: &Contract, crossings: &[(Edge, &ResolvedImport)]) -> 
     violations
 }
 
-/// What code does on the pairs one declared edge covers.
-#[derive(Clone, Copy)]
-struct Seen {
-    /// Some site, allowed or not.
-    realised: bool,
-    /// Some site the edge's kind allows.
-    allowed: bool,
-    /// Some site that is not test-only.
-    production: bool,
-}
-
 /// The stale, planned-realised or test-only finding of one declared edge `from` to `to` of `kind`
-/// given what code does on the pairs it covers, if any. Node edges and boundary edges share it.
+/// in `status`, if any. Node edges, boundary edges and `%% each` arrows share it. It names every
+/// status, so a new one must be placed here.
 fn declared_edge_finding(
     kind: EdgeKind,
     (from, to): (&str, &str),
-    seen: Seen,
+    status: EdgeStatus,
 ) -> Option<(ViolationKind, String)> {
     let arrow = kind.arrow();
     let sites = kind.allowed_sites();
-    match kind {
-        EdgeKind::Implemented if !seen.realised => Some((
-            ViolationKind::StaleEdge,
-            format!("edge {from} {arrow} {to} is declared but no import realises it"),
-        )),
-        EdgeKind::Implemented if !seen.production => Some((
-            ViolationKind::TestOnlyEdge,
-            format!(
-                "edge {from} --> {to} is realised only by test code; declare it {from} -->|test| {to}"
-            ),
-        )),
-        EdgeKind::Test | EdgeKind::Type | EdgeKind::TypeTest if !seen.allowed => Some((
-            ViolationKind::StaleEdge,
-            format!("edge {from} {arrow} {to} is declared but no {sites} import realises it"),
-        )),
-        EdgeKind::Planned if seen.production => Some((
-            ViolationKind::PlannedRealized,
-            format!("planned edge {from} {arrow} {to} is now realised by code"),
-        )),
-        // why: a test using the target is not the app using it, so promoting the edge would mislead.
-        EdgeKind::Planned if seen.realised => Some((
-            ViolationKind::TestOnlyEdge,
-            format!(
-                "planned edge {from} {arrow} {to} is used only by test code; the app does not use it yet; declare it {from} -.->|test| {to} or {from} -->|test| {to} if that is intended"
-            ),
-        )),
-        EdgeKind::PlannedTest | EdgeKind::PlannedType | EdgeKind::PlannedTypeTest
-            if seen.allowed =>
-        {
-            Some((
-                ViolationKind::PlannedRealized,
-                format!("planned edge {from} {arrow} {to} is now realised by {sites} code"),
-            ))
+    let found = status.finding()?;
+    let message = match status {
+        // why: no declared edge is undeclared; `reconcile` reports those per site.
+        EdgeStatus::Ok | EdgeStatus::Open | EdgeStatus::Planned | EdgeStatus::Undeclared => {
+            return None;
         }
-        _ => None,
-    }
+        EdgeStatus::Stale if kind.is_restricted() => {
+            format!("edge {from} {arrow} {to} is declared but no {sites} import realises it")
+        }
+        EdgeStatus::Stale => {
+            format!("edge {from} {arrow} {to} is declared but no import realises it")
+        }
+        EdgeStatus::TestOnly if kind.is_planned() => format!(
+            "planned edge {from} {arrow} {to} is used only by test code; the app does not use it yet; declare it {from} -.->|test| {to} or {from} -->|test| {to} if that is intended"
+        ),
+        EdgeStatus::TestOnly => format!(
+            "edge {from} --> {to} is realised only by test code; declare it {from} -->|test| {to}"
+        ),
+        EdgeStatus::PlannedRealized if kind.is_restricted() => {
+            format!("planned edge {from} {arrow} {to} is now realised by {sites} code")
+        }
+        EdgeStatus::PlannedRealized => {
+            format!("planned edge {from} {arrow} {to} is now realised by code")
+        }
+    };
+    Some((found, message))
 }
 
-/// The same findings for every boundary edge, over all the pairs it covers: it is stale only when
-/// no covered pair is realised (see "Boundary edges").
+/// What code does on every boundary edge, over all the pairs it covers, parallel to
+/// `contract.boundary_edges`. `sites` is every crossing as `(pair, kind, test_only)`. A boundary
+/// edge is stale only when no covered pair is realised (see "Boundary edges"). A template arrow is
+/// one declaration, so every expansion of it holds the union over all of them.
+pub(super) fn boundary_seen(contract: &Contract, sites: &[(&Edge, ImportKind, bool)]) -> Vec<Seen> {
+    let own: Vec<Seen> = contract
+        .boundary_edges
+        .iter()
+        .map(|declared| {
+            sites
+                .iter()
+                .filter(|(edge, ..)| declared.covers(&contract.nodes, edge))
+                .fold(Seen::Unseen, |seen, (_, kind, test_only)| {
+                    seen.with_site(declared.kind, *kind, *test_only)
+                })
+        })
+        .collect();
+    contract
+        .boundary_edges
+        .iter()
+        .map(|declared| {
+            contract
+                .boundary_edges
+                .iter()
+                .zip(&own)
+                .filter(|(other, _)| std::ptr::eq(declared, *other) || same_arrow(declared, other))
+                .fold(Seen::Unseen, |all, (_, seen)| all.merge(*seen))
+        })
+        .collect()
+}
+
+/// Whether `declared` and `other` are expansions of one `%% each` arrow.
+fn same_arrow(declared: &BoundaryEdge, other: &BoundaryEdge) -> bool {
+    declared.template.is_some()
+        && other.line == declared.line
+        && other.template == declared.template
+}
+
+/// The same findings for every boundary edge, judged by [`boundary_seen`] and once per arrow.
 fn boundary_edge_findings(
     contract: &Contract,
     crossings: &[(Edge, &ResolvedImport)],
 ) -> Vec<Violation> {
-    let mut seen_by_edge: Vec<(&BoundaryEdge, Seen)> = Vec::new();
-    for declared in &contract.boundary_edges {
-        let mut seen = Seen {
-            realised: false,
-            allowed: false,
-            production: false,
-        };
-        for (_, import) in crossings
-            .iter()
-            .filter(|(edge, _)| declared.covers(&contract.nodes, edge))
-        {
-            seen.realised = true;
-            seen.allowed |= declared.kind.allows(import.kind, import.test_only);
-            seen.production |= !import.test_only;
-        }
-        // why: a template arrow is one declaration, so its expansions are judged together and once.
-        let same_arrow = |other: &BoundaryEdge| {
-            declared.template.is_some()
-                && other.line == declared.line
-                && other.template == declared.template
-        };
-        match seen_by_edge.iter_mut().find(|(first, _)| same_arrow(first)) {
-            Some((_, merged)) => {
-                merged.realised |= seen.realised;
-                merged.allowed |= seen.allowed;
-                merged.production |= seen.production;
-            }
-            None => seen_by_edge.push((declared, seen)),
-        }
-    }
-    seen_by_edge
-        .into_iter()
-        .filter_map(|(declared, seen)| {
+    let sites: Vec<(&Edge, ImportKind, bool)> = crossings
+        .iter()
+        .map(|(edge, import)| (edge, import.kind, import.test_only))
+        .collect();
+    let seen = boundary_seen(contract, &sites);
+    contract
+        .boundary_edges
+        .iter()
+        .zip(seen)
+        .enumerate()
+        .filter(|(index, (declared, _))| {
+            // why: only the first expansion of an arrow speaks for it.
+            !contract
+                .boundary_edges
+                .iter()
+                .take(*index)
+                .any(|earlier| same_arrow(declared, earlier))
+        })
+        .filter_map(|(_, (declared, seen))| {
+            let status = edge_status(Declaration::Edge(declared.kind), seen);
             let (from, to) = finding_ends(declared);
             let (kind, message) =
-                declared_edge_finding(declared.kind, (from.as_str(), to.as_str()), seen)?;
+                declared_edge_finding(declared.kind, (from.as_str(), to.as_str()), status)?;
             let ends = format!("{from} {} {to}", declared.kind.arrow());
             let key = declared.template.as_ref().map_or_else(
                 || ends.clone(),

@@ -119,7 +119,7 @@ fn model_depends_on_no_other_node() {
             );
         }
     }
-    // why: model/mod.rs declares and re-exports its submodules, baseline.rs, blind.rs, boundary.rs, map.rs, moved.rs, open_order.rs, package_rule.rs and rules.rs, and nothing else.
+    // why: model/mod.rs declares and re-exports its submodules, baseline.rs, blind.rs, boundary.rs, map.rs, moved.rs, open_order.rs, package_rule.rs, rules.rs and status.rs, and nothing else.
     assert_eq!(
         dependencies(&all, "src/model/mod.rs"),
         BTreeSet::from([
@@ -130,7 +130,8 @@ fn model_depends_on_no_other_node() {
             "src/model/moved.rs".to_owned(),
             "src/model/open_order.rs".to_owned(),
             "src/model/package_rule.rs".to_owned(),
-            "src/model/rules.rs".to_owned()
+            "src/model/rules.rs".to_owned(),
+            "src/model/status.rs".to_owned()
         ])
     );
 }

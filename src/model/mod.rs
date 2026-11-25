@@ -18,6 +18,7 @@ mod moved;
 mod open_order;
 mod package_rule;
 mod rules;
+mod status;
 
 pub use baseline::{Applied, Baseline, BaselineError, BaselineOutcome, DebtAdded, path_key};
 pub use boundary::{
@@ -31,6 +32,7 @@ pub use rules::{
     Budget, EachArrow, EachRule, EachSummary, InterfaceEntry, IsolatedSummary, Layer, LayerOrder,
     Measure, NodeBudget, Rules, RulesSummary,
 };
+pub use status::{Declaration, EdgeStatus, Seen, edge_status};
 
 pub use blind::{
     BlindFile, BlindRef, BlindSpots, BlindSummary, BlindTally, UnreadGroup, UnreadTotal,
