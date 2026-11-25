@@ -45,16 +45,24 @@ pub use existing::Existing;
 pub use plan::{InitOptions, InitPlan, plan};
 pub use units::{Unit, UnitKind, detect_units};
 
+/// Where `init` records which directory belongs to which node.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MappingOutput {
+    /// `.arch` files next to the code.
+    Tags,
+    /// `%% map` lines in the contract; `.arch` files stop being read.
+    Map,
+    /// Nowhere: every file is unmapped.
+    None,
+}
+
 /// Where and what [`run`] writes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WriteOptions {
     /// Path of the contract, relative to the repository root.
     pub contract: PathBuf,
-    /// Whether to write the `.arch` tags. Without them every file is unmapped.
-    pub write_tags: bool,
-    /// Write the mapping as `%% map` lines in the contract instead of `.arch` files. Wins over
-    /// `write_tags`.
-    pub write_map: bool,
+    /// How the file-to-node mapping is recorded.
+    pub mapping: MappingOutput,
     /// Overwrite an existing contract or `.arch` file instead of refusing.
     pub force: bool,
 }
@@ -63,8 +71,7 @@ impl Default for WriteOptions {
     fn default() -> Self {
         Self {
             contract: PathBuf::from(DEFAULT_CONTRACT),
-            write_tags: true,
-            write_map: false,
+            mapping: MappingOutput::Tags,
             force: false,
         }
     }

@@ -6,7 +6,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow, bail};
-use driftwall::init::{self, InitOptions, InitSummary, WriteOptions};
+use driftwall::init::{self, InitOptions, InitSummary, MappingOutput, WriteOptions};
 use driftwall::lint::{self, LintOptions};
 use driftwall::model::{Applied, Baseline, BlindSummary};
 use driftwall::report;
@@ -115,12 +115,23 @@ fn write_baseline(root: &Path, file: &Path, baseline: &Baseline) -> Result<Run> 
     })
 }
 
+/// What `init` writes for the mapping. `--map` and `--no-tags` conflict in clap, so `--map` is
+/// the only flag that can be set with `Map`.
+const fn mapping_output(args: &InitArgs) -> MappingOutput {
+    if args.map {
+        MappingOutput::Map
+    } else if args.no_tags {
+        MappingOutput::None
+    } else {
+        MappingOutput::Tags
+    }
+}
+
 fn run_init(args: &InitArgs) -> Result<Run> {
     require_directory(&args.path)?;
     let options = InitOptions { depth: args.depth };
     let mut write = WriteOptions {
-        write_tags: !args.no_tags,
-        write_map: args.map,
+        mapping: mapping_output(args),
         force: args.force,
         ..WriteOptions::default()
     };

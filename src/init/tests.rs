@@ -422,7 +422,7 @@ fn force_overwrites() {
 fn no_tags_writes_only_the_contract() {
     let dir = two_dirs();
     let write = WriteOptions {
-        write_tags: false,
+        mapping: MappingOutput::None,
         ..WriteOptions::default()
     };
     let summary = run(dir.path(), &InitOptions::default(), &write).unwrap();
@@ -461,4 +461,17 @@ fn a_custom_contract_path_is_honoured() {
     let summary = run(dir.path(), &InitOptions::default(), &write).unwrap();
     assert_eq!(summary.contract, PathBuf::from("docs/arch.mmd"));
     assert!(dir.path().join("docs/arch.mmd").exists());
+}
+
+#[test]
+fn map_output_writes_map_lines_and_no_arch_files() {
+    let dir = two_dirs();
+    let write = WriteOptions {
+        mapping: MappingOutput::Map,
+        ..WriteOptions::default()
+    };
+    let summary = run(dir.path(), &InitOptions::default(), &write).unwrap();
+    assert_eq!(summary.tag_files, 0);
+    assert!(summary.map_lines > 0);
+    assert!(!dir.path().join("src/a/.arch").exists());
 }

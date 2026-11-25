@@ -10,7 +10,7 @@ use crate::model::{DirTag, NodeId, SCOPE_HERE, Scope};
 use crate::model::BlindSummary;
 
 use super::maps::rules_of;
-use super::{InitError, InitPlan, InitSummary, WriteOptions, present};
+use super::{InitError, InitPlan, InitSummary, MappingOutput, WriteOptions, present};
 
 /// Name of the file that tags a directory with a node.
 const ARCH_FILE: &str = ".arch";
@@ -25,7 +25,7 @@ pub fn apply(
 ) -> Result<InitSummary, InitError> {
     // why: with `--map` every tag, new or existing, moves into the contract: `.arch` files stop being read.
     let mut contract = baseline.contract.clone();
-    if write.write_map {
+    if write.mapping == MappingOutput::Map {
         contract.maps = rules_of(every)?;
     }
     let rendered = present::render(&contract, observed);
@@ -33,7 +33,7 @@ pub fn apply(
         return Err(InitError::RoundTrip);
     }
 
-    let tag_paths: Vec<(PathBuf, String)> = if write.write_tags && !write.write_map {
+    let tag_paths: Vec<(PathBuf, String)> = if write.mapping == MappingOutput::Tags {
         baseline
             .tags
             .iter()
