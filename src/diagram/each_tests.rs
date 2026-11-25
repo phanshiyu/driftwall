@@ -2,7 +2,7 @@
 //! templates".
 
 use super::*;
-use crate::model::EdgeKind;
+use crate::model::{EdgeKind, Endpoint, NodeId};
 
 /// `billing` has a controller, a service and a view; `search` has no view; `shell` is written
 /// directly in `features` and is not a child boundary.
@@ -319,14 +319,34 @@ fn a_fixed_boundary_with_no_node_is_an_error() {
 }
 
 #[test]
-fn a_name_that_is_declared_and_also_a_role_is_ambiguous_and_names_both_meanings() {
-    // why: `view` is the role of `billing-view`, and the declared node `view` is another meaning.
-    let err = error("  view\n  %% each features: view --> controller\n");
-    assert_eq!(err.line(), Some(17));
-    let message = reason(&err);
-    assert!(message.contains("`view` is ambiguous"), "{message}");
-    assert!(message.contains("declared node `view`"), "{message}");
-    assert!(message.contains("role `view`"), "{message}");
+fn a_name_that_is_a_role_of_some_child_stays_a_role_even_when_declared() {
+    // why: 0.2.0 contract: `store` is declared and `billing-store` is a role, which must still parse.
+    let source = "flowchart LR
+  store
+  subgraph features
+    subgraph billing
+      billing-service
+      billing-store
+    end
+    subgraph search
+      search-service
+    end
+  end
+  %% each features: service --> store
+";
+    let contract = parse(source).unwrap();
+    let ends: Vec<_> = contract
+        .boundary_edges
+        .iter()
+        .map(|e| (e.from.clone(), e.to.clone()))
+        .collect();
+    assert_eq!(
+        ends,
+        vec![(
+            Endpoint::Node(NodeId::new("billing-service").unwrap()),
+            Endpoint::Node(NodeId::new("billing-store").unwrap())
+        )]
+    );
 }
 
 #[test]

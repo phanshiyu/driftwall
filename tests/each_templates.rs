@@ -470,11 +470,6 @@ fn the_fixed_end_contract_errors_exit_2_with_the_each_line() {
             "",
             "is the boundary of the template",
         ),
-        (
-            "%% each features: view --> controller",
-            "  view\n",
-            "`view` is ambiguous",
-        ),
     ] {
         let contract =
             fixed_end_contract(each).replacen("  %% map", &format!("{extra}  %% map"), 1);
@@ -485,4 +480,31 @@ fn the_fixed_end_contract_errors_exit_2_with_the_each_line() {
         assert!(message.contains("line 21"), "{each}: {message}");
         assert!(message.contains(expect), "{each}: {message}");
     }
+}
+
+#[test]
+fn a_name_that_is_a_role_and_declared_stays_a_role_as_in_0_2_0() {
+    let contract = "flowchart LR
+  store
+  subgraph features
+    subgraph billing
+      billing-service
+      billing-store
+    end
+  end
+  %% each features: service --> store
+  %% map store: src/store/
+  %% map billing-*: src/features/billing/
+";
+    let dir = tree(&[
+        ("architecture.mmd", contract),
+        (
+            "src/features/billing/service.ts",
+            "import { s } from './store';\nexport const v = s;\n",
+        ),
+        ("src/features/billing/store.ts", "export const s = 1;\n"),
+        ("src/store/index.ts", "export const x = 1;\n"),
+    ]);
+    let output = run(dir.path(), &["lint", "--format", "json"]);
+    assert_eq!(output.status.code(), Some(0), "{}", out(&output));
 }

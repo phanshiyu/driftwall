@@ -25,8 +25,9 @@
 - `%% each` arrows may have a fixed end: `%% each features: view --> ui, service -->|type| api-client,
   shell --> controller`. An end that is a declared node or boundary is kept for every feature, the
   other end is the role; so "only the view of a feature may use `ui`" is one arrow, and it narrows an
-  open chain's layer pair like any declared edge. Two fixed ends, a fixed end that is the boundary or
-  lies inside a child, and a name that is both a declared id and a role are contract errors. See
+  open chain's layer pair like any declared edge. A name that resolves as a role in some child is a role, as in 0.2.0, and is a fixed end only
+  when no child has it. Two fixed ends and a fixed end that is the boundary or lies inside a child
+  are contract errors. See
   "Edge templates" in `docs/DESIGN.md`.
 
 - `driftwall render [PATH] [--contract FILE] [--depth N | --focus BOUNDARY]` prints a generated

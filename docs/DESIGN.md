@@ -629,8 +629,11 @@ inside the `|...|` label does not end the arrow). An end is a role, a node id su
   with the kind of the arrow. If `C` has no `C-a` or no `C-b` the expansion is skipped without a
   word: a feature may have no view. An expansion is a node edge for every rule (see below), written
   nowhere: `render` writes the template back, never its expansions.
-- Fixed ends. An end is a fixed end when it is an id the contract declares, a node or a boundary;
-  any other end is a role. `%% each features: view --> ui, service -->|type| api-client, shell -->
+- Fixed ends. An end is a role when it resolves as a role in some child; it is a fixed end only
+  when it resolves in no child and is an id the contract declares, a node or a boundary. A role
+  wins, exactly as in 0.2.0, so a contract valid then stays valid: with a declared node `store` and
+  a node `billing-store` in `billing`, `service --> store` is the role `store`. A declared id that
+  is also a role name cannot be reached through a template; write ordinary edges for it. `%% each features: view --> ui, service -->|type| api-client, shell -->
   controller` says that only the view of a feature may use `ui`, only the service `api-client`, and
   that `shell` may use every controller, with no arrow per feature. For each child `C` that has the
   role node, the expansion is the arrow with the role replaced by `C-role` and the fixed end kept,
@@ -642,10 +645,8 @@ inside the `|...|` label does not end the arrow). An end is a role, a node id su
   errors: an arrow with two fixed ends (write it as an ordinary edge; at least one end is a role); a
   fixed end that is `<boundary>` itself, a boundary inside one of its child boundaries, or a node
   inside one of them (a node or boundary written directly in `<boundary>` and outside every child
-  is allowed, and `%% isolated` and the other rules judge the result); a fixed boundary with no
-  node; and a name that is a declared id and also resolves as a role in some child (child `billing`
-  has a node `billing-ui` and `ui` is also declared), which names both meanings and is ambiguous.
-  A role that resolves in no child stays the error below. `render` writes the template back.
+  is allowed, and `%% isolated` and the other rules judge the result); and a fixed boundary with no
+  node. A name that is neither a role of any child nor a declared id stays the error below. `render` writes the template back.
 - Contract errors, each with the line of the `%% each`, exit 2: `<boundary>` not a declared
   boundary (a node id, an undeclared id) or a boundary with no child boundary; a malformed list
   (empty, an empty arrow, an arrow that is not `<role> <arrow> <role>`, a role twice the same on

@@ -227,15 +227,10 @@ fn classify(
             ends.push(End::Role);
             continue;
         };
+        // why: 0.2.0 read every name as a role, so a name that is a role of some child stays one.
         if resolves {
-            return Err(malformed(format!(
-                "`{name}` is ambiguous: it is the declared {} `{name}` and also the role `{name}` of a child of `{}`",
-                match fixed {
-                    Endpoint::Node(_) => "node",
-                    Endpoint::Boundary(_) => "boundary",
-                },
-                rule.boundary,
-            )));
+            ends.push(End::Role);
+            continue;
         }
         check_fixed(rule, name, &fixed, nodes).map_err(malformed)?;
         ends.push(End::Fixed(fixed));
