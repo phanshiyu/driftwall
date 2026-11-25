@@ -78,7 +78,7 @@ fn string_list(node: Node<'_>, source: &str) -> Option<BTreeSet<String>> {
     }
     let mut cursor = node.walk();
     node.named_children(&mut cursor)
-        .map(|item| super::extract::literal_text(item, source).map(str::to_owned))
+        .map(|item| super::literal::literal_text(item, source).map(str::to_owned))
         .collect()
 }
 

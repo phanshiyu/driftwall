@@ -15,7 +15,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use super::resolve::join_normalised;
+use super::paths::join_normalised;
 
 /// The alias configuration that governs the files below one directory.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

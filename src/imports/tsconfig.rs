@@ -46,8 +46,8 @@ use serde::de::{Deserializer, MapAccess, Visitor};
 use serde_json::Value;
 
 use super::alias::{AliasConfig, Pattern};
+use super::paths::{directories, join_normalised};
 use super::project::{self, Project};
-use super::resolve::join_normalised;
 use crate::model::Language;
 
 /// Config file names in the order they are looked for in one directory.
@@ -92,16 +92,6 @@ pub fn project_configs(
     project::discover(&directories(sources), &|path| {
         fs::read_to_string(root.join(path)).ok()
     })
-}
-
-/// Every directory at or above a file in `files`, the repository root (the empty path) included.
-pub(super) fn directories<'a>(files: impl IntoIterator<Item = &'a Path>) -> BTreeSet<PathBuf> {
-    files
-        .into_iter()
-        .filter_map(Path::parent)
-        .flat_map(Path::ancestors)
-        .map(Path::to_path_buf)
-        .collect()
 }
 
 /// Reads the config of each directory in `dirs` through `read`.

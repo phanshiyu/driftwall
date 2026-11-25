@@ -2,10 +2,11 @@
 
 use std::collections::BTreeSet;
 use std::ffi::OsString;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 
-use super::extract::literal_text;
+use super::literal::literal_text;
 use super::package::{is_builtin, package_name};
+use super::paths::join_normalised;
 use super::{
     AliasConfig, Candidate, Environment, Project, Reference, Resolution, ecmascript_symbols,
 };
@@ -335,30 +336,6 @@ fn is_relative(specifier: &str) -> bool {
         || specifier == ".."
         || specifier.starts_with("./")
         || specifier.starts_with("../")
-}
-
-/// Joins `specifier` onto `dir` and folds `.` and `..` lexically. `None` means the path leaves the
-/// repository root.
-pub(super) fn join_normalised(dir: Option<&Path>, specifier: &str) -> Option<PathBuf> {
-    let mut joined = PathBuf::new();
-    for component in dir.into_iter().flat_map(Path::components) {
-        if let Component::Normal(part) = component {
-            joined.push(part);
-        }
-    }
-    for component in Path::new(specifier).components() {
-        match component {
-            Component::CurDir => {}
-            Component::ParentDir => {
-                if !joined.pop() {
-                    return None;
-                }
-            }
-            Component::Normal(part) => joined.push(part),
-            Component::RootDir | Component::Prefix(_) => return None,
-        }
-    }
-    Some(joined)
 }
 
 fn probe(base: &Path, directory_only: bool, known: &BTreeSet<PathBuf>) -> Option<PathBuf> {

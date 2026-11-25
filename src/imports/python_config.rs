@@ -13,8 +13,8 @@ use std::path::{Path, PathBuf};
 use jsonc_parser::ParseOptions;
 use serde_json::Value as Json;
 
-use super::resolve::join_normalised;
-use super::tsconfig::directories;
+use super::paths::directories;
+use super::paths::join_normalised;
 use crate::model::Language;
 
 const PYPROJECT: &str = "pyproject.toml";

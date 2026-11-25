@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 
 use tree_sitter::Node;
 
-use super::extract::literal_text;
+use super::literal::literal_text;
 use super::vite::{
     CONFIG_FILES, MAX_ALIASES, Reader, Value, config_object, declared, object_of, option_value,
     parse,

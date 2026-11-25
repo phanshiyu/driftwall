@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 
 use tree_sitter::{Node, Parser};
 
-use super::resolve::join_normalised;
+use super::paths::join_normalised;
 use crate::model::Language;
 
 /// The manifest file name.

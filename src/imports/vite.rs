@@ -10,10 +10,10 @@ use std::path::{Path, PathBuf};
 
 use tree_sitter::{Node, Parser};
 
-use super::extract::literal_text;
-use super::resolve::join_normalised;
+use super::literal::literal_text;
+use super::paths::directories;
+use super::paths::join_normalised;
 use super::spec::{Grammar, JAVASCRIPT_GRAMMAR, TYPESCRIPT_GRAMMAR};
-use super::tsconfig::directories;
 use crate::model::Language;
 
 /// Vite config file names in the order Vite itself looks for them in one directory.

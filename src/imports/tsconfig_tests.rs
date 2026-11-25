@@ -4,7 +4,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use super::tsconfig::{MAX_EXTENDS_DEPTH, directories, discover};
+use super::paths::directories;
+use super::tsconfig::{MAX_EXTENDS_DEPTH, discover};
 use super::*;
 use crate::model::Language;
 

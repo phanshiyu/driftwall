@@ -32,7 +32,7 @@
 use std::collections::BTreeSet;
 use std::path::Path;
 
-use super::resolve::join_normalised;
+use super::paths::join_normalised;
 use super::rust_module::{Site, WrittenPath};
 use super::rust_syntax;
 use super::{Bindings, Environment, Reference, Resolution};

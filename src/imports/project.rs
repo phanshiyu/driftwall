@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 
 use super::alias::AliasConfig;
 use super::glob;
-use super::resolve::join_normalised;
+use super::paths::join_normalised;
 use super::tsconfig::{Layer, RawConfig, Reader, effective, find_config, layers, parse};
 
 /// One referenced config: the aliases it defines and the files it governs.

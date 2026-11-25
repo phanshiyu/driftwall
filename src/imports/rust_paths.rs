@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use rayon::prelude::*;
 use tree_sitter::{Node, Parser};
 
-use super::resolve::join_normalised;
+use super::paths::join_normalised;
 use super::rust_module::Site;
 use super::rust_syntax::enclosing_modules;
 use super::spec::RUST_GRAMMAR;

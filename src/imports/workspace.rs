@@ -14,9 +14,9 @@ use serde_json::{Map, Value};
 use super::alias::Candidate;
 use super::glob;
 use super::package::package_name;
-use super::resolve::join_normalised;
+use super::paths::directories;
+use super::paths::join_normalised;
 use super::subpath::Subpaths;
-use super::tsconfig::directories;
 use crate::model::Language;
 
 const MANIFEST_FILE: &str = "package.json";

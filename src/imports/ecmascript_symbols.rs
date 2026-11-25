@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 
 use tree_sitter::Node;
 
-use super::extract::plain_string;
+use super::literal::plain_string;
 use super::statement::in_type_position;
 use crate::model::Symbol;
 

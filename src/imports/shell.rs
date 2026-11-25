@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use tree_sitter::Node;
 
 use super::glob;
-use super::resolve::join_normalised;
+use super::paths::join_normalised;
 use super::{Environment, Reference, Resolution};
 use crate::model::SkipReason;
 

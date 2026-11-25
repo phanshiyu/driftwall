@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 
 use toml::Table;
 
-use super::tsconfig::directories;
+use super::paths::directories;
 use crate::model::Language;
 
 /// The file that lists a crate's dependencies.

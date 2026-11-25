@@ -3,7 +3,7 @@
 use std::collections::BTreeSet;
 use std::path::{Component, Path, PathBuf};
 
-use super::extract::literal_text;
+use super::literal::literal_text;
 use super::python_call::module_of;
 use super::python_stdlib::is_stdlib;
 use super::{Environment, Reference, Resolution};

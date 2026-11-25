@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 use serde::Deserialize;
 use serde_json::Value;
 
-use super::tsconfig::directories;
+use super::paths::directories;
 use crate::model::Language;
 
 /// The file that declares a package.

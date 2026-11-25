@@ -5,7 +5,7 @@ use std::path::Path;
 
 use tree_sitter::{Node, Tree};
 
-use super::extract::literal_text;
+use super::literal::literal_text;
 use super::reexport::Table;
 use super::{Environment, Reference, Resolution, spec};
 use crate::model::Language;

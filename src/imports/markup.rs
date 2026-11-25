@@ -8,8 +8,9 @@ use std::path::{Path, PathBuf};
 
 use tree_sitter::{Point, Range};
 
-use super::extract::literal_text;
+use super::literal::literal_text;
 use super::package::MANIFEST_FILE;
+use super::paths;
 use super::spec::{Grammar, JAVASCRIPT_GRAMMAR, Load, Region, Scan, TYPESCRIPT_GRAMMAR};
 use super::{Environment, Reference, Resolution, ecmascript_symbols, resolve};
 use crate::markup::{self, Tag};
@@ -169,7 +170,7 @@ pub fn resolve_load(load: &Load, importer: &Path, env: &Environment<'_>) -> Reso
 /// put in its place.
 fn in_public(path: &str, importer: &Path, env: &Environment<'_>) -> bool {
     let root = vite_root(importer, env);
-    let Some(target) = resolve::join_normalised(importer.parent(), path) else {
+    let Some(target) = paths::join_normalised(importer.parent(), path) else {
         return false;
     };
     target
@@ -206,7 +207,7 @@ fn root_absolute(specifier: &str, importer: &Path, env: &Environment<'_>) -> Res
     let below = path.trim_start_matches('/');
     let root = vite_root(importer, env);
     let find = |dir: &Path| {
-        resolve::join_normalised(Some(dir), below)
+        paths::join_normalised(Some(dir), below)
             .and_then(|base| resolve::find(&base, path.ends_with('/'), env))
     };
     if let Some(found) = find(&root) {

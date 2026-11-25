@@ -3,7 +3,7 @@
 use tree_sitter::Node;
 
 use super::Reference;
-use super::extract::literal_text;
+use super::literal::literal_text;
 
 /// The absolute dotted module the call around `reference` imports, or `None` when the call stays
 /// dynamic.
