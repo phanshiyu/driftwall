@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- driftwall no longer walks into a directory below the root that holds its own `.git`: a nested
+  repository, a submodule, or a git worktree such as an agent's checkout under `.claude/worktrees/`.
+  Those files are another checkout, so a lint run while worktrees existed also reported findings
+  from every copy. Git does not walk into them either.
+- The Claude Code hooks find the contract at `architecture.mmd`, `docs/architecture.mmd` or the
+  path in `DRIFTWALL_CONTRACT`, find `driftwall` in the project's `node_modules/.bin` as well as on
+  PATH, and say on stderr when a contract exists but no binary does, instead of exiting silently.
+- README: the npm install notes cover pnpm, which blocks the `postinstall` download unless allowed.
 - `mod.rs` is an entry file that can be folded, and a declarations-only entry file that no rule
   covers is folded under every mechanism instead of being `unmapped-file`. A Rust feature module
   whose `mod.rs` only declares `mod controller; mod service;` no longer has to be mapped to one of

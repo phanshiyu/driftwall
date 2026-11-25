@@ -127,7 +127,8 @@ impl Decision {
 /// The census of what is not read (see "Blind spots" in `docs/DESIGN.md`) is [`Ownership::unread`]
 /// and [`Ownership::ignored`]. It never changes the maps above.
 ///
-/// Honors `.gitignore` (with or without a `.git` directory) and `.driftwallignore`. Machine
+/// Honors `.gitignore` (with or without a `.git` directory) and `.driftwallignore`, and never walks
+/// into a directory below the root that holds its own `.git` (a nested repository or worktree). Machine
 /// specific ignore sources (global git config, `.git/info/exclude`, parent directories) are
 /// deliberately not consulted so the result depends only on the contents of `root`.
 ///
@@ -470,6 +471,14 @@ fn read_head(path: &Path) -> String {
     String::from_utf8_lossy(&head).into_owned()
 }
 
+/// Whether `entry` is a directory below the root that holds its own `.git` (a nested repository or
+/// a git worktree, which git itself does not walk into either).
+fn nested_repository(entry: &ignore::DirEntry) -> bool {
+    entry.depth() > 0
+        && entry.file_type().is_some_and(|kind| kind.is_dir())
+        && entry.path().join(".git").exists()
+}
+
 /// The walker over `root`. With `driftwallignore` off it still honors `.gitignore`, so the files it
 /// finds beyond the normal walk are exactly the ones only `.driftwallignore` hides.
 fn walker(root: &Path, driftwallignore: bool) -> WalkBuilder {
@@ -481,7 +490,7 @@ fn walker(root: &Path, driftwallignore: bool) -> WalkBuilder {
         .git_global(false)
         .git_exclude(false)
         .require_git(false)
-        .filter_entry(|entry| entry.file_name() != OsStr::new(".git"));
+        .filter_entry(|entry| entry.file_name() != OsStr::new(".git") && !nested_repository(entry));
     if driftwallignore {
         builder.add_custom_ignore_filename(IGNORE_FILE);
     }
@@ -1005,6 +1014,30 @@ mod tests {
         let found = scan(dir.path()).unwrap();
         assert!(found.folded.is_empty());
         assert_eq!(found.owners.len(), 1);
+    }
+
+    #[test]
+    fn a_nested_repository_or_worktree_is_not_walked() {
+        let dir = tree(&[
+            ("src/.arch", "node: app\n"),
+            ("src/a.ts", ""),
+            // why: a git worktree holds a `.git` file, a nested clone a `.git` directory.
+            (
+                ".claude/worktrees/agent/.git",
+                "gitdir: ../../../.git/worktrees/agent\n",
+            ),
+            (".claude/worktrees/agent/src/a.ts", ""),
+            ("vendor/lib/.git/HEAD", "ref: refs/heads/main\n"),
+            ("vendor/lib/b.ts", ""),
+        ]);
+        let found = scan(dir.path()).unwrap();
+        let walked: Vec<&Path> = found
+            .owners
+            .keys()
+            .chain(&found.unmapped)
+            .map(PathBuf::as_path)
+            .collect();
+        assert_eq!(walked, [Path::new("src/a.ts")]);
     }
 
     #[test]

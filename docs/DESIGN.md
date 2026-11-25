@@ -922,7 +922,10 @@ ordinary rule of the node `<feature>-<role>`, whose names add up with the writte
 A `.arch` file contains `node: <id>` and, optionally, `scope: here` (comments start with `#`; each
 directive at most once, `node:` is required). It tags its directory and all subdirectories, until a
 nested `.arch` overrides it. Source files are found by walking the repo with the `ignore` crate, so
-`.gitignore` is honored. `.driftwallignore` (gitignore syntax) adds exclusions. Only files with a
+`.gitignore` is honored. `.driftwallignore` (gitignore syntax) adds exclusions. A directory below
+the root that holds a `.git` file or directory (a nested repository, a submodule, or a git worktree
+such as an agent's checkout under `.claude/worktrees/`) is not walked, as git does not walk it: its
+files are another checkout, not part of this one, so they are neither linted nor counted. Only files with a
 supported extension count as source. One exception: an HTML file
 (`.html`, `.htm`) counts as source only when it holds a `<script` element, see "Svelte and HTML";
 any other HTML file is an asset, so documentation and fixture pages never become unmapped files.

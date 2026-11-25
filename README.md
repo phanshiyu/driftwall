@@ -79,6 +79,11 @@ npm install --global driftwall
 
 Or run it once without installing: `npx driftwall lint .`
 
+The npm package downloads the matching binary in a `postinstall` script. pnpm runs no install
+scripts unless told to, so allow it (`pnpm.onlyBuiltDependencies: ["driftwall"]` in `package.json`, or
+`allowBuilds` in newer pnpm). A pnpm `minimumReleaseAge` setting also holds back a release published
+in the last hours; exclude `driftwall` from it if you want a new version at once.
+
 Prebuilt binaries for macOS and Linux (x86_64 and arm64) are on the
 [releases page](https://github.com/phanshiyu/driftwall/releases), along with a shell installer.
 To build from source you need Rust 1.90 or newer:
