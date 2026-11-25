@@ -44,14 +44,7 @@ fn rs_in(
             unowned: &BTreeSet::new(),
         },
         test_files: &BTreeSet::new(),
-        ecmascript: crate::imports::ecmascript::Env {
-            aliases: &BTreeMap::new(),
-            packages: &BTreeMap::new(),
-            workspaces: &Workspaces::default(),
-            projects: &BTreeMap::new(),
-            vite_roots: &BTreeMap::new(),
-            vite_aliases: &BTreeMap::new(),
-        },
+        ecmascript: fixtures::no_ecmascript(),
         python: &PythonLayout::default(),
         rust: crate::imports::rust::Env {
             crates: library,

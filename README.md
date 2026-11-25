@@ -307,6 +307,7 @@ flowchart LR
   report --> model
   syntax --> model
   imports --> languages
+  languages -->|test| imports
   languages --> model
   languages --> syntax
 

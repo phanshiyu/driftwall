@@ -25,7 +25,6 @@ fn config(base: &str, bare_imports: bool, entries: &[(&str, &[&str])]) -> AliasC
 /// repository root.
 fn run(source: &str, repo: &[&str], config: AliasConfig) -> FileImports {
     let known: BTreeSet<PathBuf> = repo.iter().map(PathBuf::from).collect();
-    let crates = BTreeMap::new();
     let aliases = BTreeMap::from([(PathBuf::new(), config)]);
     let env = Environment {
         files: Files {
@@ -43,11 +42,7 @@ fn run(source: &str, repo: &[&str], config: AliasConfig) -> FileImports {
             vite_aliases: &BTreeMap::new(),
         },
         python: &PythonLayout::default(),
-        rust: crate::imports::rust::Env {
-            crates: &crates,
-            paths: &PathModules::default(),
-            dependencies: &BTreeMap::new(),
-        },
+        rust: fixtures::no_rust(),
         swift: &SwiftModules::default(),
     };
     extract_in(
@@ -210,7 +205,6 @@ fn require_and_dynamic_import_resolve_aliases_too() {
 #[test]
 fn files_without_a_governing_config_see_no_aliases_and_the_specifier_is_a_package() {
     let known: BTreeSet<PathBuf> = [PathBuf::from("src/a.ts")].into();
-    let crates = BTreeMap::new();
     let aliases = BTreeMap::from([(
         PathBuf::from("other"),
         config("other", false, &[("@/*", &["./src/*"])]),
@@ -231,11 +225,7 @@ fn files_without_a_governing_config_see_no_aliases_and_the_specifier_is_a_packag
             vite_aliases: &BTreeMap::new(),
         },
         python: &PythonLayout::default(),
-        rust: crate::imports::rust::Env {
-            crates: &crates,
-            paths: &PathModules::default(),
-            dependencies: &BTreeMap::new(),
-        },
+        rust: fixtures::no_rust(),
         swift: &SwiftModules::default(),
     };
     let got = extract_in(

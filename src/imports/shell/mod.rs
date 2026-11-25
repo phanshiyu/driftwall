@@ -7,3 +7,6 @@ mod statement;
 pub use resolve::resolve;
 pub use spec::SPEC;
 pub use statement::test_file;
+
+#[cfg(test)]
+mod scenarios;

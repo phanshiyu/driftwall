@@ -46,7 +46,6 @@ fn imports(files: &BTreeMap<PathBuf, String>, importer: &str, source: &str) -> V
         .cloned()
         .collect();
     let aliases = configs_for(files, &[importer]);
-    let crates = BTreeMap::new();
     let env = Environment {
         files: Files {
             known: &known,
@@ -63,11 +62,7 @@ fn imports(files: &BTreeMap<PathBuf, String>, importer: &str, source: &str) -> V
             vite_aliases: &BTreeMap::new(),
         },
         python: &PythonLayout::default(),
-        rust: crate::imports::rust::Env {
-            crates: &crates,
-            paths: &PathModules::default(),
-            dependencies: &BTreeMap::new(),
-        },
+        rust: fixtures::no_rust(),
         swift: &SwiftModules::default(),
     };
     let found = extract_in(source, Language::TypeScript, Path::new(importer), &env)

@@ -23,3 +23,6 @@ pub use scope::Bindings;
 pub use spec::SPEC;
 pub use statement::test_file as is_test_file;
 pub use test_modules::test_files;
+
+#[cfg(test)]
+mod scenarios;

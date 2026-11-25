@@ -3076,7 +3076,9 @@ lands. `src/<node>/.arch` tags each module. `model` has no outbound edges. `repo
   dispatches on the language, `collect.rs` reads a whole repository, builds the `Environment`
   (`environment.rs`) and follows re-exports (`reexport.rs`). `file_imports.rs` and `error.rs` are
   the result and error types. `spec.rs` is the table of language entries. The tests that run the
-  whole pipeline, which need every language at once, are in `scenarios/`.
+  whole pipeline across languages are in `scenarios/`, with the shared fixtures. A language's own
+  pipeline tests sit in its `scenarios/`, which the test edge `languages -->|test| imports` allows:
+  test code of a language may drive `imports`, production code may not.
 - `src/imports/syntax/` is `syntax`: what no language owns. The shape of a language entry
   (`spec.rs`), the types a resolver receives and answers with (`resolution.rs`), the re-export
   `Table`, the statement flags every language shares, the import queries, globs, string literals

@@ -125,3 +125,26 @@ pub fn pairs(entries: &[(u32, &str)]) -> Vec<(u32, String)> {
         .map(|&(line, text)| (line, text.to_owned()))
         .collect()
 }
+
+/// The Rust part of an environment for a test of another language: no crates, modules or
+/// dependencies. Leaked, so a language's test names no other language.
+pub fn no_rust() -> crate::imports::rust::Env<'static> {
+    crate::imports::rust::Env {
+        crates: Box::leak(Box::default()),
+        paths: Box::leak(Box::default()),
+        dependencies: Box::leak(Box::default()),
+    }
+}
+
+/// The TypeScript and JavaScript part of an environment for a test of another language: no
+/// configuration at all. Leaked, so a language's test names no other language.
+pub fn no_ecmascript() -> crate::imports::ecmascript::Env<'static> {
+    crate::imports::ecmascript::Env {
+        aliases: Box::leak(Box::default()),
+        packages: Box::leak(Box::default()),
+        workspaces: Box::leak(Box::default()),
+        projects: Box::leak(Box::default()),
+        vite_roots: Box::leak(Box::default()),
+        vite_aliases: Box::leak(Box::default()),
+    }
+}

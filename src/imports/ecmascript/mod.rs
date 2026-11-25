@@ -35,3 +35,6 @@ pub use workspace::{Workspaces, discover as workspaces};
 
 #[cfg(test)]
 pub use tsconfig::{MAX_EXTENDS_DEPTH, discover};
+
+#[cfg(test)]
+mod scenarios;

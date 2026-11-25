@@ -15,3 +15,6 @@ pub use reexport::table as reexport_table;
 pub use resolve::resolve;
 pub use spec::SPEC;
 pub use statement::test_file;
+
+#[cfg(test)]
+mod scenarios;

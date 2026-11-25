@@ -10,3 +10,6 @@ pub use package::{SwiftTarget, swift_targets};
 pub use resolve::{SwiftModules, resolve};
 pub use spec::SPEC;
 pub use statement::test_file;
+
+#[cfg(test)]
+mod scenarios;
