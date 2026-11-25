@@ -8,9 +8,7 @@ use super::*;
 use crate::diagram;
 use crate::imports::FileImports;
 use crate::lint::fixtures::{at, node};
-use crate::model::{
-    BlindSpots, EdgeKind, ImportKind, Overview, ResolvedImport, Severity, Violation, ViolationKind,
-};
+use crate::model::{EdgeKind, ImportKind, ResolvedImport, Severity, Violation, ViolationKind};
 
 const KINDS: [EdgeKind; 8] = [
     EdgeKind::Implemented,
@@ -348,110 +346,4 @@ fn a_test_boundary_edge_exempts_test_sites_from_the_layer_order() {
     let production = sites(&[("low/a.ts", 1, "top/a.ts", ImportKind::Runtime, false)]);
     let found = lint(&contract, &owned, &production);
     assert!(found.iter().any(|v| v.kind == ViolationKind::UpwardEdge));
-}
-
-fn view(
-    contract: &Contract,
-    owned: &[(&str, &str)],
-    imports: &BTreeMap<PathBuf, FileImports>,
-) -> Overview {
-    let ownership = owners(owned);
-    let observed = observed_edges(contract, &ownership, imports);
-    let symbols = observed_symbols(contract, &ownership, imports);
-    let report = reconcile(contract, &ownership, imports, Path::new("architecture.mmd"));
-    overview(
-        contract,
-        &ownership,
-        &observed,
-        &symbols,
-        &report,
-        &BlindSpots::default(),
-    )
-}
-
-#[test]
-fn the_overview_names_the_winning_boundary_edge_per_pair_and_counts_realised_pairs() {
-    let contract = double("  ga -->|test| gb\n  a1 --> b1\n  ga -.-> b2\n");
-    let owned = [
-        ("a1/x.ts", "a1"),
-        ("a2/x.ts", "a2"),
-        ("b1/y.ts", "b1"),
-        ("b2/y.ts", "b2"),
-    ];
-    let imports = sites(&[
-        ("a1/x.ts", 1, "b1/y.ts", ImportKind::Runtime, false),
-        ("a1/x.ts", 2, "b2/y.ts", ImportKind::Runtime, false),
-        ("a2/x.ts", 3, "b2/y.ts", ImportKind::Runtime, true),
-    ]);
-    let overview = view(&contract, &owned, &imports);
-    let by_pair = |from: &str, to: &str| {
-        overview
-            .edges
-            .iter()
-            .find(|e| e.from.as_str() == from && e.to.as_str() == to)
-            .unwrap()
-    };
-    // why: the solid node edge beats the test boundary edge, so there is nothing to name.
-    assert_eq!(by_pair("a1", "b1").kind, Some(EdgeKind::Implemented));
-    assert_eq!(by_pair("a1", "b1").via, None);
-    // why: the dotted unrestricted cover beats the test cover (most permissive first).
-    let via = by_pair("a1", "b2").via.clone().unwrap();
-    assert_eq!((via.edge.as_str(), via.line), ("ga -.-> b2", 12));
-    assert_eq!(by_pair("a1", "b2").kind, Some(EdgeKind::Planned));
-    let via = by_pair("a2", "b2").via.clone().unwrap();
-    assert_eq!(via.line, 12);
-    let summary: Vec<(String, usize, usize)> = overview
-        .boundary_edges
-        .iter()
-        .map(|e| (e.kind.arrow().to_owned(), e.covers, e.realised))
-        .collect();
-    assert_eq!(
-        summary,
-        [("-->|test|".to_owned(), 4, 1), ("-.->".to_owned(), 2, 2),]
-    );
-}
-
-#[test]
-fn a_pair_no_edge_covers_has_no_kind_and_no_via() {
-    let contract = double("  ga --> gb\n");
-    let owned = [("a1/x.ts", "a1"), ("b1/y.ts", "b1")];
-    let imports = sites(&[("b1/y.ts", 1, "a1/x.ts", ImportKind::Runtime, false)]);
-    let overview = view(&contract, &owned, &imports);
-    assert_eq!(overview.edges.len(), 1);
-    assert_eq!(
-        (overview.edges[0].kind, &overview.edges[0].via),
-        (None, &None)
-    );
-}
-
-#[test]
-fn diff_reports_boundary_edges_by_their_ends() {
-    let old = "flowchart LR\n  subgraph g[\"g\"]\n    a\n  end\n  subgraph h[\"h\"]\n    b\n  end\n  g --> h\n  h --> g\n  a --> h\n";
-    let new = "flowchart LR\n  subgraph g[\"g\"]\n    a\n  end\n  subgraph h[\"h\"]\n    b\n  end\n  g -.-> h\n  g --> g\n  a --> h\n";
-    let diff = contract_diff(old, new).unwrap();
-    let text = |ends: &crate::model::EdgeEnds| format!("{} {}", ends.from, ends.to);
-    assert_eq!(
-        diff.added_boundary_edges
-            .iter()
-            .map(|(e, k)| (text(e), *k))
-            .collect::<Vec<_>>(),
-        [("g g".to_owned(), EdgeKind::Implemented)]
-    );
-    assert_eq!(
-        diff.removed_boundary_edges
-            .iter()
-            .map(|(e, k)| (text(e), *k))
-            .collect::<Vec<_>>(),
-        [("h g".to_owned(), EdgeKind::Implemented)]
-    );
-    assert_eq!(
-        diff.changed_boundary_edges
-            .iter()
-            .map(|(e, o, n)| (text(e), *o, *n))
-            .collect::<Vec<_>>(),
-        [("g h".to_owned(), EdgeKind::Implemented, EdgeKind::Planned)]
-    );
-    assert!(diff.added_edges.is_empty() && diff.removed_edges.is_empty());
-    assert!(!diff.is_empty());
-    assert!(contract_diff(old, old).unwrap().is_empty());
 }

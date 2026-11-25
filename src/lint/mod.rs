@@ -2,20 +2,16 @@
 //!
 //! The pure core is [`reconcile`]: three in-memory views in, a [`LintReport`] out. [`run`] is the
 //! thin shell that reads the contract, scans ownership, extracts imports and calls it. [`observe`]
-//! is its sibling that also hands back what it read, for commands that present the architecture
-//! ([`overview`], [`node_view`]) or compare contracts ([`contract_diff`]).
+//! is its sibling that also hands back what it read, for the commands that present the architecture
+//! or compare contracts, which live in `views`.
 
 mod budget;
-mod diff;
 mod facade;
 mod interface;
 mod isolation;
 mod layers;
-mod moves;
 mod observe;
-mod overview;
 mod packages;
-mod picture;
 mod reconcile;
 mod rules;
 mod siblings;
@@ -54,7 +50,7 @@ use std::path::{Path, PathBuf};
 
 use thiserror::Error;
 
-use crate::diagram::{self, DiagramError, PictureError};
+use crate::diagram::{self, DiagramError};
 use crate::imports::{self, ImportsError};
 use crate::model::{
     BlindSpots, Contract, DEFAULT_CONTRACT, Edge, InterfaceEntry, Language, LintReport, NodeBudget,
@@ -62,12 +58,8 @@ use crate::model::{
 };
 use crate::ownership::{self, OwnershipError};
 
-pub use diff::{EMPTY_CONTRACT, contract_diff};
-pub use moves::{Owners, moved, owners};
 pub use observe::{observed_edges, observed_symbols};
-pub use overview::{attach_budgets, node_view, overview, with_interface, with_packages};
-pub use picture::{render_picture, sync_markdown};
-pub use reconcile::reconcile;
+pub use reconcile::{boundary_seen, reconcile};
 
 /// Settings for [`run`].
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -105,27 +97,12 @@ pub enum LintError {
         /// What is wrong with it, including the line.
         source: DiagramError,
     },
-    /// A picture or a Markdown block could not be made.
-    #[error(transparent)]
-    Picture(#[from] PictureError),
     /// Scanning ownership failed.
     #[error(transparent)]
     Ownership(#[from] OwnershipError),
     /// Extracting imports failed.
     #[error(transparent)]
     Imports(#[from] ImportsError),
-    /// The old side of a contract comparison is not a valid contract.
-    #[error("the old contract is not valid")]
-    OldContract {
-        /// What is wrong with it, including the line.
-        source: DiagramError,
-    },
-    /// The new side of a contract comparison is not a valid contract.
-    #[error("the new contract is not valid")]
-    NewContract {
-        /// What is wrong with it, including the line.
-        source: DiagramError,
-    },
 }
 
 /// Everything one scan of a repository found: the inputs of the lint and its result.
@@ -143,7 +120,7 @@ pub struct Observation {
     pub interfaces: BTreeMap<NodeId, Vec<InterfaceEntry>>,
     /// The symbols the imports behind each observed edge use.
     pub symbols: BTreeMap<Edge, BTreeSet<Symbol>>,
-    /// The packages each declared node's files use, see [`with_packages`].
+    /// The packages each declared node's files use, as `views` fills them in.
     pub packages: BTreeMap<NodeId, Vec<PackageSummary>>,
     /// Every package use of every source file, by file, for the commands that explain one file.
     pub package_uses: BTreeMap<PathBuf, Vec<PackageUse>>,
@@ -170,8 +147,11 @@ pub fn read_contract(root: &Path, contract: &Path) -> Result<Contract, LintError
 }
 
 /// Scans `root` for ownership the way a lint does.
+///
+/// # Errors
+/// The scan fails.
 // why: a contract with `%% map` lines decides ownership alone, so `.arch` files are not read.
-fn scan_ownership(
+pub fn scan_ownership(
     root: &Path,
     contract_path: &Path,
     contract: &Contract,

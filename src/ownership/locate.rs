@@ -7,45 +7,10 @@ use std::path::Path;
 
 use super::mapping::explain_mapped;
 use super::{
-    ARCH_FILE, Discovered, MapContext, Owner, OwnershipError, discover, explain, language_of,
+    ARCH_FILE, Discovered, MapContext, OwnershipError, discover, explain, language_of,
     relative_to_root,
 };
-use crate::model::Exclusion;
-
-/// What a walked path is to driftwall.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum FileKind {
-    /// A source file in a language driftwall reads.
-    Source,
-    /// Any other file, such as `data.json`.
-    Asset,
-    /// A code file in a language driftwall cannot read, with its census key (`go`, `shebang`).
-    Unread(String),
-    /// A source file the scan leaves out as vendored, minified or generated.
-    Excluded(Exclusion),
-    /// A source file only `.driftwallignore` hides.
-    Ignored,
-    /// A directory.
-    Directory,
-    /// An entry file that declares nothing and makes no node of its own under `node: *`.
-    Folded,
-    /// An `.arch` tag file: driftwall's own input, never an asset, and owned by no node.
-    TagFile,
-    /// The contract file. [`locate`] never answers it: the caller that knows the contract path
-    /// replaces the kind of that path.
-    Contract,
-}
-
-/// The answer of [`locate`].
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Located {
-    /// What the path is.
-    pub kind: FileKind,
-    /// Who owns it and which rule decided, by the tag rules of source files, also for an excluded
-    /// or ignored file. Unowned for a tag file, a contract, and a file no rule covers. A folded
-    /// entry file is [`Owner::Folded`].
-    pub owner: Owner,
-}
+use crate::model::{FileKind, Located, Owner};
 
 /// Says what `file` is (see [`FileKind`]) and who owns it, like [`explain`] for the owner.
 ///
@@ -172,6 +137,7 @@ fn kind_of(root: &Path, relative: &Path) -> Result<FileKind, OwnershipError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::Exclusion;
 
     fn tree(files: &[(&str, &str)]) -> tempfile::TempDir {
         let dir = tempfile::tempdir().unwrap();

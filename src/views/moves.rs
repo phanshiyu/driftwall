@@ -6,7 +6,8 @@ use std::path::{Path, PathBuf};
 use crate::model::{Contract, MapRule, MoveCause, Moved, NodeId, Ownership};
 use crate::ownership::{self, MapContext};
 
-use super::{LintError, read_contract, scan_ownership};
+use super::ViewsError;
+use crate::lint::{read_contract, scan_ownership};
 
 /// The owner of every source file of one tree, with the rules that decided it.
 #[derive(Debug)]
@@ -40,7 +41,7 @@ impl Owners {
 ///
 /// # Errors
 /// The contract cannot be read or parsed, or the scan fails.
-pub fn owners(root: &Path, contract: &Path, declared: bool) -> Result<Owners, LintError> {
+pub fn owners(root: &Path, contract: &Path, declared: bool) -> Result<Owners, ViewsError> {
     let parsed = if declared {
         read_contract(root, contract)?
     } else {

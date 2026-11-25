@@ -1,7 +1,6 @@
 //! How a command ended, and the exit code each ending maps to (see docs/DESIGN.md).
 
-use driftwall::model::{ContractDiff, LintReport};
-use driftwall::ownership::{FileKind, Located};
+use driftwall::model::{ContractDiff, FileKind, LintReport, Located};
 
 /// The three ways a driftwall command can end.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -60,8 +59,7 @@ impl Outcome {
 
 #[cfg(test)]
 mod tests {
-    use driftwall::model::{NodeId, Severity, Violation, ViolationKind};
-    use driftwall::ownership::{Owner, Rule};
+    use driftwall::model::{NodeId, Owner, Rule, Severity, Violation, ViolationKind};
 
     use super::*;
 

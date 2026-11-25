@@ -1,8 +1,57 @@
-//! Who owns a file and which rule decided it: the answer type of `explain` and `locate`.
+//! Who owns a file and which rule decided it, and what a path is: the answer types of `explain`,
+//! `locate` and `driftwall where`.
 
 use std::path::{Path, PathBuf};
 
-use crate::model::{MapSite, NodeId};
+use super::{Exclusion, MapSite, NodeId, PackageUse};
+
+/// What a walked path is to driftwall.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FileKind {
+    /// A source file in a language driftwall reads.
+    Source,
+    /// Any other file, such as `data.json`.
+    Asset,
+    /// A code file in a language driftwall cannot read, with its census key (`go`, `shebang`).
+    Unread(String),
+    /// A source file the scan leaves out as vendored, minified or generated.
+    Excluded(Exclusion),
+    /// A source file only `.driftwallignore` hides.
+    Ignored,
+    /// A directory.
+    Directory,
+    /// An entry file that declares nothing and makes no node of its own under `node: *`.
+    Folded,
+    /// An `.arch` tag file: driftwall's own input, never an asset, and owned by no node.
+    TagFile,
+    /// The contract file. `ownership::locate` never answers it: the caller that knows the contract path
+    /// replaces the kind of that path.
+    Contract,
+}
+
+/// The answer of `ownership::locate`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Located {
+    /// What the path is.
+    pub kind: FileKind,
+    /// Who owns it and which rule decided, by the tag rules of source files, also for an excluded
+    /// or ignored file. Unowned for a tag file, a contract, and a file no rule covers. A folded
+    /// entry file is [`Owner::Folded`].
+    pub owner: Owner,
+}
+
+/// Everything `driftwall where` knows about one path: what it is, who owns it, and which packages
+/// it uses.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WhereAnswer {
+    /// The path as the user gave it.
+    pub file: PathBuf,
+    /// What the path is and who owns it.
+    pub located: Located,
+    /// The package uses of the file, empty unless it is a source file in a repository with a valid
+    /// contract.
+    pub packages: Vec<PackageUse>,
+}
 
 /// The rule that decided a file's owner.
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -3071,7 +3071,17 @@ The contract for this repository is `architecture.mmd`, and `scripts/gate.sh` li
 against it on every commit. Its `%% map` lines say which directory each node owns; there are no
 `.arch` files. `cli` is the entry point (`src/cli/`, and `src/lib.rs`, which only declares the
 modules). `model` has no outbound edges. `report`, in its own `output` layer, only renders `model`
-types. `lint` and `init` are the only modules that combine `diagram`, `ownership` and `imports`.
+types: the lint report, the `brief` and `neighbors` views, the contract diff and the `where`
+answer, as text and JSON. `lint` is the check (reconcile, rules, layers, budgets, packages,
+facades) and the one scan of a repository (`observe`); `init` writes a first contract. `views`
+(`src/views/`) turns what `lint` observed into the read-only views: the `brief` and `neighbors`
+view models, the contract `diff` with its file moves, and the data behind `where` (`views::locate`
+asks `ownership` what a path is and `lint` which packages a source file uses). `lint` and `init`
+are the only modules that combine `diagram`, `ownership` and `imports`. `where`'s result
+types (`Located`, `FileKind`, `Owner`, `Rule`, `WhereAnswer`) live in `model`, so `report` renders
+them and `cli` never touches `ownership`. `cli` also calls `diagram` directly for `render`, which
+reads the contract alone.
+
 `markup` scans HTML and Svelte for script elements and is used by `ownership` (to tell an HTML
 source file from an asset) and by `web`. `imports` is a facade: `%% exports imports` lists the six
 names other nodes may use, and the rest of `imports` is compiled for tests only or private.

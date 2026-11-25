@@ -26,6 +26,7 @@ mod witness {
     };
     use driftwall::ownership::{ArchProblem, OwnershipError};
     use driftwall::report::ReportError;
+    use driftwall::views::ViewsError;
 
     /// An error enum with one sample per variant and a variant-name list the compiler keeps whole.
     trait Witness: Error + Build + 'static {
@@ -118,7 +119,8 @@ mod witness {
         Nested,
         NoBlock,
     );
-    witness!(LintError: Io, Diagram, Picture, Ownership, Imports, OldContract, NewContract);
+    witness!(LintError: Io, Diagram, Ownership, Imports);
+    witness!(ViewsError: Lint, Ownership, OldContract, NewContract);
     witness!(
         InitError: Io,
         Ownership,
@@ -143,6 +145,7 @@ mod witness {
         OwnershipError::TYPE,
         ImportsError::TYPE,
         LintError::TYPE,
+        ViewsError::TYPE,
         InitError::TYPE,
         ReportError::TYPE,
     ];
@@ -456,9 +459,17 @@ mod witness {
                     path: path(),
                     source: diagram_error(),
                 },
-                Self::Picture(PictureError::NoBlock),
                 Self::Ownership(ownership_error()),
                 Self::Imports(imports_error()),
+            ]
+        }
+    }
+
+    impl Build for ViewsError {
+        fn build() -> Vec<Self> {
+            vec![
+                Self::Lint(LintError::Ownership(ownership_error())),
+                Self::Ownership(ownership_error()),
                 Self::OldContract {
                     source: diagram_error(),
                 },
@@ -543,6 +554,11 @@ mod witness {
     #[test]
     fn diagram_error_does_not_repeat_its_cause() {
         check::<DiagramError>();
+    }
+
+    #[test]
+    fn views_error_does_not_repeat_its_cause() {
+        check::<ViewsError>();
     }
 
     #[test]

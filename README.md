@@ -257,6 +257,7 @@ flowchart LR
   subgraph engine["Engine"]
     init["init: baseline generator"]
     lint["lint: reconcile code graph vs diagram"]
+    views["views: brief, neighbors, where, diff"]
   end
 
   subgraph entry["Entry"]
@@ -290,11 +291,12 @@ flowchart LR
 
   tests["tests: end-to-end, through the binary and the library"]
 
+  cli --> diagram
   cli --> init
   cli --> lint
   cli --> model
-  cli --> ownership
   cli --> report
+  cli --> views
   diagram --> model
   imports --> model
   imports --> syntax
@@ -317,6 +319,11 @@ flowchart LR
   tests -->|test| model
   tests -->|test| ownership
   tests -->|test| report
+  tests -->|test| views
+  views --> diagram
+  views --> lint
+  views --> model
+  views --> ownership
   web --> markup
   imports --> languages
   languages -->|test| imports
@@ -332,7 +339,7 @@ flowchart LR
   %% tests: isolated
   %% facade imports
 
-  %% packages cli: anyhow, clap, serde, serde_json, tempfile
+  %% packages cli: anyhow, clap, tempfile
   %% packages diagram: thiserror
   %% packages imports: rayon, thiserror, tree_sitter
   %% packages init: serde, serde_json, thiserror, toml
@@ -346,6 +353,7 @@ flowchart LR
   %% packages shell: tree_sitter, tree_sitter_bash
   %% packages swift: tree_sitter, tree_sitter_swift
   %% packages syntax: tree_sitter
+  %% packages views: thiserror
   %% packages web: jsonc_parser, serde, serde_json, tree_sitter, tree_sitter_javascript, tree_sitter_typescript
 
   %% map cli: src/cli/, src/lib.rs
@@ -355,6 +363,7 @@ flowchart LR
   %% map ownership: src/ownership/
   %% map imports: src/imports/
   %% map tests: tests/
+  %% map views: src/views/
   %% map web: src/imports/web/
   %% map python: src/imports/python/
   %% map rust: src/imports/rust/

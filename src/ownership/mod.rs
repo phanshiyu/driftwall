@@ -11,7 +11,6 @@ mod locate;
 mod lookup;
 mod mapping;
 mod module;
-mod owner;
 
 #[cfg(test)]
 mod asset_tests;
@@ -32,14 +31,13 @@ pub use error::{ArchProblem, OwnershipError};
 pub use exclude::{HEADER_LINES, announces_generated, exclusion_of};
 pub use folded::{declares_nothing, is_entry_file, trivial_files};
 pub use language::{language_in, language_of};
-pub use locate::{FileKind, Located, locate, locate_mapped};
+pub use locate::{locate, locate_mapped};
 pub use lookup::owner_in;
 pub use mapping::{MapContext, Mapper, scan_mapped};
 pub use module::{folds, is_test_file, module_name, peers_in};
-pub use owner::{Owner, Rule};
 
 pub use crate::model::{DirTag, Scope, Tag};
-use crate::model::{Exclusion, Location, MapSite, ModelError, NodeId, Ownership};
+use crate::model::{Exclusion, Location, MapSite, ModelError, NodeId, Owner, Ownership, Rule};
 
 /// Name of the file that tags a directory with a node.
 const ARCH_FILE: &str = ".arch";

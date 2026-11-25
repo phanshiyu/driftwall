@@ -6,6 +6,7 @@ use std::fs;
 use std::path::Path;
 
 use anyhow::{Context, Result};
+use driftwall::diagram;
 use driftwall::lint;
 use driftwall::model::{MarkdownSync, PictureView};
 
@@ -63,7 +64,12 @@ pub fn run(args: &RenderArgs) -> Result<Run> {
         (None, None) => PictureView::Full,
     };
     Ok(Run {
-        stdout: lint::render_picture(&args.path, &options.contract, &view, args.short_labels)?,
+        stdout: diagram::picture(
+            &lint::read_contract(&args.path, &options.contract)?,
+            &view,
+            args.short_labels,
+            &source_name(&options.contract),
+        )?,
         outcome: Outcome::Clean,
     })
 }
@@ -72,6 +78,18 @@ pub fn run(args: &RenderArgs) -> Result<Run> {
 fn sync(args: &RenderArgs, contract: &Path, file: &Path) -> Result<MarkdownSync> {
     let markdown =
         fs::read_to_string(file).with_context(|| format!("cannot read {}", file.display()))?;
-    lint::sync_markdown(&args.path, contract, &markdown)
-        .with_context(|| format!("{}", file.display()))
+    let sync = || -> Result<MarkdownSync> {
+        let parsed = lint::read_contract(&args.path, contract)?;
+        Ok(diagram::sync(&markdown, &parsed, &source_name(contract))?)
+    };
+    sync().with_context(|| format!("{}", file.display()))
+}
+
+/// The name the picture comments give the contract: its file name.
+fn source_name(contract: &Path) -> String {
+    contract
+        .file_name()
+        .unwrap_or(contract.as_os_str())
+        .to_string_lossy()
+        .into_owned()
 }

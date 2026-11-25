@@ -6,6 +6,7 @@ use anyhow::{Result, bail};
 use driftwall::lint::{self, LintOptions, Observation};
 use driftwall::model::Overview;
 use driftwall::report;
+use driftwall::views;
 
 use crate::args::{BriefArgs, NeighborsArgs, ViewFormat};
 use crate::commands::{Run, lint_options, require_directory};
@@ -34,7 +35,7 @@ pub fn brief(args: &BriefArgs) -> Result<Run> {
 /// not a directory, or any failure of the scan.
 pub fn neighbors(args: &NeighborsArgs) -> Result<Run> {
     let (overview, observation) = scan(&args.path, args.contract.as_ref())?;
-    let Some(view) = lint::node_view(
+    let Some(view) = views::node_view(
         &overview,
         &observation.ownership,
         &observation.blind_spots,
@@ -52,7 +53,7 @@ pub fn neighbors(args: &NeighborsArgs) -> Result<Run> {
     let view = if wanted {
         let none = Vec::new();
         let entries = observation.interfaces.get(&view.node.id).unwrap_or(&none);
-        lint::with_interface(view, entries)
+        views::with_interface(view, entries)
     } else {
         view
     };
@@ -77,7 +78,7 @@ fn scan(path: &std::path::Path, contract: Option<&PathBuf>) -> Result<(Overview,
     require_directory(path)?;
     let options: LintOptions = lint_options(contract);
     let observation = lint::observe(path, &options)?;
-    let overview = lint::overview(
+    let overview = views::overview(
         &observation.contract,
         &observation.ownership,
         &observation.observed,
@@ -85,8 +86,8 @@ fn scan(path: &std::path::Path, contract: Option<&PathBuf>) -> Result<(Overview,
         &observation.report,
         &observation.blind_spots,
     );
-    let mut overview = lint::with_packages(overview, &observation.packages);
-    lint::attach_budgets(&mut overview, &observation.budgets);
+    let mut overview = views::with_packages(overview, &observation.packages);
+    views::attach_budgets(&mut overview, &observation.budgets);
     Ok((overview, observation))
 }
 

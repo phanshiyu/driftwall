@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::diagram;
 use crate::model::{BoundaryMove, Contract, ContractDiff, Edge, EdgeEnds, EdgeKind, NodeId};
 
-use super::LintError;
+use super::ViewsError;
 
 /// The contract that declares nothing. Stands in for a contract that did not exist yet.
 pub const EMPTY_CONTRACT: &str = "flowchart LR\n";
@@ -17,10 +17,10 @@ pub const EMPTY_CONTRACT: &str = "flowchart LR\n";
 /// well. Every list is sorted. `moved` is left empty: it needs the files, not just the texts.
 ///
 /// # Errors
-/// [`LintError::OldContract`] or [`LintError::NewContract`] when a text is not a valid contract.
-pub fn contract_diff(old_src: &str, new_src: &str) -> Result<ContractDiff, LintError> {
-    let old = diagram::parse(old_src).map_err(|source| LintError::OldContract { source })?;
-    let new = diagram::parse(new_src).map_err(|source| LintError::NewContract { source })?;
+/// [`ViewsError::OldContract`] or [`ViewsError::NewContract`] when a text is not a valid contract.
+pub fn contract_diff(old_src: &str, new_src: &str) -> Result<ContractDiff, ViewsError> {
+    let old = diagram::parse(old_src).map_err(|source| ViewsError::OldContract { source })?;
+    let new = diagram::parse(new_src).map_err(|source| ViewsError::NewContract { source })?;
     Ok(diff(&old, &new))
 }
 
@@ -166,7 +166,7 @@ fn names_only_in(from: &Contract, other: &Contract) -> Vec<(NodeId, String)> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::lint::fixtures::{edge, node};
+    use crate::views::fixtures::{edge, node};
 
     const BASE: &str = "flowchart LR\n  a[\"a\"]\n  b[\"b\"]\n  c[\"c\"]\n  a --> b\n  b -.-> c\n";
 
@@ -365,12 +365,12 @@ mod tests {
     #[test]
     fn an_invalid_old_contract_names_the_old_side() {
         let error = contract_diff("not a diagram", BASE).unwrap_err();
-        assert!(matches!(error, LintError::OldContract { .. }), "{error:?}");
+        assert!(matches!(error, ViewsError::OldContract { .. }), "{error:?}");
     }
 
     #[test]
     fn an_invalid_new_contract_names_the_new_side() {
         let error = contract_diff(BASE, "").unwrap_err();
-        assert!(matches!(error, LintError::NewContract { .. }), "{error:?}");
+        assert!(matches!(error, ViewsError::NewContract { .. }), "{error:?}");
     }
 }

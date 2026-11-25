@@ -12,3 +12,4 @@ pub mod markup;
 pub mod model;
 pub mod ownership;
 pub mod report;
+pub mod views;

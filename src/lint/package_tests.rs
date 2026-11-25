@@ -325,33 +325,3 @@ fn node_packages_count_uses_and_test_uses_third_party_first_then_by_name() {
     );
     assert_eq!(summary.len(), 1);
 }
-
-#[test]
-fn with_packages_fills_each_node_and_leaves_the_others_empty() {
-    use crate::model::{NodeSummary, Overview};
-    let summary = packages::node_packages(
-        &rules(""),
-        &owners(),
-        &uses(&[("db/a.ts", 1, "lit", ThirdParty, false)]),
-    );
-    let blank = |raw: &str| NodeSummary {
-        id: node(raw),
-        label: None,
-        dirs: Vec::new(),
-        files: 0,
-        assets: 0,
-        excluded: 0,
-        exports: None,
-        blind_spots: crate::model::BlindTally::default(),
-        layer: None,
-        budget: None,
-        packages: Vec::new(),
-    };
-    let overview = Overview {
-        nodes: vec![blank("db"), blank("ui")],
-        ..Overview::default()
-    };
-    let filled = with_packages(overview, &summary);
-    assert_eq!(filled.nodes[0].packages.len(), 1);
-    assert_eq!(filled.nodes[1].packages, Vec::new());
-}

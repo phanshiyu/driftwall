@@ -10,7 +10,7 @@ use crate::model::{
     PackageSummary, Scope, Seen, Site, Symbol, Tag, ViaEdge, edge_status,
 };
 
-use super::reconcile::boundary_seen;
+use crate::lint::boundary_seen;
 
 /// Combines the contract, ownership, observed edges, the symbols they use and the lint report
 /// into an [`Overview`].
@@ -276,7 +276,7 @@ pub fn with_interface(mut view: NodeView, entries: &[InterfaceEntry]) -> NodeVie
     view
 }
 
-/// `overview` with each node's `packages` set from `packages`, which [`Observation`](super::Observation)
+/// `overview` with each node's `packages` set from `packages`, which [`Observation`](crate::lint::Observation)
 /// holds. A node `packages` has no entry for uses none. Pure.
 #[must_use]
 pub fn with_packages(
@@ -416,8 +416,8 @@ fn tagged_dir(arch_file: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::lint::fixtures::{at, contract, edge, node, ownership, with_surface};
     use crate::model::{EdgeKind, NodeId, Severity, SkipReason, Skipped, Violation, ViolationKind};
+    use crate::views::fixtures::{at, contract, edge, node, ownership, with_surface};
 
     fn sites(file: &str, lines: &[u32]) -> Vec<Site> {
         lines

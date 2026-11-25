@@ -9,6 +9,7 @@ mod diff;
 mod error;
 mod group;
 mod json;
+mod locate;
 mod overview;
 mod sarif;
 mod text;
@@ -24,6 +25,7 @@ pub use diff::{
 };
 pub use error::ReportError;
 pub use json::{render_json, render_json_baselined};
+pub use locate::{render_where_json, render_where_text};
 pub use overview::{
     NodeViewOptions, render_node_view_json, render_node_view_text, render_overview_json,
     render_overview_text,

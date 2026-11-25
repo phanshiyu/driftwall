@@ -13,6 +13,7 @@ use thiserror::Error;
 mod baseline;
 mod blind;
 mod boundary;
+mod located;
 mod map;
 mod moved;
 mod open_order;
@@ -24,6 +25,7 @@ pub use baseline::{Applied, Baseline, BaselineError, BaselineOutcome, DebtAdded,
 pub use boundary::{
     BoundaryEdge, Cover, Declared, EdgeEnds, Endpoint, Template, child_of, children, children_apart,
 };
+pub use located::{FileKind, Located, Owner, Rule, WhereAnswer};
 pub use map::{GlobError, MapGlob, MapRule, MapSite, MapTarget, Specificity};
 pub use moved::{BoundaryMove, MoveCause, Moved};
 pub use open_order::{EachLimit, Narrowing, OpenAccess};

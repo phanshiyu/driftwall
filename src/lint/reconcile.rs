@@ -303,11 +303,13 @@ fn declared_edge_finding(
     Some((found, message))
 }
 
-/// What code does on every boundary edge, over all the pairs it covers, parallel to
-/// `contract.boundary_edges`. `sites` is every crossing as `(pair, kind, test_only)`. A boundary
+/// What code does on every boundary edge, parallel to `contract.boundary_edges`.
+///
+/// It covers all the pairs each edge covers. `sites` is every crossing as `(pair, kind, test_only)`. A boundary
 /// edge is stale only when no covered pair is realised (see "Boundary edges"). A template arrow is
 /// one declaration, so every expansion of it holds the union over all of them.
-pub(super) fn boundary_seen(contract: &Contract, sites: &[(&Edge, ImportKind, bool)]) -> Vec<Seen> {
+#[must_use]
+pub fn boundary_seen(contract: &Contract, sites: &[(&Edge, ImportKind, bool)]) -> Vec<Seen> {
     let own: Vec<Seen> = contract
         .boundary_edges
         .iter()

@@ -4,9 +4,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use driftwall::lint::{self, EMPTY_CONTRACT};
 use driftwall::model::{Baseline, DEFAULT_CONTRACT, DebtAdded, Moved};
 use driftwall::report;
+use driftwall::views::{self, EMPTY_CONTRACT};
 use tempfile::TempDir;
 
 use crate::args::{DiffArgs, ViewFormat};
@@ -31,7 +31,7 @@ pub fn run(args: &DiffArgs) -> Result<Run> {
     let new_src = fs::read_to_string(args.path.join(&contract))
         .with_context(|| format!("cannot read {}", contract.display()))?;
     let old_src = git::contract_at(&args.path, &args.base, &contract)?;
-    let mut diff = lint::contract_diff(old_src.as_deref().unwrap_or(EMPTY_CONTRACT), &new_src)?;
+    let mut diff = views::contract_diff(old_src.as_deref().unwrap_or(EMPTY_CONTRACT), &new_src)?;
     diff.moved = moved_files(args, &contract, old_src.is_some())?;
     let Some(file) = &args.baseline else {
         let stdout = match args.format {
@@ -62,9 +62,9 @@ fn moved_files(args: &DiffArgs, contract: &Path, declared: bool) -> Result<Vec<M
     git::export_tree(&args.path, &args.base, old_tree.path())?;
     let scratch = TempDir::new().context("cannot create a temporary directory")?;
     let renames = git::renames(&args.path, &args.base, scratch.path())?;
-    let old = lint::owners(old_tree.path(), contract, declared)?;
-    let new = lint::owners(&args.path, contract, true)?;
-    Ok(lint::moved(&old, &new, &renames))
+    let old = views::owners(old_tree.path(), contract, declared)?;
+    let new = views::owners(&args.path, contract, true)?;
+    Ok(views::moved(&old, &new, &renames))
 }
 
 /// The entries of the working-tree baseline `file` that are new or larger than at the base ref.
