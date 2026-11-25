@@ -305,6 +305,10 @@ impl NodeInfo {
 pub struct Contract {
     /// Declared nodes.
     pub nodes: BTreeMap<NodeId, NodeInfo>,
+    /// The label of each boundary written with one that differs from its id. A boundary absent
+    /// here is drawn with its id as its label.
+    #[serde(skip)]
+    pub boundary_labels: BTreeMap<String, String>,
     /// Declared edges and whether each is enforced.
     pub edges: BTreeMap<Edge, EdgeKind>,
     /// Edges with a boundary at one end or both, in file order. See "Boundary edges".
@@ -322,6 +326,26 @@ pub struct Contract {
     /// The `%% packages` and `%% forbid-packages` lines in file order.
     #[serde(skip)]
     pub package_rules: Vec<PackageRule>,
+}
+
+/// What `driftwall render` draws of a contract, see "Contract picture" in `docs/DESIGN.md`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PictureView {
+    /// Every boundary, node and edge.
+    Full,
+    /// Boundaries at this depth (top level is 1) as one box each, contents hidden.
+    Depth(u32),
+    /// One boundary in full, with what it touches outside as the outermost boundary holding it.
+    Focus(String),
+}
+
+/// The result of syncing the `driftwall render` blocks of a Markdown file.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MarkdownSync {
+    /// The file with every block rewritten, everything else byte-identical.
+    pub text: String,
+    /// The 1-indexed line of the start marker of each block that was not current, in file order.
+    pub stale: Vec<u32>,
 }
 
 /// Languages driftwall can extract imports from.

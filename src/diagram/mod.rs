@@ -8,8 +8,10 @@ mod each;
 mod error;
 mod label;
 mod parse;
+mod picture;
 mod render;
 mod rules;
+mod sync;
 
 #[cfg(test)]
 mod boundary_tests;
@@ -24,11 +26,15 @@ mod nested_tests;
 #[cfg(test)]
 mod open_order_tests;
 #[cfg(test)]
+mod picture_tests;
+#[cfg(test)]
 mod rules_tests;
 
 pub use error::DiagramError;
 pub use parse::parse;
+pub use picture::{PictureError, picture};
 pub use render::render;
+pub use sync::sync;
 
 #[cfg(test)]
 mod package_tests;

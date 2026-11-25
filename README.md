@@ -141,6 +141,20 @@ files that have a `<script>` element. Other files are not read. The exact file e
 | `driftwall brief [PATH]` | Print the whole architecture and its current state. Made for agents. Flags: `--contract FILE`, `--format text\|json`. |
 | `driftwall neighbors NODE [PATH]` | Print one component with every edge in or out, and the file and line of each import. Flags: `--contract FILE`, `--format text\|json`, `--files`, `--all-sites`. |
 | `driftwall diff --base REF [PATH]` | Show how the contract changed since a git ref, so a human can review it. Flags: `--contract FILE`, `--format text\|json`, `--exit-code` (exit 1 on any change), `--baseline FILE` (also report debt added). |
+| `driftwall render [PATH]` | Print a generated Mermaid picture of the contract, from the contract alone. Flags: `--contract FILE`, `--depth N` (boundaries at depth N as one box each), `--focus BOUNDARY` (one boundary in full, the rest as boxes), `--update FILE.md` and `--check FILE.md` (keep `<!-- driftwall render -->` blocks of a Markdown file current; `--check` exits 1 when one is stale). |
+
+To keep an overview in your docs that cannot drift, put a block in a Markdown file and let CI check
+it ([Contract picture](docs/DESIGN.md#contract-picture)):
+
+```md
+<!-- driftwall render --depth 1 -->
+<!-- driftwall render end -->
+```
+
+```sh
+driftwall render --update docs/architecture.md   # fills every block with a ```mermaid picture
+driftwall render --check docs/architecture.md    # in CI: exits 1 naming each stale block
+```
 
 Run `driftwall <command> --help` for the details. Output for the example above:
 

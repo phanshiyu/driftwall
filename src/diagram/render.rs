@@ -20,8 +20,7 @@ const PREAMBLE: [&str; 4] = [
 ///
 /// `parse(&render(&c)) == Ok(c)` holds for every contract whose ids are valid, whose labels
 /// contain no `"` or line break, and whose surfaces name only declared nodes and use identifiers
-/// (see the format), with two exceptions. Boundary labels are not stored in
-/// [`Contract`], so each boundary is rendered with its id as its label. And the reserved words
+/// (see the format), with one exception: the reserved words
 /// `end`, `flowchart` and `subgraph` cannot be node ids in the format, so a contract using one
 /// does not round-trip. Quotes and line breaks inside a node label are replaced (by `'` and a
 /// space) because the format cannot express them.
@@ -37,7 +36,7 @@ pub fn render(contract: &Contract) -> String {
     }
     for (boundary, inner) in &tree.inner {
         lines.push(String::new());
-        inner.write(boundary, 1, &mut lines);
+        inner.write(boundary, 1, &contract.boundary_labels, &mut lines);
     }
     if !tree.nodes.is_empty() {
         lines.push(String::new());
@@ -131,14 +130,18 @@ impl<'a> Tree<'a> {
         }
     }
 
-    fn write(&self, boundary: &str, depth: usize, lines: &mut Vec<String>) {
+    fn write(
+        &self,
+        boundary: &str,
+        depth: usize,
+        labels: &BTreeMap<String, String>,
+        lines: &mut Vec<String>,
+    ) {
         let pad = "  ".repeat(depth);
-        lines.push(format!(
-            "{pad}subgraph {boundary}[\"{}\"]",
-            sanitize(boundary)
-        ));
+        let label = labels.get(boundary).map_or(boundary, String::as_str);
+        lines.push(format!("{pad}subgraph {boundary}[\"{}\"]", sanitize(label)));
         for (name, inner) in &self.inner {
-            inner.write(name, depth + 1, lines);
+            inner.write(name, depth + 1, labels, lines);
         }
         let node_pad = "  ".repeat(depth + 1);
         lines.extend(
@@ -456,11 +459,13 @@ flowchart LR
     }
 
     #[test]
-    fn boundary_labels_are_not_preserved() {
-        let src = "flowchart LR\nsubgraph g[\"Pretty Name\"]\na\nend\n";
+    fn boundary_labels_are_preserved_and_an_id_label_is_not_stored() {
+        let src = "flowchart LR\nsubgraph g[\"Pretty Name\"]\na\nend\nsubgraph h[\"h\"]\nb\nend\n";
         let first = parse(src).unwrap();
+        assert_eq!(first.boundary_labels.len(), 1);
         let again = parse(&render(&first)).unwrap();
         assert_eq!(first, again);
-        assert!(render(&first).contains("subgraph g[\"g\"]"));
+        assert!(render(&first).contains("subgraph g[\"Pretty Name\"]"));
+        assert!(render(&first).contains("subgraph h[\"h\"]"));
     }
 }

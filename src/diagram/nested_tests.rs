@@ -85,7 +85,7 @@ fn the_children_of_a_boundary_are_its_child_boundaries_and_its_own_nodes() {
 fn nested_contracts_render_as_nested_subgraphs_and_round_trip() {
     let contract = parse(&with("  features --> shared\n  billing --> search\n")).unwrap();
     let rendered = render(&contract);
-    assert!(rendered.contains("  subgraph features[\"features\"]\n    subgraph billing[\"billing\"]\n      subgraph invoices[\"invoices\"]\n        invoice-svc\n"));
+    assert!(rendered.contains("  subgraph features[\"Features\"]\n    subgraph billing[\"Billing\"]\n      subgraph invoices[\"Invoices\"]\n        invoice-svc\n"));
     let again = parse(&rendered).unwrap();
     assert_eq!(again.nodes, contract.nodes);
     assert_eq!(again.boundary_edges.len(), 2);

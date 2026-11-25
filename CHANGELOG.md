@@ -29,6 +29,15 @@
   lies inside a child, and a name that is both a declared id and a role are contract errors. See
   "Edge templates" in `docs/DESIGN.md`.
 
+- `driftwall render [PATH] [--contract FILE] [--depth N | --focus BOUNDARY]` prints a generated
+  Mermaid picture of the contract (no code needed): every boundary, node and edge, the open chains as
+  `==>|open|` arrows, `--depth N` to draw boundaries at depth N as one box with merged edges, and
+  `--focus B` to draw one boundary in full with the outside as boxes. `render --update FILE.md` fills
+  the `<!-- driftwall render -->` blocks of a Markdown file and `render --check FILE.md` exits 1
+  naming each stale block, so a documented overview cannot drift. A boundary label the contract
+  writes is now kept, and written back by the contract writer. See "Contract picture" in
+  `docs/DESIGN.md`.
+
 ## 0.2.0 - 2026-11-25
 
 - Interface budget: `%% budget store: interface 5` limits how many distinct symbols of a node code

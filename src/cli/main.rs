@@ -10,6 +10,7 @@ mod git;
 mod locate;
 mod outcome;
 mod output;
+mod render;
 mod views;
 
 use std::process::ExitCode;

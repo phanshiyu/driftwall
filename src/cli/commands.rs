@@ -13,7 +13,7 @@ use driftwall::report;
 
 use crate::args::{BaselineMode, Command, InitArgs, LintArgs, LintFormat};
 use crate::outcome::Outcome;
-use crate::{diff, locate, views};
+use crate::{diff, locate, render, views};
 
 /// What a command produced.
 #[derive(Debug)]
@@ -36,6 +36,7 @@ pub fn execute(command: &Command) -> Result<Run> {
         Command::Brief(args) => views::brief(args),
         Command::Neighbors(args) => views::neighbors(args),
         Command::Diff(args) => diff::run(args),
+        Command::Render(args) => render::run(args),
     }
 }
 

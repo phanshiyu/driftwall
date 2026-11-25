@@ -17,7 +17,7 @@ mod witness {
     use std::io;
     use std::path::{Path, PathBuf};
 
-    use driftwall::diagram::DiagramError;
+    use driftwall::diagram::{DiagramError, PictureError};
     use driftwall::imports::ImportsError;
     use driftwall::init::InitError;
     use driftwall::lint::LintError;
@@ -108,7 +108,17 @@ mod witness {
         OutsideRoot,
     );
     witness!(ImportsError: Io, Grammar, Query);
-    witness!(LintError: Io, Diagram, Ownership, Imports, OldContract, NewContract);
+    witness!(
+        PictureError: ZeroDepth,
+        UnknownBoundary,
+        NotABoundary,
+        BadMarker,
+        Unclosed,
+        StrayEnd,
+        Nested,
+        NoBlock,
+    );
+    witness!(LintError: Io, Diagram, Picture, Ownership, Imports, OldContract, NewContract);
     witness!(
         InitError: Io,
         Ownership,
@@ -129,6 +139,7 @@ mod witness {
         GlobError::TYPE,
         ArchProblem::TYPE,
         DiagramError::TYPE,
+        PictureError::TYPE,
         OwnershipError::TYPE,
         ImportsError::TYPE,
         LintError::TYPE,
@@ -356,6 +367,24 @@ mod witness {
         ]
     }
 
+    impl Build for PictureError {
+        fn build() -> Vec<Self> {
+            vec![
+                Self::ZeroDepth,
+                Self::UnknownBoundary("x".to_owned()),
+                Self::NotABoundary("x".to_owned()),
+                Self::BadMarker {
+                    line: 1,
+                    args: "x".to_owned(),
+                },
+                Self::Unclosed { line: 1 },
+                Self::StrayEnd { line: 1 },
+                Self::Nested { line: 3, first: 1 },
+                Self::NoBlock,
+            ]
+        }
+    }
+
     impl Build for OwnershipError {
         fn build() -> Vec<Self> {
             vec![
@@ -427,6 +456,7 @@ mod witness {
                     path: path(),
                     source: diagram_error(),
                 },
+                Self::Picture(PictureError::NoBlock),
                 Self::Ownership(ownership_error()),
                 Self::Imports(imports_error()),
                 Self::OldContract {
@@ -513,6 +543,11 @@ mod witness {
     #[test]
     fn diagram_error_does_not_repeat_its_cause() {
         check::<DiagramError>();
+    }
+
+    #[test]
+    fn picture_error_does_not_repeat_its_cause() {
+        check::<PictureError>();
     }
 
     #[test]

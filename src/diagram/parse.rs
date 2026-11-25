@@ -96,6 +96,8 @@ struct Parser {
     nodes: BTreeMap<NodeId, NodeInfo>,
     node_lines: BTreeMap<NodeId, u32>,
     boundaries: BTreeMap<String, u32>,
+    /// The labels of the boundaries written with one that differs from the id.
+    boundary_labels: BTreeMap<String, String>,
     /// The `subgraph`s still open, outermost first, with their lines.
     open: Vec<(String, u32)>,
     edges: Vec<PendingEdge>,
@@ -136,9 +138,11 @@ impl Parser {
     fn open_subgraph(&mut self, rest: &str, text: &str, line: u32) -> Result<(), DiagramError> {
         let (raw_id, tail) = split_ident(rest);
         let id = valid_id(raw_id, line)?;
-        if !tail.is_empty() && !matches!(parse_label(tail), Some((_, ""))) {
-            return Err(unsupported(text, line));
-        }
+        let label = match (tail.is_empty(), parse_label(tail)) {
+            (true, _) => None,
+            (false, Some((label, ""))) => Some(label),
+            _ => return Err(unsupported(text, line)),
+        };
         if let Some(first_line) = self.boundaries.get(id.as_str()) {
             return Err(DiagramError::DuplicateBoundary {
                 line,
@@ -153,6 +157,10 @@ impl Parser {
                 first_line: *first_line,
                 first_is_boundary: false,
             });
+        }
+        if let Some(label) = label.filter(|label| *label != id.as_str()) {
+            self.boundary_labels
+                .insert(id.to_string(), label.to_owned());
         }
         self.boundaries.insert(id.to_string(), line);
         self.open.push((id.to_string(), line));
@@ -500,6 +508,7 @@ impl Parser {
         }
         let contract = Contract {
             nodes: self.nodes,
+            boundary_labels: self.boundary_labels,
             edges,
             boundary_edges,
             surfaces,

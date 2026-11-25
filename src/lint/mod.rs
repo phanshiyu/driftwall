@@ -15,6 +15,7 @@ mod moves;
 mod observe;
 mod overview;
 mod packages;
+mod picture;
 mod reconcile;
 mod rules;
 mod siblings;
@@ -53,7 +54,7 @@ use std::path::{Path, PathBuf};
 
 use thiserror::Error;
 
-use crate::diagram::{self, DiagramError};
+use crate::diagram::{self, DiagramError, PictureError};
 use crate::imports::{self, ImportsError};
 use crate::model::{
     BlindSpots, Contract, DEFAULT_CONTRACT, Edge, InterfaceEntry, Language, LintReport, NodeBudget,
@@ -65,6 +66,7 @@ pub use diff::{EMPTY_CONTRACT, contract_diff};
 pub use moves::{Owners, moved, owners};
 pub use observe::{observed_edges, observed_symbols};
 pub use overview::{attach_budgets, node_view, overview, with_interface, with_packages};
+pub use picture::{render_picture, sync_markdown};
 pub use reconcile::reconcile;
 
 /// Settings for [`run`].
@@ -103,6 +105,9 @@ pub enum LintError {
         /// What is wrong with it, including the line.
         source: DiagramError,
     },
+    /// A picture or a Markdown block could not be made.
+    #[error(transparent)]
+    Picture(#[from] PictureError),
     /// Scanning ownership failed.
     #[error(transparent)]
     Ownership(#[from] OwnershipError),

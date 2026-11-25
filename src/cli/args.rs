@@ -43,6 +43,52 @@ pub enum Command {
     ///
     /// Exits 0 whatever changed, unless `--exit-code` asks for 1 on any change.
     Diff(DiffArgs),
+    /// Print a Mermaid picture of the contract, or keep a Markdown copy of it current.
+    ///
+    /// The picture is generated from the contract alone, not the code. `--update` and `--check`
+    /// rewrite or verify the `<!-- driftwall render -->` blocks of a Markdown file; `--check`
+    /// exits 1 when one is stale.
+    Render(RenderArgs),
+}
+
+/// Arguments of `driftwall render`.
+#[derive(Debug, Args)]
+pub struct RenderArgs {
+    /// Repository root.
+    #[arg(value_name = "PATH", default_value = DEFAULT_PATH)]
+    pub path: PathBuf,
+    /// Contract file, relative to PATH [default: architecture.mmd].
+    #[arg(long, value_name = "FILE")]
+    pub contract: Option<PathBuf>,
+    /// Draw every boundary at this depth (top level is 1) as one box, contents hidden.
+    #[arg(
+        long,
+        value_name = "N",
+        value_parser = clap::value_parser!(u32).range(1..),
+        conflicts_with_all = ["focus", "update", "check"]
+    )]
+    pub depth: Option<u32>,
+    /// Draw this boundary in full, and what it touches outside as the boundary holding it.
+    #[arg(
+        long,
+        value_name = "BOUNDARY",
+        conflicts_with_all = ["depth", "update", "check"]
+    )]
+    pub focus: Option<String>,
+    /// Rewrite the `<!-- driftwall render -->` blocks of this Markdown file.
+    #[arg(
+        long,
+        value_name = "FILE.md",
+        conflicts_with_all = ["depth", "focus", "check"]
+    )]
+    pub update: Option<PathBuf>,
+    /// Exit 1 naming each block of this Markdown file that is not current; change nothing.
+    #[arg(
+        long,
+        value_name = "FILE.md",
+        conflicts_with_all = ["depth", "focus", "update"]
+    )]
+    pub check: Option<PathBuf>,
 }
 
 /// Output formats of the commands that present the architecture or a contract change.
