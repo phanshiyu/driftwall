@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use crate::model::{Contract, MapRule, MoveCause, Moved, NodeId, Ownership};
-use crate::ownership::{self, MapContext};
+use crate::ownership;
 
 use super::ViewsError;
 use crate::lint::{read_contract, scan_ownership};
@@ -22,15 +22,9 @@ pub struct Owners {
 impl Owners {
     /// The node this tree's rules give `path`, whether or not the file exists here.
     fn rule_owner(&self, path: &Path) -> Option<NodeId> {
-        if self.maps.is_empty() {
-            ownership::owner_in(&self.ownership.tag_dirs, path)
-        } else {
-            let context = MapContext {
-                contract: &self.contract,
-                rules: &self.maps,
-            };
-            ownership::Mapper::new(context).owner(path, &self.ownership.tag_dirs)
-        }
+        ownership::Mechanism::of(&self.contract, &self.maps)
+            .owners()
+            .owner(path, &self.ownership.tag_dirs)
     }
 }
 

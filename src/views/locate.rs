@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use crate::lint::{self, LintOptions};
 use crate::model::{DEFAULT_CONTRACT, FileKind, Located, Owner, PackageUse, WhereAnswer};
-use crate::ownership::{self, MapContext};
+use crate::ownership;
 
 use super::ViewsError;
 
@@ -32,15 +32,7 @@ pub fn locate(
     let has_contract = parsed.is_some();
     let rules = parsed.map(|parsed| parsed.maps).unwrap_or_default();
     let inside = inside_root(root, file);
-    let mut located = if rules.is_empty() {
-        ownership::locate(root, &inside)?
-    } else {
-        let context = MapContext {
-            contract: contract_path,
-            rules: &rules,
-        };
-        ownership::locate_mapped(root, &inside, context)?
-    };
+    let mut located = ownership::Mechanism::of(contract_path, &rules).locate(root, &inside)?;
     // why: only the caller knows the contract path, so it names the file; the contract is no asset.
     if located.kind != FileKind::Directory && inside.components().eq(contract_path.components()) {
         located = Located {

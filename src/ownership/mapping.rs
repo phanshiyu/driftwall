@@ -144,7 +144,7 @@ impl<'a> Mapper<'a> {
     }
 }
 
-/// Scans `root` like [`scan`](super::scan), with the owner of every file decided by the globs of
+/// Scans `root` like [`Mechanism::scan`](super::Mechanism::scan), with the owner of every file decided by the globs of
 /// `context` and no `.arch` file read.
 ///
 /// The `.arch` files that exist are listed in [`Ownership::ignored_tags`], the globs that match no
@@ -152,7 +152,7 @@ impl<'a> Mapper<'a> {
 /// [`Ownership::tag_dirs`] (with their peers), the only entries there.
 ///
 /// # Errors
-/// As [`scan`](super::scan) for the walk, plus [`OwnershipError::AmbiguousMap`] when two globs tie
+/// As [`Mechanism::scan`](super::Mechanism::scan) for the walk, plus [`OwnershipError::AmbiguousMap`] when two globs tie
 /// for a source file, and [`OwnershipError::InvalidModule`] at the map line of a module rule.
 pub fn scan_mapped(root: &Path, context: MapContext<'_>) -> Result<Ownership, OwnershipError> {
     let Discovered {

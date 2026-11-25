@@ -156,15 +156,7 @@ pub fn scan_ownership(
     contract_path: &Path,
     contract: &Contract,
 ) -> Result<Ownership, LintError> {
-    let context = ownership::MapContext {
-        contract: contract_path,
-        rules: &contract.maps,
-    };
-    Ok(if contract.maps.is_empty() {
-        ownership::scan(root)?
-    } else {
-        ownership::scan_mapped(root, context)?
-    })
+    Ok(ownership::Mechanism::of(contract_path, &contract.maps).scan(root)?)
 }
 
 /// Lints the repository at `root` against the contract named by `options`.
@@ -183,12 +175,7 @@ pub fn run(root: &Path, options: &LintOptions) -> Result<LintReport, LintError> 
 pub fn observe(root: &Path, options: &LintOptions) -> Result<Observation, LintError> {
     let contract = read_contract(root, &options.contract)?;
     let ownership = scan_ownership(root, &options.contract, &contract)?;
-    let context = ownership::MapContext {
-        contract: &options.contract,
-        rules: &contract.maps,
-    };
-    let uses_maps = !contract.maps.is_empty();
-    let mapper = ownership::Mapper::new(context);
+    let owners = ownership::Mechanism::of(&options.contract, &contract.maps).owners();
 
     // why: files of unsupported languages are skipped here, so only extractable sources are read.
     let files: BTreeMap<PathBuf, Language> = ownership
@@ -219,13 +206,7 @@ pub fn observe(root: &Path, options: &LintOptions) -> Result<Observation, LintEr
         &excluded,
         &facade::files(&contract, &ownership),
     )?;
-    let owner_of = |path: &Path| {
-        if uses_maps {
-            mapper.owner(path, &ownership.tag_dirs)
-        } else {
-            ownership::owner_in(&ownership.tag_dirs, path)
-        }
-    };
+    let owner_of = |path: &Path| owners.owner(path, &ownership.tag_dirs);
 
     // why: an alias to a build output has no file, so the edges are computed against an ownership
     // why: that also owns those target paths; the ownership reported stays the scanned one.

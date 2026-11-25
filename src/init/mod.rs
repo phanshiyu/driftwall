@@ -175,7 +175,7 @@ pub fn run(
     options: &InitOptions,
     write: &WriteOptions,
 ) -> Result<InitSummary, InitError> {
-    let ownership = ownership::scan(root)?;
+    let ownership = ownership::Mechanism::Tags.scan(root)?;
     // why: tagged files are known files too: they resolve as import targets and get edges.
     let files: BTreeMap<PathBuf, Language> = ownership
         .owners

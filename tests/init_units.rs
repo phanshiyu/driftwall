@@ -184,7 +184,9 @@ fn a_single_crate_gets_module_nodes_in_src_and_directory_nodes_elsewhere() {
 #[test]
 fn minified_and_vendored_files_are_excluded_and_counted() {
     let dir = repo(&single_crate());
-    let ownership = driftwall::ownership::scan(dir.path()).unwrap();
+    let ownership = driftwall::ownership::Mechanism::Tags
+        .scan(dir.path())
+        .unwrap();
     let listed = |reason| -> Vec<String> {
         ownership
             .excluded

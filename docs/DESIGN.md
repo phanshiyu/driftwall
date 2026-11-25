@@ -3082,7 +3082,9 @@ types (`Located`, `FileKind`, `Owner`, `Rule`, `WhereAnswer`) live in `model`, s
 them and `cli` never touches `ownership`. `cli` also calls `diagram` directly for `render`, which
 reads the contract alone.
 
-`markup` scans HTML and Svelte for script elements and is used by `ownership` (to tell an HTML
+`ownership` picks the mechanism of "One mechanism per repository" in one place, `Mechanism::of`
+(maps when the contract has a `%% map` line, `.arch` tags otherwise), and every caller scans,
+locates and assigns owners through it. `markup` scans HTML and Svelte for script elements and is used by `ownership` (to tell an HTML
 source file from an asset) and by `web`. `imports` is a facade: `%% exports imports` lists the six
 names other nodes may use, and the rest of `imports` is compiled for tests only or private.
 

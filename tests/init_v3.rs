@@ -421,7 +421,9 @@ fn generated_files_are_excluded_counted_and_do_not_break_the_baseline() {
         std::fs::create_dir_all(full.parent().unwrap()).unwrap();
         std::fs::write(full, contents).unwrap();
     }
-    let ownership = driftwall::ownership::scan(dir.path()).unwrap();
+    let ownership = driftwall::ownership::Mechanism::Tags
+        .scan(dir.path())
+        .unwrap();
     let generated: Vec<String> = ownership
         .excluded
         .get(&Exclusion::Generated)

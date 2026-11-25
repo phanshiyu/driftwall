@@ -261,7 +261,9 @@ fn without_the_edge_in_the_contract_each_sourced_file_is_an_undeclared_edge_at_i
 #[test]
 fn extensionless_scripts_are_source_and_other_extensionless_files_are_not() {
     let dir = repo(&files());
-    let ownership = driftwall::ownership::scan(dir.path()).unwrap();
+    let ownership = driftwall::ownership::Mechanism::Tags
+        .scan(dir.path())
+        .unwrap();
     let unmapped: Vec<String> = ownership
         .unmapped
         .iter()

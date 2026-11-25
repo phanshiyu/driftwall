@@ -10,6 +10,7 @@ mod language;
 mod locate;
 mod lookup;
 mod mapping;
+mod mechanism;
 mod module;
 
 #[cfg(test)]
@@ -31,9 +32,9 @@ pub use error::{ArchProblem, OwnershipError};
 pub use exclude::{HEADER_LINES, announces_generated, exclusion_of};
 pub use folded::{declares_nothing, is_entry_file, trivial_files};
 pub use language::{language_in, language_of};
-pub use locate::{locate, locate_mapped};
 pub use lookup::owner_in;
-pub use mapping::{MapContext, Mapper, scan_mapped};
+pub use mapping::MapContext;
+pub use mechanism::{Mechanism, OwnerRule};
 pub use module::{folds, is_test_file, module_name, peers_in};
 
 pub use crate::model::{DirTag, Scope, Tag};
@@ -132,7 +133,7 @@ impl Decision {
 /// # Errors
 /// Fails when the tree cannot be walked, a file cannot be read, a `.arch` file is invalid, or a
 /// `node: *` derives a name that is not a valid node id.
-pub fn scan(root: &Path) -> Result<Ownership, OwnershipError> {
+fn scan(root: &Path) -> Result<Ownership, OwnershipError> {
     let Discovered {
         sources,
         assets,
@@ -324,7 +325,7 @@ fn nearest_decision<'a>(
 /// Explains which node owns `file` and which `.arch` file decided it.
 ///
 /// A relative `file` is taken relative to `root`; an absolute one must lie inside it. The path
-/// need not exist or have a source extension. Unlike [`scan`], this reads only the `.arch`
+/// need not exist or have a source extension. Unlike [`Mechanism::scan`], this reads only the `.arch`
 /// files on the path from `file` up to `root`, so ignore files are not consulted and unrelated
 /// invalid `.arch` files elsewhere do not matter. Under `node: *` the node is derived from
 /// `file`'s position and the `.arch` file reported is the `node: *` one.

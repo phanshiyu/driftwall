@@ -49,7 +49,8 @@ fn lint_depends_on_the_other_engine_nodes() {
     for expected in [
         // why: `diagram/mod.rs` only re-exports `parse`, so lint depends on the file that defines it.
         "src/diagram/parse.rs",
-        "src/ownership/mod.rs",
+        // why: lint picks its ownership through `Mechanism`, defined in `ownership/mechanism.rs`.
+        "src/ownership/mechanism.rs",
         // why: `imports/mod.rs` only re-exports `collect_with_facades`, so lint depends on the file that defines it.
         "src/imports/collect.rs",
         "src/model/mod.rs",

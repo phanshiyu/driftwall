@@ -30,7 +30,7 @@ pub enum ArchProblem {
     UnrecognisedLine(String),
 }
 
-/// Errors from [`scan`](super::scan) and [`explain`](super::explain).
+/// Errors from [`Mechanism::scan`](super::Mechanism::scan) and [`explain`](super::explain).
 #[derive(Debug, Error)]
 pub enum OwnershipError {
     /// A file could not be read.
