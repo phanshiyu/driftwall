@@ -6,14 +6,16 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use tree_sitter::{Node, Parser, Query, QueryCursor, StreamingIterator};
 
-use super::literal::literal_text;
-use super::rust_paths::PathModules;
-use super::spec::{Grammar, LanguageSpec, Region};
-use super::statement::{self, Flags};
-use super::{
-    Environment, FileImports, ImportsError, PythonLayout, Reference, Resolution, SwiftModules,
-    Workspaces, spec,
-};
+use super::ecmascript;
+use super::language;
+use super::python::PythonLayout;
+use super::rust;
+use super::swift::SwiftModules;
+use super::syntax::literal::literal_text;
+use super::syntax::resolution::{Files, Reference, Resolution};
+use super::syntax::spec::{Grammar, LanguageSpec, Region};
+use super::syntax::statement::Flags;
+use super::{Environment, FileImports, ImportsError, spec};
 use crate::model::{
     ImportKind, Language, Location, PackageKind, PackageUse, ResolvedImport, SkipReason, Skipped,
     Symbol, UnresolvedImport,
@@ -50,21 +52,27 @@ pub fn extract(
         language,
         file,
         &Environment {
-            known,
-            assets: &BTreeSet::new(),
-            unowned: &BTreeSet::new(),
-            crates: &crates,
-            aliases: &aliases,
-            packages: &BTreeMap::new(),
-            workspaces: &Workspaces::default(),
-            projects: &BTreeMap::new(),
-            python: &python,
-            swift: &SwiftModules::default(),
-            vite_roots: &BTreeMap::new(),
-            vite_aliases: &BTreeMap::new(),
+            files: Files {
+                known,
+                assets: &BTreeSet::new(),
+                unowned: &BTreeSet::new(),
+            },
             test_files: &BTreeSet::new(),
-            rust_paths: &PathModules::default(),
-            rust_dependencies: &BTreeMap::new(),
+            ecmascript: ecmascript::Env {
+                aliases: &aliases,
+                packages: &BTreeMap::new(),
+                workspaces: &ecmascript::Workspaces::default(),
+                projects: &BTreeMap::new(),
+                vite_roots: &BTreeMap::new(),
+                vite_aliases: &BTreeMap::new(),
+            },
+            python: &python,
+            rust: rust::Env {
+                crates: &crates,
+                paths: &rust::PathModules::default(),
+                dependencies: &BTreeMap::new(),
+            },
+            swift: &SwiftModules::default(),
         },
     )
 }
@@ -80,7 +88,7 @@ pub fn extract_in(
     file: &Path,
     env: &Environment<'_>,
 ) -> Result<FileImports, ImportsError> {
-    let Some(spec) = spec::spec(language) else {
+    let Some(spec) = spec(language) else {
         return Ok(FileImports::default());
     };
     let scan = (spec.scan)(source, file);
@@ -94,7 +102,7 @@ pub fn extract_in(
                 file: file.to_path_buf(),
                 line: load.line,
             };
-            let resolution = (loads.resolve)(load, file, env);
+            let resolution = language::resolve_load(spec.language, load, file, env);
             found.record(resolution, &at, &load.specifier, (loads.flags)(file));
         }
     }
@@ -121,7 +129,7 @@ pub fn extract_in(
         resolved,
         unresolved: unresolved.into_iter().collect(),
         skipped: skipped.into_iter().collect(),
-        test_file: statement::test_file(language, file) || env.test_files.contains(file),
+        test_file: language::test_file(language, file) || env.test_files.contains(file),
         packages: packages.into_iter().collect(),
         reexports: false,
     })
@@ -155,7 +163,7 @@ fn found_in(
     };
 
     let name_capture = query.capture_index_for_name(NAME_CAPTURE);
-    let bindings = (spec.bindings)(tree.root_node(), source);
+    let scope = language::scope(spec.language, tree.root_node(), source);
 
     let mut cursor = QueryCursor::new();
     let mut matches = cursor.matches(&query, tree.root_node(), source.as_bytes());
@@ -189,9 +197,8 @@ fn found_in(
             names: &names,
             node,
             source,
-            bindings: &bindings,
         };
-        for resolution in (spec.resolve)(&reference, file, env) {
+        for resolution in language::resolve(spec.language, &reference, &scope, file, env) {
             found.record(resolution, &at, specifier, flags);
         }
     }
@@ -202,8 +209,8 @@ fn found_in(
                 line: doc.line,
             };
             let symbols = doc.member.map(|name| Symbol::Name(name.to_owned()));
-            let resolution =
-                (docs.resolve)(doc.specifier, file, env).using(symbols.into_iter().collect());
+            let resolution = language::resolve_doc(spec.language, doc.specifier, file, env)
+                .using(symbols.into_iter().collect());
             found.record(resolution, &at, doc.specifier, (docs.flags)(file));
         }
     }
@@ -342,7 +349,8 @@ fn compiled_query(grammar: &Grammar, text: &str) -> Result<Arc<Query>, ImportsEr
 
 #[cfg(test)]
 mod cache_key_tests {
-    use super::super::spec::{Scan, spec};
+    use crate::imports::spec::spec;
+    use crate::imports::syntax::spec::Scan;
     use crate::model::Language;
     use std::path::Path;
 

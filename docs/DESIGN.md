@@ -3069,6 +3069,27 @@ lands. `src/<node>/.arch` tags each module. `model` has no outbound edges. `repo
 `model` types. `lint` and `init` are the only modules that combine `diagram`, `ownership` and
 `imports`.
 
+`src/imports/` holds one directory per layer of reading code:
+
+- `src/imports/` itself is `imports`: `mod.rs` is the public API and only re-exports. `extract.rs`
+  parses a file and records what its language resolves, `language.rs` is the one place that
+  dispatches on the language, `collect.rs` reads a whole repository, builds the `Environment`
+  (`environment.rs`) and follows re-exports (`reexport.rs`). `file_imports.rs` and `error.rs` are
+  the result and error types. `spec.rs` is the table of language entries. The tests that run the
+  whole pipeline, which need every language at once, are in `scenarios/`.
+- `src/imports/syntax/` is `syntax`: what no language owns. The shape of a language entry
+  (`spec.rs`), the types a resolver receives and answers with (`resolution.rs`), the re-export
+  `Table`, the statement flags every language shares, the import queries, globs, string literals
+  and repository paths.
+- `src/imports/ecmascript/`, `python/`, `rust/`, `swift/` and `shell/` are one language each, with
+  its resolver, its statement rules, its grammar, what it reads from the repository (`tsconfig`,
+  `package.json` and Vite for ECMAScript, import roots for Python, `Cargo.toml` and `#[path]` for
+  Rust, SwiftPM targets for Swift) and its re-export table. `ecmascript/markup.rs` is the part
+  that reads Svelte and HTML through `src/markup/`.
+
+A language imports `syntax` and `model` and nothing else (ECMAScript also `markup`). It is handed
+the repository files and its own part of the `Environment`, and never sees another language.
+
 ## Enforcement over instructions
 
 Anything a tool can check is enforced by a tool and kept out of prose (`AGENTS.md`, the skill).

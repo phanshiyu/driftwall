@@ -4,7 +4,7 @@
 //! Resolution decides which file an import names. This second step reads the re-export tables of
 //! the files that were named: when a file re-exports a name from another repository file, the
 //! symbol is attributed to the file that defines it. Each language fills a [`Table`] from syntax
-//! alone (`reexport_rust`, `reexport_ecmascript`, `reexport_python`); the walk here is shared.
+//! alone (the `reexport` module of `rust`, `ecmascript` and `python`); the walk here is shared.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -12,29 +12,12 @@ use std::path::{Path, PathBuf};
 use rayon::prelude::*;
 use tree_sitter::{Parser, Tree};
 
-use super::{Environment, FileImports, spec};
+use super::syntax::table::Table;
+use super::{Environment, FileImports, ecmascript, python, rust, spec};
 use crate::model::{ImportKind, Language, Location, ResolvedImport, Symbol};
 
 /// The name a default export has.
 const DEFAULT: &str = "default";
-
-/// What one file defines and re-exports. Built from syntax alone.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct Table {
-    /// Name this file exports to the file and name it has there: `pub use x::Y as W;` is
-    /// `W` to (`x`'s file, `Y`).
-    pub names: BTreeMap<String, (PathBuf, String)>,
-    /// The files whose every name this file re-exports with a glob.
-    pub stars: Vec<PathBuf>,
-    /// The names the file defines itself.
-    pub local: BTreeSet<String>,
-    /// For Python, the names `__all__` lists, which decide what a glob of this file exports.
-    pub all: Option<BTreeSet<String>>,
-    /// For Python, whether a glob exports only the names that do not start with `_`.
-    pub public_only: bool,
-    /// The lines of the re-export statements, which keep their own edge.
-    pub lines: BTreeSet<u32>,
-}
 
 /// The files owned by a facade node, with that node's name, see "Facades" in "Re-exports". A file
 /// not in the map is in no facade node.
@@ -70,17 +53,17 @@ pub fn table(source: &str, language: Language, file: &Path, env: &Environment<'_
         return Table::default();
     };
     match language {
-        Language::Rust => super::reexport_rust::table(&tree, source, file, env),
+        Language::Rust => rust::reexport_table(&tree, source, file, &env.files, &env.rust),
         Language::TypeScript | Language::JavaScript => {
-            super::reexport_ecmascript::table(&tree, source, file, language, env)
+            ecmascript::reexport_table(&tree, source, file, &env.files, &env.ecmascript)
         }
-        Language::Python => super::reexport_python::table(&tree, source, file, env),
+        Language::Python => python::reexport_table(&tree, source, file, &env.files, env.python),
         _ => Table::default(),
     }
 }
 
 fn parse(source: &str, language: Language, file: &Path) -> Option<Tree> {
-    let spec = spec::spec(language)?;
+    let spec = spec(language)?;
     let scan = (spec.scan)(source, file);
     let region = scan.regions.first()?;
     let mut parser = Parser::new();
