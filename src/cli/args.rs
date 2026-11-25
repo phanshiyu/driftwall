@@ -199,6 +199,10 @@ pub enum LintFormat {
 }
 
 /// Arguments of `driftwall init`.
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "one bool per command-line flag; `mapping_output` turns them into a MappingOutput"
+)]
 #[derive(Debug, Args)]
 pub struct InitArgs {
     /// Repository root to baseline.

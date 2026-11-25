@@ -8,3 +8,8 @@ disallowed-types = [
   { path = "std::collections::HashMap", reason = "unordered iteration breaks deterministic output, use BTreeMap" },
   { path = "std::collections::HashSet", reason = "unordered iteration breaks deterministic output, use BTreeSet" },
 ]
+
+# why: three bools in one place are usually an unnamed state machine; name it with an enum, or
+# say with `#[expect(..., reason)]` why every combination is valid.
+max-struct-bools = 2
+max-fn-params-bools = 2

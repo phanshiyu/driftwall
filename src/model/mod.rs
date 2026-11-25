@@ -161,6 +161,10 @@ impl EdgeKind {
     /// The kind with the given restrictions: `planned` for a dotted arrow, `type_label` and
     /// `test_label` for the words of the label.
     #[must_use]
+    #[expect(
+        clippy::fn_params_excessive_bools,
+        reason = "three independent parts of an arrow; this is where they become one EdgeKind"
+    )]
     pub const fn from_parts(planned: bool, type_label: bool, test_label: bool) -> Self {
         match (planned, type_label, test_label) {
             (false, false, false) => Self::Implemented,

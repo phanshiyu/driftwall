@@ -47,6 +47,10 @@ pub struct Layer {
 }
 
 /// What the contract's rule directives say, as the overview presents them.
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "each bool is one independent directive of the contract; every combination is valid"
+)]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct RulesSummary {
     /// The chains of the `%% order` lines in file order, each with its boundaries top first.
