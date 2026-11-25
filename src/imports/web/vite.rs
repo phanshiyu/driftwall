@@ -11,11 +11,11 @@ use std::path::{Path, PathBuf};
 use tree_sitter::{Node, Parser};
 
 use super::spec::{JAVASCRIPT_GRAMMAR, TYPESCRIPT_GRAMMAR};
+use crate::code::Language;
 use crate::imports::syntax::literal::literal_text;
 use crate::imports::syntax::paths::directories;
 use crate::imports::syntax::paths::join_normalised;
 use crate::imports::syntax::spec::Grammar;
-use crate::model::Language;
 
 /// Vite config file names in the order Vite itself looks for them in one directory.
 pub(super) const CONFIG_FILES: [&str; 6] = [

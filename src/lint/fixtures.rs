@@ -3,10 +3,9 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
+use crate::code::{Location, Ownership, ResolvedImport, Symbol};
+use crate::contract::{Contract, Edge, EdgeKind, NodeId, NodeInfo};
 use crate::imports::FileImports;
-use crate::model::{
-    Contract, Edge, EdgeKind, Location, NodeId, NodeInfo, Ownership, ResolvedImport, Symbol,
-};
 
 pub fn node(raw: &str) -> NodeId {
     NodeId::new(raw).unwrap()

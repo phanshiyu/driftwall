@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
 use super::*;
-use crate::model::{Exclusion, Ownership};
+use crate::code::{Exclusion, Ownership};
 
 fn tree(files: &[(&str, &str)]) -> TempDir {
     let dir = tempfile::tempdir().unwrap();

@@ -5,12 +5,12 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use super::*;
+use crate::code::{ImportKind, ResolvedImport};
+use crate::contract::{Narrowing, NodeId, OpenAccess};
 use crate::diagram;
 use crate::imports::FileImports;
 use crate::lint::fixtures::at;
-use crate::model::{
-    ImportKind, Narrowing, NodeId, OpenAccess, ResolvedImport, Severity, Violation, ViolationKind,
-};
+use crate::results::{Severity, Violation, ViolationKind};
 
 /// Two features, `billing` (controller, service, view) and `search` (controller, service), and
 /// `shared` beside `features`. The `extra` lines start at line 16.

@@ -639,7 +639,7 @@ fn brief_on_this_repository_lists_its_own_nodes() {
     assert_eq!(code(&output), 0, "{}", stderr(&output));
     let out = stdout(&output);
     assert!(out.starts_with("driftwall: "), "{out}");
-    for node in ["cli", "lint", "model", "report"] {
+    for node in ["cli", "lint", "contract", "report"] {
         assert!(out.contains(&format!("\n  {node}: ")), "{node}: {out}");
     }
     assert!(out.contains("  cli --> lint ("), "{out}");
@@ -656,6 +656,6 @@ fn neighbors_lint_on_this_repository_shows_its_edges() {
     let out = stdout(&output);
     assert!(out.starts_with("node: lint\n"), "{out}");
     assert!(out.contains("dirs: src/lint/\n"), "{out}");
-    assert!(out.contains("  lint --> model ("), "{out}");
+    assert!(out.contains("  lint --> contract ("), "{out}");
     assert!(out.contains("  cli --> lint ("), "{out}");
 }

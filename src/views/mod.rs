@@ -1,7 +1,7 @@
 //! The read-only views of the architecture: `brief`, `neighbors`, `where` and the contract `diff`.
 //!
 //! Each view takes what [`lint`](crate::lint) observed, or the contract and ownership read
-//! directly, and returns a value of [`model`](crate::model) types for [`report`](crate::report) to
+//! directly, and returns a value of [`results`](crate::results) types for [`report`](crate::report) to
 //! render. Nothing here renders or prints.
 
 mod diff;

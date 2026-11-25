@@ -9,10 +9,10 @@ use std::path::{Path, PathBuf};
 
 use tree_sitter::Node;
 
+use crate::code::SkipReason;
 use crate::imports::syntax::glob;
 use crate::imports::syntax::paths::join_normalised;
 use crate::imports::syntax::resolution::{Files, Reference, Resolution};
-use crate::model::SkipReason;
 
 /// The variables that hold the path of the running script.
 const SCRIPT_VARIABLES: &[&str] = &["0", "BASH_SOURCE"];

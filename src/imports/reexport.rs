@@ -15,7 +15,7 @@ use tree_sitter::{Parser, Tree};
 use super::environment::Environment;
 use super::syntax::table::Table;
 use super::{FileImports, python, rust, spec, web};
-use crate::model::{ImportKind, Language, Location, ResolvedImport, Symbol};
+use crate::code::{ImportKind, Language, Location, ResolvedImport, Symbol};
 
 /// The name a default export has.
 const DEFAULT: &str = "default";

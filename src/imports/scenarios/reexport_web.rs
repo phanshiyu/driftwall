@@ -2,7 +2,7 @@
 
 use super::fixtures::repo;
 use super::reexport::{site, sites};
-use crate::model::ImportKind;
+use crate::code::ImportKind;
 
 const BARREL: &[(&str, &str)] = &[
     (

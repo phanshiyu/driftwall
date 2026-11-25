@@ -5,7 +5,7 @@ use std::fs;
 use tempfile::TempDir;
 
 use super::*;
-use crate::model::{Severity, Violation, ViolationKind};
+use crate::results::{Severity, Violation, ViolationKind};
 
 fn contract(arrow: &str) -> String {
     format!("flowchart LR\n  a[\"a\"]\n  b[\"b\"]\n  a {arrow} b\n")

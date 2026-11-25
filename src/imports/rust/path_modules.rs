@@ -14,8 +14,8 @@ use tree_sitter::{Node, Parser};
 use super::module::Site;
 use super::spec::GRAMMAR as RUST_GRAMMAR;
 use super::tree::enclosing_modules;
+use crate::code::Language;
 use crate::imports::syntax::paths::join_normalised;
-use crate::model::Language;
 
 /// Files that are the root of a module directory: the directory of the file is the directory of
 /// the module.

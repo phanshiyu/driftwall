@@ -10,8 +10,8 @@ use std::path::{Path, PathBuf};
 
 use toml::Table;
 
+use crate::code::Language;
 use crate::imports::syntax::paths::directories;
-use crate::model::Language;
 
 /// The file that lists a crate's dependencies.
 const MANIFEST_FILE: &str = "Cargo.toml";

@@ -6,10 +6,12 @@ use std::path::PathBuf;
 
 use serde::Serialize;
 
-use crate::model::{
-    BlindRef, BlindSpots, BlindSummary, BlindTally, BoundaryEdgeSummary, EdgeKind, EdgeStatus,
-    EdgeSummary, ImportKind, InterfaceEntry, Layer, MAX_SITES, NodeBudget, NodeSummary, NodeView,
-    Overview, PackageSummary, RulesSummary, Site, SkipReason, Symbol,
+use crate::code::{ImportKind, SkipReason, Symbol};
+use crate::contract::EdgeKind;
+use crate::results::{
+    BlindRef, BlindSpots, BlindSummary, BlindTally, BoundaryEdgeSummary, EdgeStatus, EdgeSummary,
+    InterfaceEntry, Layer, MAX_SITES, NodeBudget, NodeSummary, NodeView, Overview, PackageSummary,
+    RulesSummary, Site,
 };
 
 use super::ReportError;
@@ -192,7 +194,7 @@ fn boundary_edges_block(overview: &Overview) -> String {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct NodeViewOptions {
     /// List every import site of every edge instead of the first
-    /// [`MAX_SITES`](crate::model::MAX_SITES).
+    /// [`MAX_SITES`](crate::results::MAX_SITES).
     pub all_sites: bool,
     /// List the source files the node owns under the `files:` line.
     pub files: bool,
@@ -200,7 +202,7 @@ pub struct NodeViewOptions {
 
 /// Renders `view` as uncoloured text: the node, then its outgoing and incoming edges.
 ///
-/// Each edge has up to [`MAX_SITES`](crate::model::MAX_SITES) example import sites, or all of
+/// Each edge has up to [`MAX_SITES`](crate::results::MAX_SITES) example import sites, or all of
 /// them with `options.all_sites`. A declared surface is listed in full as `exports: ...` after the
 /// file count, and the files themselves follow the `files:` line with `options.files`. The text
 /// ends with the node's blind spots, one item per line.
@@ -556,7 +558,8 @@ fn dirs_str(dirs: &[PathBuf]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{Location, NodeId};
+    use crate::code::Location;
+    use crate::contract::NodeId;
     use serde_json::{Value, json};
     use std::collections::BTreeSet;
 
@@ -985,7 +988,7 @@ blind spots: none
     fn an_alias_to_a_build_output_is_a_property_of_the_edge() {
         let mut aliased = marked(2, &[]);
         for site in &mut aliased.sites {
-            site.via = Some(crate::model::Via::AliasToBuildOutput);
+            site.via = Some(crate::code::Via::AliasToBuildOutput);
         }
         assert_eq!(
             line_of(&aliased),

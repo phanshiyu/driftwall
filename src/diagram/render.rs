@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::model::{Contract, MapGlob, NodeId, NodeInfo, PackagePattern};
+use crate::contract::{Contract, MapGlob, NodeId, NodeInfo, PackagePattern};
 
 const PREAMBLE: [&str; 4] = [
     "%% driftwall architecture contract.",
@@ -174,8 +174,8 @@ fn sanitize(label: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::contract::{Edge, EdgeKind};
     use crate::diagram::parse;
-    use crate::model::{Edge, EdgeKind};
 
     fn id(raw: &str) -> NodeId {
         NodeId::new(raw).unwrap()

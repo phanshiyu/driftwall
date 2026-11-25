@@ -6,7 +6,7 @@ use std::path::Path;
 use super::fixtures::{at, imports, ownership};
 use super::*;
 use crate::diagram::parse;
-use crate::model::{Violation, ViolationKind};
+use crate::results::{Violation, ViolationKind};
 
 const LAYERS: [&str; 7] = [
     "app", "features", "shared", "core", "domain", "infra", "base",

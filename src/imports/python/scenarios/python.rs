@@ -3,7 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use super::*;
-use crate::model::Location;
+use crate::code::Location;
 
 fn known(paths: &[&str]) -> BTreeSet<PathBuf> {
     paths.iter().map(PathBuf::from).collect()

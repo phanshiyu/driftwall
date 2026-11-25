@@ -8,7 +8,9 @@ use super::OwnershipError;
 use super::locate::{locate, locate_mapped};
 use super::lookup::owner_in;
 use super::mapping::{MapContext, Mapper, scan_mapped};
-use crate::model::{DirTag, Located, MapRule, NodeId, Ownership};
+use crate::code::Located;
+use crate::code::{DirTag, Ownership};
+use crate::contract::{MapRule, NodeId};
 
 /// How the files of a repository get their owner.
 #[derive(Debug, Clone, Copy)]

@@ -5,7 +5,7 @@ use std::fs;
 use tempfile::TempDir;
 
 use super::*;
-use crate::model::{Severity, Violation, ViolationKind};
+use crate::results::{Severity, Violation, ViolationKind};
 
 const RUNTIME: &str = "import { y } from '../b/y';\n";
 const TYPES: &str = "import type { Y } from '../b/y';\n";

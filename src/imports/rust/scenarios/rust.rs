@@ -3,7 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use super::*;
-use crate::model::Location;
+use crate::code::Location;
 
 /// A library crate at `src/` with module files in both layouts, plus a nested binary crate.
 const REPO: &[&str] = &[

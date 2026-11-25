@@ -7,9 +7,9 @@ use std::path::{Path, PathBuf};
 
 use super::fixtures::repo;
 use super::*;
-use crate::model::ImportKind::{Embed, Runtime};
-use crate::model::SkipReason::{DynamicSpecifier, EmbedNonSource, UndeclaredPackage};
-use crate::model::{ImportKind, Language, SkipReason};
+use crate::code::ImportKind::{Embed, Runtime};
+use crate::code::SkipReason::{DynamicSpecifier, EmbedNonSource, UndeclaredPackage};
+use crate::code::{ImportKind, Language, SkipReason};
 
 fn known(paths: &[&str]) -> BTreeSet<PathBuf> {
     paths.iter().map(PathBuf::from).collect()

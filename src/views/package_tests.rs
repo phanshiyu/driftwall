@@ -4,7 +4,8 @@ use std::collections::BTreeMap;
 
 use super::fixtures::node;
 use super::with_packages;
-use crate::model::{BlindTally, NodeSummary, Overview, PackageKind, PackageSummary};
+use crate::code::PackageKind;
+use crate::results::{BlindTally, NodeSummary, Overview, PackageSummary};
 
 #[test]
 fn with_packages_fills_each_node_and_leaves_the_others_empty() {

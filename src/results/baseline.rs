@@ -9,7 +9,9 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 use thiserror::Error;
 
-use super::{LintReport, Location, Severity, Violation, ViolationKind};
+use crate::code::Location;
+
+use super::{LintReport, Severity, Violation, ViolationKind};
 
 /// Every kind a baseline can hold, in no particular order.
 const BASELINABLE: [ViolationKind; 20] = [
@@ -368,7 +370,7 @@ fn stale_entry(slot: &(String, String), entry: Entry, seen: usize, file: &Path) 
         )),
         test_only: false,
         key: String::new(),
-        site: crate::model::SiteDetail::default(),
+        site: crate::results::SiteDetail::default(),
     }
 }
 
@@ -385,7 +387,7 @@ mod tests {
             hint: None,
             test_only: false,
             key: key.to_owned(),
-            site: crate::model::SiteDetail::default(),
+            site: crate::results::SiteDetail::default(),
         }
     }
 

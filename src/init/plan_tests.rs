@@ -4,7 +4,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use super::*;
-use crate::model::{DirTag, Language, NodeId, Ownership, Prefix, Scope, Tag};
+use crate::code::{DirTag, Language, Ownership, Scope, Tag};
+use crate::contract::{NodeId, Prefix};
 
 fn files(paths: &[&str]) -> BTreeMap<PathBuf, Language> {
     paths
@@ -225,7 +226,7 @@ fn existing_of_labels_nodes_by_their_tag_directory() {
         PathBuf::from("ui"),
         dir_tag(Tag::Modules(Prefix::new("ui-").unwrap())),
     );
-    let at = |file: &str| crate::model::Location {
+    let at = |file: &str| crate::code::Location {
         file: PathBuf::from(file),
         line: 1,
     };

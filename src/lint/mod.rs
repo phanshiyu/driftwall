@@ -50,13 +50,12 @@ use std::path::{Path, PathBuf};
 
 use thiserror::Error;
 
+use crate::code::{Language, Ownership, PackageUse, Symbol};
+use crate::contract::{Contract, DEFAULT_CONTRACT, Edge, NodeId};
 use crate::diagram::{self, DiagramError};
 use crate::imports::{self, ImportsError};
-use crate::model::{
-    BlindSpots, Contract, DEFAULT_CONTRACT, Edge, InterfaceEntry, Language, LintReport, NodeBudget,
-    NodeId, Ownership, PackageSummary, PackageUse, Site, Symbol,
-};
 use crate::ownership::{self, OwnershipError};
+use crate::results::{BlindSpots, InterfaceEntry, LintReport, NodeBudget, PackageSummary, Site};
 
 pub use observe::{observed_edges, observed_symbols};
 pub use reconcile::{boundary_seen, reconcile};

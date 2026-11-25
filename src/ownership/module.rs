@@ -17,7 +17,7 @@ const INDEX_STEM: &str = "index";
 /// The raw node name `file` gets under a `node: *` tag in `dir`, or `None` when `file` is not
 /// inside `dir`. Both are repository-relative, and `dir` is empty for the repository root.
 ///
-/// `peers` are the non-test modules of `dir` (see [`peers_in`]). The name is not validated: callers check it with [`NodeId::new`](crate::model::NodeId::new).
+/// `peers` are the non-test modules of `dir` (see [`peers_in`]). The name is not validated: callers check it with [`NodeId::new`](crate::contract::NodeId::new).
 ///
 /// - A file in a subdirectory belongs to the node named after that first subdirectory, which is
 ///   also the node of a sibling module of the same name (`gitlab.rs` and `gitlab/x.rs`).

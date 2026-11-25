@@ -5,7 +5,9 @@ use std::fs;
 use tempfile::TempDir;
 
 use super::*;
-use crate::model::{Edge, NodeId, SkipReason, Via, ViolationKind};
+use crate::code::{SkipReason, Via};
+use crate::contract::{Edge, NodeId};
+use crate::results::ViolationKind;
 
 const CONTRACT: &str = "flowchart LR\n  player[\"player\"]\n  wasm[\"wasm\"]\n  player --> wasm\n";
 const CONFIG: &str = "import path from 'node:path';\nexport default { resolve: { alias: { 'mrc-wasm': path.resolve(__dirname, '../engine/wasm/pkg') } } };\n";

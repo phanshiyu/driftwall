@@ -3,8 +3,10 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use crate::model::{Contract, MapRule, MoveCause, Moved, NodeId, Ownership};
+use crate::code::Ownership;
+use crate::contract::{Contract, MapRule, NodeId};
 use crate::ownership;
+use crate::results::{MoveCause, Moved};
 
 use super::ViewsError;
 use crate::lint::{read_contract, scan_ownership};

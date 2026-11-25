@@ -1,7 +1,7 @@
 //! `%% deny` in the parser and the renderer: what parses, and every contract error.
 
 use super::*;
-use crate::model::{Denial, Endpoint, NodeId};
+use crate::contract::{Denial, Endpoint, NodeId};
 
 /// Lines 1 to 14: three layers, `ui` with two nodes, an open chain on line 15.
 const LAYERS: &str = "flowchart LR

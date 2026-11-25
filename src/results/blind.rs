@@ -9,7 +9,8 @@ use std::path::{Path, PathBuf};
 
 use serde::{Serialize, Serializer};
 
-use super::{Exclusion, Location, NodeId, Ownership, SkipReason, Skipped, UnresolvedImport};
+use crate::code::{Exclusion, Location, Ownership, SkipReason, Skipped, UnresolvedImport};
+use crate::contract::NodeId;
 
 /// A walked file the analysis does not use, and the node whose tags cover its path.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]

@@ -3,9 +3,11 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::code::{FileKind, Located, Owner, PackageUse};
+use crate::contract::DEFAULT_CONTRACT;
 use crate::lint::{self, LintOptions};
-use crate::model::{DEFAULT_CONTRACT, FileKind, Located, Owner, PackageUse, WhereAnswer};
 use crate::ownership;
+use crate::results::WhereAnswer;
 
 use super::ViewsError;
 

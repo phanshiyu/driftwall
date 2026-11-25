@@ -8,9 +8,9 @@ use tree_sitter::{Node, Tree};
 
 use super::layout::PythonLayout;
 use super::resolve::resolve;
+use crate::code::Symbol;
 use crate::imports::syntax::resolution::{Files, Reference, Resolution};
 use crate::imports::syntax::table::Table;
-use crate::model::Symbol;
 
 /// The table of `file`, whose parsed text is `source`.
 pub fn table(

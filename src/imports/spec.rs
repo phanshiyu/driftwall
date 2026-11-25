@@ -2,7 +2,7 @@
 
 use super::syntax::spec::LanguageSpec;
 use super::{python, rust, shell, swift, web};
-use crate::model::Language;
+use crate::code::Language;
 
 /// The table entry for `language`: every language has one.
 #[must_use]

@@ -3,7 +3,7 @@
 
 use std::process::Output;
 
-use driftwall::model::Exclusion;
+use driftwall::code::Exclusion;
 use tempfile::TempDir;
 
 // why: clippy's allow-*-in-tests covers only cfg(test) code, and these helpers are not #[test] fns.
@@ -42,7 +42,7 @@ mod support {
     }
 
     /// The parsed `architecture.mmd`.
-    pub fn contract(dir: &TempDir) -> driftwall::model::Contract {
+    pub fn contract(dir: &TempDir) -> driftwall::contract::Contract {
         driftwall::diagram::parse(&read(dir, "architecture.mmd")).unwrap()
     }
 

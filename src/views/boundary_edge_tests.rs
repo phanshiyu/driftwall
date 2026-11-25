@@ -6,11 +6,10 @@ use std::path::PathBuf;
 
 use super::fixtures::{at, node};
 use super::{contract_diff, overview};
+use crate::code::{ImportKind, Ownership, ResolvedImport};
+use crate::contract::{Contract, Edge, EdgeKind};
 use crate::diagram;
-use crate::model::{
-    BlindSpots, Contract, Edge, EdgeKind, ImportKind, LintReport, Overview, Ownership,
-    ResolvedImport, Site,
-};
+use crate::results::{BlindSpots, LintReport, Overview, Site};
 
 /// Two nodes in each of `ga` and `gb`.
 fn double(arrows: &str) -> Contract {
@@ -113,7 +112,7 @@ fn diff_reports_boundary_edges_by_their_ends() {
     let old = "flowchart LR\n  subgraph g[\"g\"]\n    a\n  end\n  subgraph h[\"h\"]\n    b\n  end\n  g --> h\n  h --> g\n  a --> h\n";
     let new = "flowchart LR\n  subgraph g[\"g\"]\n    a\n  end\n  subgraph h[\"h\"]\n    b\n  end\n  g -.-> h\n  g --> g\n  a --> h\n";
     let diff = contract_diff(old, new).unwrap();
-    let text = |ends: &crate::model::EdgeEnds| format!("{} {}", ends.from, ends.to);
+    let text = |ends: &crate::contract::EdgeEnds| format!("{} {}", ends.from, ends.to);
     assert_eq!(
         diff.added_boundary_edges
             .iter()

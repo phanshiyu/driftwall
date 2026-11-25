@@ -4,11 +4,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
+use crate::code::{Location, Ownership, PackageKind, PackageUse};
+use crate::contract::{Contract, NodeId, PackagePattern, PackageRule, PackageRuleKind};
 use crate::imports::FileImports;
-use crate::model::{
-    Contract, Location, NodeId, Ownership, PackageKind, PackagePattern, PackageRule,
-    PackageRuleKind, PackageSummary, PackageUse, Violation, ViolationKind,
-};
+use crate::results::{PackageSummary, Violation, ViolationKind};
 
 use super::observe::declared_owner;
 use super::rules::violation;

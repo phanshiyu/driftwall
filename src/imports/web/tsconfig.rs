@@ -47,8 +47,8 @@ use serde_json::Value;
 
 use super::alias::{AliasConfig, Pattern};
 use super::project::{self, Project};
+use crate::code::Language;
 use crate::imports::syntax::paths::{directories, join_normalised};
-use crate::model::Language;
 
 /// Config file names in the order they are looked for in one directory.
 const CONFIG_FILES: [&str; 2] = ["tsconfig.json", "jsconfig.json"];

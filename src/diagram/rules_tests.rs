@@ -1,7 +1,7 @@
 //! The rule directives of "Contract rules": what parses, and every contract error.
 
 use super::*;
-use crate::model::NodeId;
+use crate::contract::NodeId;
 
 const LAYERS: &str = "flowchart LR
   subgraph entry[\"Entry\"]

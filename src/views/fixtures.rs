@@ -2,7 +2,8 @@
 
 use std::path::PathBuf;
 
-use crate::model::{Contract, Edge, EdgeKind, Location, NodeId, NodeInfo, Ownership};
+use crate::code::{Location, Ownership};
+use crate::contract::{Contract, Edge, EdgeKind, NodeId, NodeInfo};
 
 pub fn node(raw: &str) -> NodeId {
     NodeId::new(raw).unwrap()

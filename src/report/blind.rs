@@ -5,7 +5,8 @@
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
-use crate::model::{BlindRef, BlindSpots, BlindSummary, BlindTally, SkipReason};
+use crate::code::SkipReason;
+use crate::results::{BlindRef, BlindSpots, BlindSummary, BlindTally};
 
 use super::common::{capped, plural, site_str, skip_reason_str, slash_path};
 
@@ -60,7 +61,7 @@ pub fn render_blind_note(summary: &BlindSummary) -> Option<String> {
 }
 
 /// The unread keys with their totals, most files first and then by name.
-fn unread_by_count(summary: &BlindSummary) -> Vec<(&String, &crate::model::UnreadTotal)> {
+fn unread_by_count(summary: &BlindSummary) -> Vec<(&String, &crate::results::UnreadTotal)> {
     let mut entries: Vec<_> = summary.unread.iter().collect();
     entries.sort_by(|a, b| b.1.count.cmp(&a.1.count).then_with(|| a.0.cmp(b.0)));
     entries
@@ -259,9 +260,9 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
-    use crate::model::{
-        BlindFile, Exclusion, Location, NodeId, SkipReason, UnreadGroup, UnreadTotal,
-    };
+    use crate::code::{Exclusion, Location, SkipReason};
+    use crate::contract::NodeId;
+    use crate::results::{BlindFile, UnreadGroup, UnreadTotal};
 
     fn summary(unread: &[(&str, usize, usize)]) -> BlindSummary {
         BlindSummary {

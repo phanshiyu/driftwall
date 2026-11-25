@@ -4,10 +4,11 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::code::{DirTag, SCOPE_HERE, Scope};
+use crate::contract::NodeId;
 use crate::diagram;
-use crate::model::{DirTag, NodeId, SCOPE_HERE, Scope};
 
-use crate::model::BlindSummary;
+use crate::results::BlindSummary;
 
 use super::maps::rules_of;
 use super::{InitError, InitPlan, InitSummary, MappingOutput, WriteOptions, present};

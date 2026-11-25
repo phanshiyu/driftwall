@@ -18,7 +18,7 @@ use super::web::{
     workspaces,
 };
 use super::{Facades, FileImports, ImportsError, reexport};
-use crate::model::Language;
+use crate::code::Language;
 
 /// A file's path, its imports and its re-export table when it may have one.
 type Collected = (PathBuf, FileImports, Option<Table>);

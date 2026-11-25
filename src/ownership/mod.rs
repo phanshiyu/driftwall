@@ -37,8 +37,9 @@ pub use mapping::MapContext;
 pub use mechanism::{Mechanism, OwnerRule};
 pub use module::{folds, is_test_file, module_name, peers_in};
 
-pub use crate::model::{DirTag, Scope, Tag};
-use crate::model::{Exclusion, Location, MapSite, ModelError, NodeId, Owner, Ownership, Rule};
+pub use crate::code::{DirTag, Scope, Tag};
+use crate::code::{Exclusion, Location, MapSite, Owner, Ownership, Rule};
+use crate::contract::{ModelError, NodeId};
 
 /// Name of the file that tags a directory with a node.
 const ARCH_FILE: &str = ".arch";
@@ -562,7 +563,7 @@ fn hidden_sources(root: &Path, seen: &Discovered) -> Result<BTreeSet<PathBuf>, O
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::Exclusion;
+    use crate::code::Exclusion;
     use tempfile::TempDir;
 
     fn tree(files: &[(&str, &str)]) -> TempDir {
@@ -762,7 +763,7 @@ mod tests {
             (
                 "# hi\nnode: 1bad\n",
                 2,
-                ArchProblem::InvalidId(crate::model::ModelError::InvalidNodeId("1bad".into())),
+                ArchProblem::InvalidId(crate::contract::ModelError::InvalidNodeId("1bad".into())),
             ),
             (
                 "node: a\nwat\n",

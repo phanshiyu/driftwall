@@ -34,12 +34,12 @@ use std::path::{Path, PathBuf};
 
 use thiserror::Error;
 
+use crate::code::{Language, PackageKind, SkipReason};
+use crate::contract::{DEFAULT_CONTRACT, NodeId};
 use crate::diagram::DiagramError;
 use crate::imports::{self, FileImports, ImportsError};
-use crate::model::{
-    BlindSpots, BlindSummary, DEFAULT_CONTRACT, Language, NodeId, PackageKind, SkipReason,
-};
 use crate::ownership::{self, OwnershipError};
+use crate::results::{BlindSpots, BlindSummary};
 
 pub use existing::Existing;
 pub use plan::{InitOptions, InitPlan, plan};

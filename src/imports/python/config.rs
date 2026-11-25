@@ -13,9 +13,9 @@ use std::path::{Path, PathBuf};
 use jsonc_parser::ParseOptions;
 use serde_json::Value as Json;
 
+use crate::code::Language;
 use crate::imports::syntax::paths::directories;
 use crate::imports::syntax::paths::join_normalised;
-use crate::model::Language;
 
 const PYPROJECT: &str = "pyproject.toml";
 const SETUP_CFG: &str = "setup.cfg";

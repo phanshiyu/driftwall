@@ -15,8 +15,8 @@ use std::path::{Path, PathBuf};
 use serde::Deserialize;
 use serde_json::Value;
 
+use crate::code::Language;
 use crate::imports::syntax::paths::directories;
-use crate::model::Language;
 
 /// The file that declares a package.
 pub(super) const MANIFEST_FILE: &str = "package.json";

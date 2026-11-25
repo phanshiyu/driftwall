@@ -4,7 +4,7 @@
 use std::path::Path;
 
 use super::statement::Flags;
-use crate::model::Language;
+use crate::code::Language;
 
 /// One tree-sitter grammar with a stable name that keys the compiled-query cache, and the query
 /// that captures the imports written in it.

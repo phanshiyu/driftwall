@@ -2,7 +2,7 @@
 
 use thiserror::Error;
 
-use crate::model::{Endpoint, ModelError, NodeId};
+use crate::contract::{Endpoint, ModelError, NodeId};
 
 /// A contract file used syntax outside the supported subset, or contradicted itself.
 ///

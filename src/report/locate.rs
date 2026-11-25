@@ -6,7 +6,9 @@ use std::path::Path;
 use serde::Serialize;
 
 use super::ReportError;
-use crate::model::{FileKind, Located, NodeId, Owner, PackageUse, Rule, WhereAnswer};
+use crate::code::{FileKind, Located, Owner, PackageUse, Rule};
+use crate::contract::NodeId;
+use crate::results::WhereAnswer;
 
 /// The one-line answer of `where`, then one line per package use of the file.
 #[must_use]
@@ -168,7 +170,7 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
-    use crate::model::{Exclusion, MapSite};
+    use crate::code::{Exclusion, MapSite};
 
     fn render_json(file: &str, located: &Located) -> Result<String, ReportError> {
         render_json_with(file, located, &[])

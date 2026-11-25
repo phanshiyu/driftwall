@@ -3,9 +3,9 @@
 use std::path::Path;
 
 use super::{jsdoc, markup, statement};
+use crate::code::Language;
 use crate::imports::syntax::queries;
 use crate::imports::syntax::spec::{Docs, Grammar, LanguageSpec, Loads, Scan, whole_file};
-use crate::model::Language;
 
 /// The grammar of TypeScript.
 pub static TYPESCRIPT_GRAMMAR: Grammar = Grammar {

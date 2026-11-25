@@ -6,7 +6,7 @@ use std::ffi::OsString;
 use std::path::{Component, Path, PathBuf};
 
 use super::ids::{RESERVED, sanitize};
-use crate::model::{NodeId, Prefix};
+use crate::contract::{NodeId, Prefix};
 use crate::ownership::{folds, is_test_file, module_name, peers_in};
 
 /// Label of the repository root directory.

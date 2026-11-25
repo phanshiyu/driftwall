@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
 use super::*;
-use crate::model::Language;
+use crate::code::Language;
 
 /// A repository on disk and what the scan would know about it.
 pub struct Repo {

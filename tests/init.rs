@@ -765,7 +765,7 @@ fn this_repository_baselines_clean_without_its_contract() {
         .filter(|rule| {
             rule.globs
                 .iter()
-                .filter_map(driftwall::model::MapGlob::directory)
+                .filter_map(driftwall::contract::MapGlob::directory)
                 .any(|dir| dir.components().count() == 2)
         })
         .map(|rule| rule.target.to_string())

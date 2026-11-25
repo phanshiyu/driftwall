@@ -4,7 +4,8 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use super::InitError;
-use crate::model::{DirTag, MapGlob, MapRule, MapTarget, Scope, Tag};
+use crate::code::{DirTag, Scope, Tag};
+use crate::contract::{MapGlob, MapRule, MapTarget};
 
 /// One rule per tag, sorted by directory. A tag on `d` is the glob `d/` (the whole subtree), or
 /// `d/*` with `scope: here`; at the root they are `./` and `*`. A `node: <prefix>*` tag on `d` is
@@ -56,7 +57,7 @@ mod tests {
     use std::collections::BTreeSet;
 
     use super::*;
-    use crate::model::{NodeId, Prefix};
+    use crate::contract::{NodeId, Prefix};
 
     fn tag(dir: &str, tag: Tag, scope: Scope) -> (PathBuf, DirTag) {
         (

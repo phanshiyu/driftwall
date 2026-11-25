@@ -2,7 +2,7 @@
 //! "Boundary edges", "Layer order" and "No cycles".
 
 use super::*;
-use crate::model::{Edge, EdgeKind, Endpoint, NodeId};
+use crate::contract::{Edge, EdgeKind, Endpoint, NodeId};
 
 /// Six feature nodes in `features`, four nodes in `core`, one in `ui`, and `solo` in none.
 const FIXTURE: &str = "flowchart LR
@@ -177,11 +177,11 @@ fn boundary_edges_survive_a_render_round_trip_and_render_the_same_every_time() {
         "{rendered}"
     );
     let again = parse(&rendered).unwrap();
-    let ends = |contract: &crate::model::Contract| -> Vec<_> {
+    let ends = |contract: &crate::contract::Contract| -> Vec<_> {
         contract
             .boundary_edges
             .iter()
-            .map(crate::model::BoundaryEdge::text)
+            .map(crate::contract::BoundaryEdge::text)
             .collect::<std::collections::BTreeSet<_>>()
             .into_iter()
             .collect()

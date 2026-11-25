@@ -6,7 +6,8 @@ use std::fs;
 use tempfile::TempDir;
 
 use super::*;
-use crate::model::{ImportKind, Location, SkipReason, ViolationKind};
+use crate::code::{ImportKind, Location, SkipReason};
+use crate::results::ViolationKind;
 
 const BOTH: &str = "flowchart LR\n  a[\"a\"]\n  b[\"b\"]\n  a --> b\n";
 

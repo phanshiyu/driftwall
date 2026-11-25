@@ -3,11 +3,14 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use crate::model::{
-    BlindSpots, BoundaryEdgeSummary, Contract, Cover, Declaration, Declared, DirTag, Edge,
-    EdgeKind, EdgeStatus, EdgeSummary, ImportKind, InterfaceEntry, LintReport, MapTarget,
-    Narrowing, NodeBudget, NodeId, NodeSummary, NodeView, OpenAccess, Overview, Ownership,
-    PackageSummary, Scope, Seen, Site, Symbol, Tag, ViaEdge, edge_status,
+use crate::code::{DirTag, ImportKind, Ownership, Scope, Symbol, Tag};
+use crate::contract::{
+    Contract, Cover, Declared, Edge, EdgeKind, MapTarget, Narrowing, NodeId, OpenAccess,
+};
+use crate::results::{
+    BlindSpots, BoundaryEdgeSummary, Declaration, EdgeStatus, EdgeSummary, InterfaceEntry,
+    LintReport, NodeBudget, NodeSummary, NodeView, Overview, PackageSummary, Seen, Site, ViaEdge,
+    edge_status,
 };
 
 use crate::lint::boundary_seen;
@@ -416,7 +419,9 @@ fn tagged_dir(arch_file: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{EdgeKind, NodeId, Severity, SkipReason, Skipped, Violation, ViolationKind};
+    use crate::code::{SkipReason, Skipped};
+    use crate::contract::{EdgeKind, NodeId};
+    use crate::results::{Severity, Violation, ViolationKind};
     use crate::views::fixtures::{at, contract, edge, node, ownership, with_surface};
 
     fn sites(file: &str, lines: &[u32]) -> Vec<Site> {
@@ -442,7 +447,7 @@ mod tests {
                     hint: None,
                     test_only: false,
                     key: String::new(),
-                    site: crate::model::SiteDetail::default(),
+                    site: crate::results::SiteDetail::default(),
                 })
                 .collect(),
         }
@@ -510,7 +515,7 @@ mod tests {
 
     #[test]
     fn a_module_path_is_the_directory_module_or_the_file_itself() {
-        let modules = Tag::Modules(crate::model::Prefix::default());
+        let modules = Tag::Modules(crate::contract::Prefix::default());
         let tags = module_tags(&[
             ("src", modules.clone(), Scope::Subtree),
             ("flat", modules.clone(), Scope::Here),
@@ -538,7 +543,7 @@ mod tests {
             .insert(PathBuf::from("src/app.min.js"), node("app"));
         own.tag_dirs = module_tags(&[(
             "src",
-            Tag::Modules(crate::model::Prefix::default()),
+            Tag::Modules(crate::contract::Prefix::default()),
             Scope::Subtree,
         )]);
         let view = overview(
@@ -588,7 +593,7 @@ mod tests {
         own.tag_dirs = module_tags(&[
             (
                 "src",
-                Tag::Modules(crate::model::Prefix::default()),
+                Tag::Modules(crate::contract::Prefix::default()),
                 Scope::Subtree,
             ),
             ("g", Tag::Node(node("group")), Scope::Here),

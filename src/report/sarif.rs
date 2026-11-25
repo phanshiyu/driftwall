@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 
 use serde_json::{Value, json};
 
-use crate::model::{BaselineOutcome, LintReport, Violation};
+use crate::results::{BaselineOutcome, LintReport, Violation};
 
 use super::ReportError;
 use super::common::{kind_str, severity_str, slash_path};
@@ -92,8 +92,8 @@ fn result(v: &Violation, suppressed: bool) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{Severity, ViolationKind};
     use crate::report::fixtures::{all_kinds, mixed, violation};
+    use crate::results::{Severity, ViolationKind};
 
     fn parse(report: &LintReport) -> Value {
         serde_json::from_str(&render_sarif(report).unwrap()).unwrap()

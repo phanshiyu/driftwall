@@ -1,7 +1,7 @@
 //! Rust re-exports followed to the defining file, see "Re-exports" in `docs/DESIGN.md`.
 
 use super::fixtures::repo;
-use crate::model::ImportKind;
+use crate::code::ImportKind;
 
 /// The (line, target, symbols) of every resolved import of `file`.
 pub(super) fn sites(files: &[(&str, &str)], file: &str) -> Vec<(u32, String, String)> {

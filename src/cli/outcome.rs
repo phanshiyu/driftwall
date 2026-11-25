@@ -1,6 +1,7 @@
 //! How a command ended, and the exit code each ending maps to (see docs/DESIGN.md).
 
-use driftwall::model::{ContractDiff, FileKind, LintReport, Located};
+use driftwall::code::{FileKind, Located};
+use driftwall::results::{ContractDiff, LintReport};
 
 /// The three ways a driftwall command can end.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -59,7 +60,9 @@ impl Outcome {
 
 #[cfg(test)]
 mod tests {
-    use driftwall::model::{NodeId, Owner, Rule, Severity, Violation, ViolationKind};
+    use driftwall::code::{Owner, Rule};
+    use driftwall::contract::NodeId;
+    use driftwall::results::{Severity, Violation, ViolationKind};
 
     use super::*;
 
@@ -75,7 +78,7 @@ mod tests {
                     hint: None,
                     test_only: false,
                     key: String::new(),
-                    site: driftwall::model::SiteDetail::default(),
+                    site: driftwall::results::SiteDetail::default(),
                 })
                 .collect(),
         }
@@ -143,7 +146,7 @@ mod tests {
         for kind in [
             FileKind::Asset,
             FileKind::Unread("swift".to_owned()),
-            FileKind::Excluded(driftwall::model::Exclusion::Vendored),
+            FileKind::Excluded(driftwall::code::Exclusion::Vendored),
             FileKind::Ignored,
             FileKind::Folded,
         ] {

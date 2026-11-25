@@ -4,11 +4,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
+use crate::code::{ImportKind, Ownership, ResolvedImport, SkipReason, Skipped, Symbol, Via};
+use crate::contract::{Contract, Edge, NodeId};
 use crate::imports::FileImports;
-use crate::model::{
-    Contract, Edge, ImportKind, NodeId, Ownership, ResolvedImport, Site, SkipReason, Skipped,
-    Symbol, Via,
-};
+use crate::results::Site;
 
 /// Every resolved import that crosses from one declared owner to another, with its edge.
 ///
@@ -188,8 +187,9 @@ pub(super) fn declared_owner<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::code::Location;
+    use crate::contract::EdgeKind;
     use crate::lint::fixtures::{at, contract, edge, imports, imports_using, node, ownership};
-    use crate::model::{EdgeKind, Location};
 
     fn places(sites: &[Site]) -> Vec<Location> {
         sites.iter().map(|site| site.at.clone()).collect()

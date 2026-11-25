@@ -8,8 +8,8 @@ use std::path::{Path, PathBuf};
 
 use super::package::SwiftTarget;
 use super::system::is_system;
+use crate::code::{PackageKind, Symbol};
 use crate::imports::syntax::resolution::{Files, Reference, Resolution};
-use crate::model::{PackageKind, Symbol};
 
 /// The extension of Swift source files.
 const SOURCE_EXTENSION: &str = "swift";

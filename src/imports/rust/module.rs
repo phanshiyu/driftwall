@@ -6,8 +6,8 @@ use std::path::{Component, Path, PathBuf};
 
 use super::env::Env;
 use super::path_modules::PathModules;
+use crate::code::Symbol;
 use crate::imports::syntax::resolution::Files;
-use crate::model::Symbol;
 
 /// Files that mark a directory as a crate root.
 const ROOT_FILES: [&str; 2] = ["lib.rs", "main.rs"];
@@ -25,7 +25,7 @@ pub enum Segment<'s> {
     Name(&'s str),
 }
 
-/// A path as written, with generic arguments already dropped, such as `crate::model::Edge`.
+/// A path as written, with generic arguments already dropped, such as `crate::contract::Edge`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WrittenPath<'s> {
     segments: Vec<Segment<'s>>,

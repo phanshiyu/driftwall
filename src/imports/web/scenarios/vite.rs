@@ -2,7 +2,7 @@
 //! nearest `package.json`, then the repository root; and a root-absolute path that finds nothing.
 
 use super::fixtures::{pairs, repo};
-use crate::model::SkipReason;
+use crate::code::SkipReason;
 
 const PAGE: &str = "<!doctype html>\n<script type=\"module\" src=\"/src/main.tsx\"></script>\n";
 

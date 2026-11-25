@@ -36,9 +36,9 @@ use super::env::Env;
 use super::module::{Site, WrittenPath};
 use super::scope::Bindings;
 use super::tree;
+use crate::code::{PackageKind, SkipReason, Symbol};
 use crate::imports::syntax::paths::join_normalised;
 use crate::imports::syntax::resolution::{Files, Reference, Resolution};
-use crate::model::{PackageKind, SkipReason, Symbol};
 
 /// The crates the Rust toolchain ships, which no manifest lists.
 const STDLIB_CRATES: [&str; 3] = ["std", "core", "alloc"];

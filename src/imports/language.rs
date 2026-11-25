@@ -7,7 +7,7 @@ use super::environment::Environment;
 use super::syntax::resolution::{Reference, Resolution};
 use super::syntax::spec::Load;
 use super::{python, rust, shell, swift, web};
-use crate::model::Language;
+use crate::code::Language;
 
 /// What a language collects once per file before its matches are resolved.
 pub enum Scope<'a> {

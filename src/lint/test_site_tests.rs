@@ -6,7 +6,7 @@ use std::fs;
 use tempfile::TempDir;
 
 use super::*;
-use crate::model::{Severity, Violation, ViolationKind};
+use crate::results::{Severity, Violation, ViolationKind};
 
 /// Repo with nodes `a` and `b` and `arrow` between them (none when empty); `a` has a production
 /// file and a test file, each present or not, both importing `b`.

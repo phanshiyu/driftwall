@@ -13,8 +13,8 @@ use super::vite::{
     CONFIG_FILES, MAX_ALIASES, Reader, Value, config_object, declared, object_of, option_value,
     parse,
 };
+use crate::code::Language;
 use crate::imports::syntax::literal::literal_text;
-use crate::model::Language;
 
 /// One alias of a Vite config: the specifier prefix it replaces and the repository path it stands
 /// for.

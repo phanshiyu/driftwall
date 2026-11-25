@@ -10,7 +10,7 @@ use super::{
     ARCH_FILE, Discovered, MapContext, OwnershipError, discover, explain, language_of,
     relative_to_root,
 };
-use crate::model::{FileKind, Located, Owner};
+use crate::code::{FileKind, Located, Owner};
 
 /// Says what `file` is (see [`FileKind`]) and who owns it, like [`explain`] for the owner.
 ///
@@ -137,7 +137,7 @@ fn kind_of(root: &Path, relative: &Path) -> Result<FileKind, OwnershipError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::Exclusion;
+    use crate::code::Exclusion;
 
     fn tree(files: &[(&str, &str)]) -> tempfile::TempDir {
         let dir = tempfile::tempdir().unwrap();

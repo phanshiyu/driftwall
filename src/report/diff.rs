@@ -6,9 +6,8 @@ use serde::Serialize;
 
 use std::fmt::Display;
 
-use crate::model::{
-    BoundaryMove, ContractDiff, DebtAdded, Edge, EdgeEnds, EdgeKind, MoveCause, Moved, NodeId,
-};
+use crate::contract::{Edge, EdgeEnds, EdgeKind, NodeId};
+use crate::results::{BoundaryMove, ContractDiff, DebtAdded, MoveCause, Moved};
 
 use super::ReportError;
 use super::common::{arrow, edge_kind_str};

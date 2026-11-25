@@ -4,8 +4,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use super::*;
+use crate::code::{Location, ResolvedImport, Scope};
 use crate::imports::FileImports;
-use crate::model::{Location, ResolvedImport, Scope};
 
 fn files(paths: &[&str]) -> BTreeMap<PathBuf, Language> {
     paths

@@ -2,7 +2,8 @@
 //! picture" in `docs/DESIGN.md`.
 
 use super::*;
-use crate::model::{Contract, PictureView};
+use crate::contract::Contract;
+use crate::results::PictureView;
 
 /// The picture with the labels as written.
 fn picture(contract: &Contract, view: &PictureView, source: &str) -> Result<String, PictureError> {
@@ -312,7 +313,7 @@ fn boundary_labels_are_kept_and_survive_a_render_round_trip() {
 const BLOCK: &str =
     "# Title\n\n<!-- driftwall render --depth 1 -->\nold\n<!-- driftwall render end -->\n\ntext\n";
 
-fn synced(markdown: &str) -> Result<crate::model::MarkdownSync, PictureError> {
+fn synced(markdown: &str) -> Result<crate::results::MarkdownSync, PictureError> {
     sync(markdown, &contract(&EDGES), "architecture.mmd")
 }
 

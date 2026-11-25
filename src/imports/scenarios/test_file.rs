@@ -3,8 +3,8 @@
 use std::path::Path;
 
 use super::fixtures::repo;
+use crate::code::Language;
 use crate::imports::language::test_file;
-use crate::model::Language;
 
 #[test]
 fn files_are_test_code_by_the_rules_of_their_language() {

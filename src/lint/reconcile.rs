@@ -3,11 +3,13 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use crate::code::{ImportKind, Location, Ownership, ResolvedImport, Symbol};
+use crate::contract::{
+    BoundaryEdge, Contract, Cover, Declared, Denial, Edge, EdgeKind, Narrowing, OpenAccess,
+};
 use crate::imports::FileImports;
-use crate::model::{
-    BoundaryEdge, Contract, Cover, Declaration, Declared, Denial, Edge, EdgeKind, EdgeStatus,
-    ImportKind, LintReport, Location, Narrowing, OpenAccess, Ownership, ResolvedImport, Seen,
-    Symbol, Violation, ViolationKind, edge_status, path_key,
+use crate::results::{
+    Declaration, EdgeStatus, LintReport, Seen, Violation, ViolationKind, edge_status, path_key,
 };
 
 use super::isolation;
@@ -590,7 +592,9 @@ fn declared(contract: &Contract, name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{NodeId, NodeInfo, ResolvedImport, Severity, UnresolvedImport, Violation};
+    use crate::code::{ResolvedImport, UnresolvedImport};
+    use crate::contract::{NodeId, NodeInfo};
+    use crate::results::{Severity, Violation};
 
     const CONTRACT_FILE: &str = "architecture.mmd";
 
@@ -1023,7 +1027,7 @@ mod tests {
             let mut used = imports(&[(MAIN, 1, LIB)]);
             for file in used.values_mut() {
                 for import in &mut file.resolved {
-                    import.kind = crate::model::ImportKind::Embed;
+                    import.kind = crate::code::ImportKind::Embed;
                 }
             }
             assert_eq!(lint(&c, &owners(), &used), Vec::new());

@@ -5,10 +5,11 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use super::*;
+use crate::code::{ImportKind, ResolvedImport};
 use crate::diagram;
 use crate::imports::FileImports;
 use crate::lint::fixtures::{at, node};
-use crate::model::{ImportKind, ResolvedImport, Severity, Violation, ViolationKind};
+use crate::results::{Severity, Violation, ViolationKind};
 
 /// `features` holds `billing` (with `invoices` inside it, three levels deep) and `search`; `shared`
 /// is beside it. Every node `n` owns the file `n/x.ts`.

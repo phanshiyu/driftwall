@@ -4,10 +4,10 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use crate::code::{ImportKind, Ownership, ResolvedImport, Symbol};
+use crate::contract::{Contract, NodeId};
 use crate::imports::FileImports;
-use crate::model::{
-    Contract, ImportKind, InterfaceEntry, NodeId, Ownership, ResolvedImport, Symbol,
-};
+use crate::results::InterfaceEntry;
 
 use super::observe::crossings;
 

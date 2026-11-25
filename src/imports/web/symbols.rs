@@ -5,8 +5,8 @@ use std::collections::BTreeSet;
 use tree_sitter::Node;
 
 use super::statement::in_type_position;
+use crate::code::Symbol;
 use crate::imports::syntax::literal::plain_string;
-use crate::model::Symbol;
 
 /// The exported name of a default import, as the module exports it.
 const DEFAULT: &str = "default";

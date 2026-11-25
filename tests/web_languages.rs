@@ -3,7 +3,7 @@
 //! reading sees.
 
 use driftwall::lint::{self, LintOptions};
-use driftwall::model::{Severity, ViolationKind};
+use driftwall::results::{Severity, ViolationKind};
 
 const APP: &str = "<script lang=\"ts\">
   import { store } from '../lib/store';

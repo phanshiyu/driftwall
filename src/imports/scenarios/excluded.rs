@@ -6,7 +6,7 @@ use std::fs;
 use tempfile::TempDir;
 
 use super::*;
-use crate::model::ImportKind;
+use crate::code::ImportKind;
 
 /// Writes `files`, and collects the imports of the source ones among them, with `excluded` known
 /// but not read.

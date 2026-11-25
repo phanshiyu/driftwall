@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use super::error::DiagramError;
 use super::parse::{edge_tail, split_ident, valid_id};
 use super::rules::not_a_boundary;
-use crate::model::{
+use crate::contract::{
     BoundaryEdge, EachArrow, EachRule, Endpoint, NodeId, NodeInfo, Template, child_of, children,
 };
 

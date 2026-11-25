@@ -3,7 +3,8 @@
 use std::path::Path;
 
 use super::error::{ArchProblem, OwnershipError};
-use crate::model::{Location, MODULES_MARK, ModelError, NodeId, Prefix, SCOPE_HERE, Scope, Tag};
+use crate::code::{Location, MODULES_MARK, SCOPE_HERE, Scope, Tag};
+use crate::contract::{ModelError, NodeId, Prefix};
 
 /// The tag a `.arch` file declares, with where it was written.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -83,7 +84,7 @@ pub fn parse(file: &Path, contents: &str) -> Result<ArchTag, OwnershipError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::ModelError;
+    use crate::contract::ModelError;
 
     fn problem_of(contents: &str) -> (u32, ArchProblem) {
         match parse(Path::new("x/.arch"), contents) {

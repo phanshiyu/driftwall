@@ -6,7 +6,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 
-use crate::model::{LintReport, Violation, ViolationKind};
+use crate::results::{LintReport, Violation, ViolationKind};
 
 use super::common::{kind_str, plural, severity_str, slash_path};
 

@@ -3,9 +3,9 @@
 
 use std::path::Path;
 
-use crate::model::{
-    Contract, Edge, ResolvedImport, Violation, ViolationKind, children, children_apart,
-};
+use crate::code::ResolvedImport;
+use crate::contract::{Contract, Edge, children, children_apart};
+use crate::results::{Violation, ViolationKind};
 
 use super::rules::{site_violation, violation};
 

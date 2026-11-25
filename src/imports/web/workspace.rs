@@ -14,10 +14,10 @@ use serde_json::{Map, Value};
 use super::alias::Candidate;
 use super::package::package_name;
 use super::subpath::Subpaths;
+use crate::code::Language;
 use crate::imports::syntax::glob;
 use crate::imports::syntax::paths::directories;
 use crate::imports::syntax::paths::join_normalised;
-use crate::model::Language;
 
 const MANIFEST_FILE: &str = "package.json";
 

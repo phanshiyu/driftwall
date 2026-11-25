@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
 use std::path::{Component, Path, PathBuf};
 
-use crate::model::NodeId;
+use crate::contract::NodeId;
 
 /// Words the contract format rejects as node ids.
 pub(super) const RESERVED: [&str; 3] = ["end", "flowchart", "subgraph"];

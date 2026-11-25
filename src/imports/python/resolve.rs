@@ -6,9 +6,9 @@ use std::path::{Component, Path, PathBuf};
 use super::call::module_of;
 use super::layout::PythonLayout;
 use super::stdlib::is_stdlib;
+use crate::code::{PackageKind, SkipReason, Symbol};
 use crate::imports::syntax::literal::literal_text;
 use crate::imports::syntax::resolution::{Files, Reference, Resolution};
-use crate::model::{PackageKind, SkipReason, Symbol};
 
 /// Callees whose second argument is the path of a Python file to load.
 const FILE_LOADERS: [&str; 2] = ["SourceFileLoader", "spec_from_file_location"];

@@ -2,7 +2,7 @@
 //! "Nested boundaries", "Layer order", "No cycles" and "Isolated boundaries".
 
 use super::*;
-use crate::model::{Edge, Endpoint, NodeId, children};
+use crate::contract::{Edge, Endpoint, NodeId, children};
 
 /// `features` holds `billing` (two nodes, one of them in `invoices`, three levels deep), `search`
 /// (one node) and `shell` written directly in it; `shared` is beside it.

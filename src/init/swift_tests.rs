@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use super::*;
-use crate::model::Language;
+use crate::code::Language;
 
 fn planned(paths: &[&str], units: &[Unit]) -> InitPlan {
     let files: BTreeMap<PathBuf, Language> = paths

@@ -53,7 +53,7 @@ fn lint_depends_on_the_other_engine_nodes() {
         "src/ownership/mechanism.rs",
         // why: `imports/mod.rs` only re-exports `collect_with_facades`, so lint depends on the file that defines it.
         "src/imports/collect.rs",
-        "src/model/mod.rs",
+        "src/contract/mod.rs",
     ] {
         assert!(deps.contains(expected), "missing {expected} in {deps:?}");
     }
@@ -104,38 +104,69 @@ fn the_binary_modules_reach_the_library_through_its_name() {
 }
 
 #[test]
-fn model_depends_on_no_other_node() {
+fn the_models_depend_only_downward() {
     let all = dogfood();
-    for (file, imports) in &all {
-        if node_of(file).as_deref() != Some("model") {
-            continue;
-        }
-        for import in &imports.resolved {
-            assert_eq!(
-                node_of(&import.target).as_deref(),
-                Some("model"),
-                "{} -> {}",
-                file.display(),
-                import.target.display()
-            );
+    for (model, allowed) in [
+        ("contract", &["contract"][..]),
+        ("code", &["code", "contract"]),
+        ("results", &["results", "code", "contract"]),
+    ] {
+        for (file, imports) in &all {
+            if node_of(file).as_deref() != Some(model) {
+                continue;
+            }
+            for import in &imports.resolved {
+                let target = node_of(&import.target);
+                assert!(
+                    target
+                        .as_deref()
+                        .is_some_and(|node| allowed.contains(&node)),
+                    "{} -> {}",
+                    file.display(),
+                    import.target.display()
+                );
+            }
         }
     }
-    // why: model/mod.rs declares and re-exports its submodules, baseline.rs, blind.rs, boundary.rs, located.rs, map.rs, moved.rs, open_order.rs, package_rule.rs, rules.rs and status.rs, and nothing else.
-    assert_eq!(
-        dependencies(&all, "src/model/mod.rs"),
-        BTreeSet::from([
-            "src/model/baseline.rs".to_owned(),
-            "src/model/blind.rs".to_owned(),
-            "src/model/boundary.rs".to_owned(),
-            "src/model/located.rs".to_owned(),
-            "src/model/map.rs".to_owned(),
-            "src/model/moved.rs".to_owned(),
-            "src/model/open_order.rs".to_owned(),
-            "src/model/package_rule.rs".to_owned(),
-            "src/model/rules.rs".to_owned(),
-            "src/model/status.rs".to_owned()
-        ])
-    );
+}
+
+#[test]
+fn each_model_entry_file_declares_and_re_exports_its_submodules_and_nothing_else() {
+    let all = dogfood();
+    for (model, submodules) in [
+        (
+            "contract",
+            &["boundary", "map", "open_order", "package_rule", "rules"][..],
+        ),
+        (
+            "code",
+            &["imports", "located", "ownership", "package", "skipped"],
+        ),
+        (
+            "results",
+            &[
+                "baseline",
+                "blind",
+                "diff",
+                "lint",
+                "moved",
+                "overview",
+                "picture",
+                "rules",
+                "status",
+                "where_answer",
+            ],
+        ),
+    ] {
+        assert_eq!(
+            dependencies(&all, &format!("src/{model}/mod.rs")),
+            submodules
+                .iter()
+                .map(|name| format!("src/{model}/{name}.rs"))
+                .collect::<BTreeSet<_>>(),
+            "{model}"
+        );
+    }
 }
 
 /// Every symbol `file` uses from `target`, across all of its import lines, as serialized.
@@ -195,7 +226,7 @@ fn a_module_import_group_is_a_dependency_that_uses_no_symbol() {
     // why: `use crate::{diff, locate, views};` binds three sibling modules and names no item of them.
     let all = dogfood();
     for target in ["src/cli/diff.rs", "src/cli/locate.rs", "src/cli/views.rs"] {
-        let imports: Vec<&crate::model::ResolvedImport> = all
+        let imports: Vec<&crate::code::ResolvedImport> = all
             .get(Path::new("src/cli/commands.rs"))
             .expect("file was collected")
             .resolved
@@ -206,7 +237,7 @@ fn a_module_import_group_is_a_dependency_that_uses_no_symbol() {
         assert!(
             imports
                 .iter()
-                .all(|import| !import.symbols.contains(&crate::model::Symbol::All)),
+                .all(|import| !import.symbols.contains(&crate::code::Symbol::All)),
             "{target}: {imports:?}"
         );
     }

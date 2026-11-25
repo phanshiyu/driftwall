@@ -4,7 +4,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use super::layout::{label_of, module_label};
-use crate::model::{DirTag, NodeId, Ownership, Tag};
+use crate::code::{DirTag, Ownership, Tag};
+use crate::contract::NodeId;
 
 /// What the existing `.arch` files decided. `init` plans only for files they do not cover.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

@@ -7,7 +7,8 @@ use std::path::Path;
 use tempfile::TempDir;
 
 use super::*;
-use crate::model::{Location, Severity, Violation, ViolationKind};
+use crate::code::Location;
+use crate::results::{Severity, Violation, ViolationKind};
 
 /// Writes `files` (relative path, contents) into a fresh temp directory.
 fn repo(files: &[(&str, &str)]) -> TempDir {

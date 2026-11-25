@@ -8,8 +8,8 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, anyhow, bail};
 use driftwall::init::{self, InitOptions, InitSummary, MappingOutput, WriteOptions};
 use driftwall::lint::{self, LintOptions};
-use driftwall::model::{Applied, Baseline, BlindSummary, LintReport};
 use driftwall::report;
+use driftwall::results::{Applied, Baseline, BlindSummary, LintReport};
 
 use crate::args::{BaselineMode, Command, InitArgs, LintArgs, LintFormat};
 use crate::outcome::Outcome;

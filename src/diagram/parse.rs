@@ -6,7 +6,7 @@ use super::each;
 use super::error::DiagramError;
 use super::label;
 use super::rules::{self, RuleParser};
-use crate::model::{
+use crate::contract::{
     BoundaryEdge, Contract, Edge, EdgeKind, Endpoint, MapGlob, MapRule, MapTarget, NodeId,
     NodeInfo, PackagePattern, PackageRule, PackageRuleKind, Prefix,
 };

@@ -2,7 +2,7 @@
 
 use super::fixtures::{Repo, repo};
 use super::*;
-use crate::model::{ImportKind, Symbol};
+use crate::code::{ImportKind, Symbol};
 
 /// A package with a library `AppCore`, two executables that depend on it and a test target.
 const MANIFEST: &str = r#"// swift-tools-version:5.9

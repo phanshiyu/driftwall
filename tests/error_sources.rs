@@ -17,15 +17,15 @@ mod witness {
     use std::io;
     use std::path::{Path, PathBuf};
 
+    use driftwall::code::{Location, MapSite};
+    use driftwall::contract::{Endpoint, GlobError, ModelError, NodeId};
     use driftwall::diagram::{DiagramError, PictureError};
     use driftwall::imports::ImportsError;
     use driftwall::init::InitError;
     use driftwall::lint::LintError;
-    use driftwall::model::{
-        BaselineError, Endpoint, GlobError, Location, MapSite, ModelError, NodeId,
-    };
     use driftwall::ownership::{ArchProblem, OwnershipError};
     use driftwall::report::ReportError;
+    use driftwall::results::BaselineError;
     use driftwall::views::ViewsError;
 
     /// An error enum with one sample per variant and a variant-name list the compiler keeps whole.

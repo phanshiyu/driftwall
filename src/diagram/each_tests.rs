@@ -2,7 +2,7 @@
 //! templates".
 
 use super::*;
-use crate::model::{EdgeKind, Endpoint, NodeId};
+use crate::contract::{EdgeKind, Endpoint, NodeId};
 
 /// `billing` has a controller, a service and a view; `search` has no view; `shell` is written
 /// directly in `features` and is not a child boundary.
@@ -226,7 +226,7 @@ fn templates_render_back_and_expansions_do_not() {
     assert_eq!(render(&again), rendered);
 }
 
-fn ends(contract: &crate::model::Contract) -> Vec<(String, String, EdgeKind)> {
+fn ends(contract: &crate::contract::Contract) -> Vec<(String, String, EdgeKind)> {
     contract
         .boundary_edges
         .iter()
@@ -263,7 +263,10 @@ fn a_fixed_boundary_end_expands_to_a_boundary_edge() {
         panic!("{:?}", contract.boundary_edges);
     };
     assert_eq!(edge.from.to_string(), "billing-view");
-    assert_eq!(edge.to, crate::model::Endpoint::Boundary("shared".into()));
+    assert_eq!(
+        edge.to,
+        crate::contract::Endpoint::Boundary("shared".into())
+    );
 }
 
 #[test]

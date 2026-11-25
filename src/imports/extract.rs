@@ -13,7 +13,7 @@ use super::syntax::resolution::{Reference, Resolution};
 use super::syntax::spec::{Grammar, LanguageSpec, Region};
 use super::syntax::statement::Flags;
 use super::{FileImports, ImportsError, spec};
-use crate::model::{
+use crate::code::{
     ImportKind, Language, Location, PackageKind, PackageUse, ResolvedImport, SkipReason, Skipped,
     Symbol, UnresolvedImport,
 };
@@ -350,9 +350,9 @@ fn compiled_query(grammar: &Grammar, text: &str) -> Result<Arc<Query>, ImportsEr
 
 #[cfg(test)]
 mod cache_key_tests {
+    use crate::code::Language;
     use crate::imports::spec::spec;
     use crate::imports::syntax::spec::Scan;
-    use crate::model::Language;
     use std::path::Path;
 
     #[test]

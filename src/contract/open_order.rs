@@ -164,7 +164,7 @@ impl Contract {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{BoundaryEdge, EdgeKind, NodeId, NodeInfo};
+    use crate::contract::{BoundaryEdge, EdgeKind, NodeId, NodeInfo};
 
     fn node(raw: &str) -> NodeId {
         NodeId::new(raw).unwrap()

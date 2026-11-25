@@ -251,15 +251,6 @@ impl PartialEq for MapRule {
 
 impl Eq for MapRule {}
 
-/// The rule and glob that decided a file's owner.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct MapSite {
-    /// Line of the `%% map` directive.
-    pub line: u32,
-    /// The glob as written.
-    pub glob: String,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

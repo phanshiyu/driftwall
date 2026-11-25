@@ -3,7 +3,7 @@
 use std::ffi::OsStr;
 use std::path::{Component, Path};
 
-use crate::model::Exclusion;
+use crate::code::Exclusion;
 
 /// Directory names whose whole subtree is vendored code.
 const VENDOR_DIRECTORIES: [&str; 2] = ["vendor", "third_party"];

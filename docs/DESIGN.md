@@ -281,7 +281,7 @@ strings.
 
 Every edge has one status, a function of what the contract declares for the pair and of what code
 does on it. `lint` reports the status as a finding, and `brief` and `neighbors` print and serialise
-the same status, from the same function (`edge_status` in the `model` module), so the two views
+the same status, from the same function (`edge_status` in the `results` module), so the two views
 cannot disagree.
 
 The declaration is one of: no edge (`none`), a pair a `%% deny` line covers (`denied`, see
@@ -3070,7 +3070,9 @@ unchanged. `init` prints the same note line after the line that says what it wro
 The contract for this repository is `architecture.mmd`, and `scripts/gate.sh` lints the repository
 against it on every commit. Its `%% map` lines say which directory each node owns; there are no
 `.arch` files. `cli` is the entry point (`src/cli/`, and `src/lib.rs`, which only declares the
-modules). `model` has no outbound edges. `report`, in its own `output` layer, only renders `model`
+modules). The shared types are three models: `contract` (what the contract says) depends on
+nothing, `code` (what was read from the repository) may use `contract`, and `results` (what the
+commands answer) may use both. `report`, in its own `output` layer, only renders `results`
 types: the lint report, the `brief` and `neighbors` views, the contract diff and the `where`
 answer, as text and JSON. `lint` is the check (reconcile, rules, layers, budgets, packages,
 facades) and the one scan of a repository (`observe`); `init` writes a first contract. `views`
@@ -3078,7 +3080,7 @@ facades) and the one scan of a repository (`observe`); `init` writes a first con
 view models, the contract `diff` with its file moves, and the data behind `where` (`views::locate`
 asks `ownership` what a path is and `lint` which packages a source file uses). `lint` and `init`
 are the only modules that combine `diagram`, `ownership` and `imports`. `where`'s result
-types (`Located`, `FileKind`, `Owner`, `Rule`, `WhereAnswer`) live in `model`, so `report` renders
+types (`Located`, `FileKind`, `Owner`, `Rule`, `WhereAnswer`) live in `results`, so `report` renders
 them and `cli` never touches `ownership`. `cli` also calls `diagram` directly for `render`, which
 reads the contract alone.
 
@@ -3108,7 +3110,7 @@ names other nodes may use, and the rest of `imports` is compiled for tests only 
   Rust, SwiftPM targets for Swift) and its re-export table. `web/markup.rs` is the part
   that reads Svelte and HTML through `src/markup/`.
 
-A language imports `syntax` and `model` and nothing else (`web` also `markup`). It is handed
+A language imports `syntax`, `contract` and `code` and nothing else (`web` also `markup`). It is handed
 the repository files and its own part of the `Environment`, and never sees another language.
 
 ## Enforcement over instructions

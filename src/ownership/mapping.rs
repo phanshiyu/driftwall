@@ -9,10 +9,8 @@ use super::{
     relative_to_root,
 };
 use super::{folds, module_name, trivial_files};
-use crate::model::{
-    DirTag, Location, MapGlob, MapRule, MapSite, MapTarget, NodeId, Ownership, Scope, Specificity,
-    Tag,
-};
+use crate::code::{DirTag, Location, MapSite, Ownership, Scope, Tag};
+use crate::contract::{MapGlob, MapRule, MapTarget, NodeId, Specificity};
 
 /// The contract's mapping: where it is, for messages, and its rules.
 #[derive(Debug, Clone, Copy)]
@@ -281,7 +279,7 @@ mod tests {
     use std::fs;
 
     use super::*;
-    use crate::model::{MapGlob, Prefix};
+    use crate::contract::{MapGlob, Prefix};
 
     /// The rules of the `%% map` lines in `text`, as the contract parser reads them.
     fn rules_in(text: &str) -> Vec<MapRule> {

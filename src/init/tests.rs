@@ -6,9 +6,10 @@ use std::fs;
 use tempfile::TempDir;
 
 use super::*;
+use crate::code::Tag;
+use crate::code::{Location, ResolvedImport};
+use crate::contract::{Edge, EdgeKind, NodeId};
 use crate::imports::FileImports;
-use crate::model::Tag;
-use crate::model::{Edge, EdgeKind, Location, NodeId, ResolvedImport};
 
 fn files(paths: &[&str]) -> BTreeMap<PathBuf, Language> {
     paths

@@ -9,8 +9,8 @@ use std::path::{Component, Path, PathBuf};
 use serde::Deserialize;
 use serde::de::IgnoredAny;
 
+use crate::code::Language;
 use crate::imports;
-use crate::model::Language;
 
 const CARGO_MANIFEST: &str = "Cargo.toml";
 /// File names that make a directory a JavaScript unit.

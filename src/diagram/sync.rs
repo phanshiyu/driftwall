@@ -2,7 +2,8 @@
 //! `driftwall render --update FILE.md` and `--check FILE.md`.
 
 use super::picture::{PictureError, picture};
-use crate::model::{Contract, MarkdownSync, PictureView};
+use crate::contract::Contract;
+use crate::results::{MarkdownSync, PictureView};
 
 const START: &str = "<!-- driftwall render";
 const END: &str = "<!-- driftwall render end -->";

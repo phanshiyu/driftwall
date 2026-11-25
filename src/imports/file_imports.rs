@@ -1,6 +1,6 @@
 //! The imports found in one file.
 
-use crate::model::{PackageUse, ResolvedImport, Skipped, UnresolvedImport};
+use crate::code::{PackageUse, ResolvedImport, Skipped, UnresolvedImport};
 
 /// The imports found in one file. Every list is sorted and free of duplicates.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

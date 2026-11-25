@@ -3,7 +3,10 @@
 
 use serde::Serialize;
 
-use super::{EdgeKind, ImportKind, ViolationKind};
+use crate::code::ImportKind;
+use crate::contract::EdgeKind;
+
+use super::ViolationKind;
 
 /// What the contract declares for a pair of nodes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

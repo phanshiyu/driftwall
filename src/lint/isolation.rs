@@ -4,8 +4,9 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
+use crate::contract::Contract;
 use crate::imports::FileImports;
-use crate::model::{Contract, Violation, ViolationKind, path_key};
+use crate::results::{Violation, ViolationKind, path_key};
 
 use super::rules::violation;
 
@@ -53,8 +54,8 @@ pub(super) fn findings(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::code::ResolvedImport;
     use crate::lint::fixtures::at;
-    use crate::model::ResolvedImport;
 
     fn isolated() -> Contract {
         let mut contract = Contract::default();
@@ -95,7 +96,7 @@ mod tests {
         let found = found(&isolated(), &FILES, &[("a/y.ts", "a/x.test.ts", false)]);
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].kind, ViolationKind::ProductionImportsTest);
-        assert_eq!(found[0].severity, crate::model::Severity::Error);
+        assert_eq!(found[0].severity, crate::results::Severity::Error);
         assert_eq!(found[0].at, Some(at("a/y.ts", 4)));
         assert!(
             found[0]

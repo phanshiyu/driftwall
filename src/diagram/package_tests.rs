@@ -1,7 +1,7 @@
 //! The `%% packages` and `%% forbid-packages` directives, see "Package rules" in `docs/DESIGN.md`.
 
 use super::*;
-use crate::model::{NodeId, PackagePattern, PackageRuleKind};
+use crate::contract::{NodeId, PackagePattern, PackageRuleKind};
 
 fn id(raw: &str) -> NodeId {
     NodeId::new(raw).unwrap()

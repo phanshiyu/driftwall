@@ -6,7 +6,7 @@ use std::path::{Component, Path, PathBuf};
 use super::ids::sanitize;
 use super::layout::{Counted, Draft, Owner};
 use super::units::{CRATE_SOURCE, Unit, UnitKind};
-use crate::model::Prefix;
+use crate::contract::Prefix;
 
 /// Lets the units of the repository decide the files in `fresh` they cover, and returns the files
 /// nobody decided yet.

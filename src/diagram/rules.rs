@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use super::cycles::find_cycle;
 use super::each;
 use super::error::DiagramError;
-use crate::model::{
+use crate::contract::{
     BoundaryEdge, Budget, Contract, Denial, EachArrow, EachRule, Edge, EdgeKind, Endpoint,
     LayerOrder, Narrowing, NodeId, NodeInfo, OpenAccess, Rules, children_apart,
 };

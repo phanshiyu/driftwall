@@ -4,8 +4,8 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
+use crate::code::Language;
 use crate::imports::*;
-use crate::model::Language;
 
 pub(super) mod fixtures;
 

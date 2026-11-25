@@ -42,7 +42,7 @@ mod package_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{Contract, NodeId};
+    use crate::contract::{Contract, NodeId};
 
     const OWN_CONTRACT: &str = include_str!("../../architecture.mmd");
 
@@ -53,7 +53,10 @@ mod tests {
     #[test]
     fn repository_contract_parses() {
         let contract = parse(OWN_CONTRACT).unwrap();
-        assert_eq!(boundary_of(&contract, "model").as_deref(), Some("shared"));
+        assert_eq!(
+            boundary_of(&contract, "contract").as_deref(),
+            Some("shared")
+        );
         assert!(!contract.edges.is_empty());
     }
 
@@ -67,7 +70,8 @@ mod tests {
 
     #[test]
     fn a_contract_with_exports_survives_a_render_round_trip() {
-        let src = format!("{OWN_CONTRACT}%% exports model: Edge, NodeId\n%% exports lint: run\n");
+        let src =
+            format!("{OWN_CONTRACT}%% exports contract: Edge, NodeId\n%% exports lint: run\n");
         let contract = parse(&src).unwrap();
         let own = parse(OWN_CONTRACT).unwrap().surfaces.len();
         assert_eq!(contract.surfaces.len(), own + 2);

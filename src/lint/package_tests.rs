@@ -5,9 +5,10 @@ use std::path::{Path, PathBuf};
 
 use super::fixtures::{at, contract, node, ownership};
 use super::*;
+use crate::code::{PackageKind, PackageUse};
 use crate::diagram;
 use crate::imports::FileImports;
-use crate::model::{PackageKind, PackageUse, Severity, Violation, ViolationKind};
+use crate::results::{Severity, Violation, ViolationKind};
 
 const CONTRACT_FILE: &str = "architecture.mmd";
 

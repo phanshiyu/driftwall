@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
-use crate::model::{LintReport, Severity, Violation, ViolationKind};
 use crate::report::fixtures::violation;
 use crate::report::render_text;
+use crate::results::{LintReport, Severity, Violation, ViolationKind};
 
 const HINT: &str = "fix it";
 

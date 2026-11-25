@@ -1,6 +1,6 @@
 //! Renders reports as text, JSON and SARIF.
 //!
-//! Every renderer is a pure function over [`LintReport`](crate::model::LintReport) that returns
+//! Every renderer is a pure function over [`LintReport`](crate::results::LintReport) that returns
 //! a string. Nothing here prints: the CLI owns all output.
 
 mod blind;

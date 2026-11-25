@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use super::fixtures::{pairs, repo};
 use super::*;
-use crate::model::{ImportKind, Language, Symbol};
+use crate::code::{ImportKind, Language, Symbol};
 
 fn kinds(imports: &FileImports) -> Vec<(u32, String, ImportKind, bool)> {
     imports

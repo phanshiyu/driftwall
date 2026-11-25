@@ -2,8 +2,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::contract::{Contract, Edge, EdgeEnds, EdgeKind, NodeId};
 use crate::diagram;
-use crate::model::{BoundaryMove, Contract, ContractDiff, Edge, EdgeEnds, EdgeKind, NodeId};
+use crate::results::{BoundaryMove, ContractDiff};
 
 use super::ViewsError;
 
@@ -131,7 +132,7 @@ fn rule_lines(contract: &Contract) -> BTreeSet<String> {
 
 /// The nodes both contracts declare that sit in different boundaries, sorted by node.
 fn boundary_moves(old: &Contract, new: &Contract) -> Vec<BoundaryMove> {
-    let chain = |info: &crate::model::NodeInfo| {
+    let chain = |info: &crate::contract::NodeInfo| {
         let boundaries: Vec<&str> = info.boundaries().collect();
         (!boundaries.is_empty()).then(|| boundaries.join("/"))
     };

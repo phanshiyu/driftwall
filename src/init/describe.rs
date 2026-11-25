@@ -6,7 +6,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use super::units::Unit;
-use crate::model::{DirTag, Language, NodeId, Scope, Tag};
+use crate::code::{DirTag, Language, Scope, Tag};
+use crate::contract::NodeId;
 
 /// The longest description, in characters.
 const MAX_CHARS: usize = 60;

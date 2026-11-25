@@ -2,7 +2,7 @@
 
 use super::fixtures::repo;
 use super::*;
-use crate::model::{ImportKind, SkipReason};
+use crate::code::{ImportKind, SkipReason};
 
 fn summary(imports: &FileImports) -> Vec<(u32, String, ImportKind)> {
     imports

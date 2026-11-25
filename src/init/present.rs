@@ -4,7 +4,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::model::{Contract, Edge, EdgeKind, MapGlob, NodeId};
+use crate::contract::{Contract, Edge, EdgeKind, MapGlob, NodeId};
 
 const PREAMBLE: [&str; 4] = [
     "%% driftwall architecture contract.",
@@ -296,8 +296,8 @@ fn sanitize(label: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::contract::{EdgeKind, NodeInfo};
     use crate::diagram::parse;
-    use crate::model::{EdgeKind, NodeInfo};
 
     fn id(raw: &str) -> NodeId {
         NodeId::new(raw).unwrap()
@@ -436,9 +436,9 @@ mod tests {
     #[test]
     fn map_lines_follow_the_drawing_and_keep_boundaries_and_labels() {
         let mut c = contract(&[("a", Some("g")), ("b", Some("g"))], &[("a", "b")]);
-        c.maps.push(crate::model::MapRule {
+        c.maps.push(crate::contract::MapRule {
             line: 0,
-            target: crate::model::MapTarget::Node(id("a")),
+            target: crate::contract::MapTarget::Node(id("a")),
             globs: vec![MapGlob::parse("src/a/").unwrap()],
         });
         let text = render(&c, &BTreeMap::new());

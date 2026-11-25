@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use super::*;
-use crate::model::ImportKind;
+use crate::code::ImportKind;
 
 fn known(paths: &[&str]) -> BTreeSet<PathBuf> {
     paths.iter().map(PathBuf::from).collect()
@@ -144,7 +144,7 @@ fn an_unresolvable_relative_type_import_is_unresolved_and_a_package_is_skipped()
             .iter()
             .map(|s| (s.at.line, s.specifier.as_str(), s.reason))
             .collect::<Vec<_>>(),
-        [(3, "left-pad", crate::model::SkipReason::UndeclaredPackage)]
+        [(3, "left-pad", crate::code::SkipReason::UndeclaredPackage)]
     );
 }
 

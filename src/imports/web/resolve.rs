@@ -9,10 +9,10 @@ use super::env::Env;
 use super::package::{is_builtin, package_name};
 use super::project::Project;
 use super::symbols;
+use crate::code::{PackageKind, SkipReason};
 use crate::imports::syntax::literal::literal_text;
 use crate::imports::syntax::paths::join_normalised;
 use crate::imports::syntax::resolution::{Files, Reference, Resolution};
-use crate::model::{PackageKind, SkipReason};
 
 /// Extensions tried, in order, for extension probing and directory index files. Declaration files
 /// come after the TypeScript files of their kind. `svelte` is last so that no specifier that

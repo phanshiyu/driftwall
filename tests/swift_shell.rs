@@ -3,7 +3,7 @@
 //! languages express must show up as edges, and `init` must baseline them.
 
 use driftwall::lint::{self, LintOptions};
-use driftwall::model::ViolationKind;
+use driftwall::results::ViolationKind;
 
 const PACKAGE: &str = "// swift-tools-version:5.9
 import PackageDescription

@@ -12,12 +12,12 @@ use super::env::Env;
 use super::package::MANIFEST_FILE;
 use super::spec::{JAVASCRIPT_GRAMMAR, TYPESCRIPT_GRAMMAR};
 use super::{resolve, symbols};
+use crate::code::SkipReason;
 use crate::imports::syntax::literal::literal_text;
 use crate::imports::syntax::paths;
 use crate::imports::syntax::resolution::{Files, Reference, Resolution};
 use crate::imports::syntax::spec::{Grammar, Load, Region, Scan};
 use crate::markup::{self, Tag};
-use crate::model::SkipReason;
 
 /// The values of a script's `type` that make it JavaScript, besides no `type` at all.
 const SCRIPT_TYPES: [&str; 3] = ["module", "text/javascript", "application/javascript"];

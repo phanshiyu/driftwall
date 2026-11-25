@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use super::*;
-use crate::model::{Language, Scope};
+use crate::code::{Language, Scope};
 
 fn many(dir: &str, count: usize) -> Vec<String> {
     (0..count).map(|n| format!("{dir}/f{n}.ts")).collect()

@@ -3,7 +3,7 @@
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
-use crate::model::{PackageKind, SkipReason, Symbol};
+use crate::code::{PackageKind, SkipReason, Symbol};
 
 /// The repository files every resolver may consult.
 #[derive(Debug, Clone, Copy)]
@@ -61,7 +61,7 @@ pub enum Resolution {
     /// An import of code outside the repository: a declared third party package, a builtin, the
     /// standard library.
     Package {
-        /// The package, see [`PackageUse::name`](crate::model::PackageUse::name).
+        /// The package, see [`PackageUse::name`](crate::code::PackageUse::name).
         name: String,
         /// Third party or standard library.
         kind: PackageKind,
@@ -69,7 +69,7 @@ pub enum Resolution {
     /// An import of a third party package nothing declares, so a package use and also the skipped
     /// reference [`SkipReason::UndeclaredPackage`].
     UndeclaredPackage {
-        /// The package, see [`PackageUse::name`](crate::model::PackageUse::name).
+        /// The package, see [`PackageUse::name`](crate::code::PackageUse::name).
         name: String,
         /// The explanation of the skipped reference, when it has one.
         message: Option<String>,

@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 
 use super::fixtures::{Repo, pairs, repo};
 use super::*;
-use crate::model::{ImportKind, Symbol};
+use crate::code::{ImportKind, Symbol};
 
 fn kinds(imports: &FileImports) -> Vec<(u32, String, ImportKind)> {
     imports

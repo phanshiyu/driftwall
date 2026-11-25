@@ -4,8 +4,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use driftwall::model::{Baseline, DEFAULT_CONTRACT, DebtAdded, Moved};
+use driftwall::contract::DEFAULT_CONTRACT;
 use driftwall::report;
+use driftwall::results::{Baseline, DebtAdded, Moved};
 use driftwall::views::{self, EMPTY_CONTRACT};
 use tempfile::TempDir;
 

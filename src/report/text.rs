@@ -2,7 +2,7 @@
 
 use std::fmt::Write as _;
 
-use crate::model::{BaselineOutcome, LintReport};
+use crate::results::{BaselineOutcome, LintReport};
 
 use super::common::{counts, plural};
 use super::group::{Printed, write_blocks};
@@ -52,8 +52,8 @@ fn summary(report: &LintReport, printed: Printed, baselined: Option<usize>) -> S
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{Severity, ViolationKind};
     use crate::report::fixtures::{all_kinds, mixed, violation};
+    use crate::results::{Severity, ViolationKind};
 
     #[test]
     fn mixed_report_renders_exact_text() {

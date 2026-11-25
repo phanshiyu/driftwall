@@ -5,9 +5,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use super::*;
+use crate::code::Language;
 use crate::imports::syntax::paths::directories;
 use crate::imports::web::{MAX_EXTENDS_DEPTH, discover};
-use crate::model::Language;
 
 const NONE: [&str; 0] = [];
 

@@ -1,7 +1,7 @@
 //! Vite `resolve.alias` through [`collect`] on repositories written to disk.
 
 use super::fixtures::{pairs, repo};
-use crate::model::SkipReason;
+use crate::code::SkipReason;
 
 const OBJECT_CONFIG: &str = "import path from 'node:path';\nexport default defineConfig({\n  resolve: {\n    alias: {\n      'mrc-wasm': path.resolve(__dirname, 'engine/wasm/pkg'),\n      '@': './src',\n    },\n  },\n});\n";
 

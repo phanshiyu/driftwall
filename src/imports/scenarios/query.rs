@@ -4,7 +4,7 @@
 use std::collections::BTreeSet;
 
 use super::fixtures::repo;
-use crate::model::{ImportKind, Symbol};
+use crate::code::{ImportKind, Symbol};
 
 fn kind_of(specifier: &str) -> ImportKind {
     let r = repo(&[

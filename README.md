@@ -269,7 +269,9 @@ flowchart LR
   end
 
   subgraph shared["Shared"]
-    model["model: ids, edges, violations"]
+    code["code: what was read from the repository: imports, owners, files"]
+    contract["contract: what the contract says: nodes, edges, rules, maps"]
+    results["results: what the commands answer: findings, views, baselines"]
   end
 
   subgraph sources["Sources"]
@@ -291,43 +293,60 @@ flowchart LR
 
   tests["tests: end-to-end, through the binary and the library"]
 
+  cli --> code
+  cli --> contract
   cli --> diagram
   cli --> init
   cli --> lint
-  cli --> model
   cli --> report
+  cli --> results
   cli --> views
-  diagram --> model
-  imports --> model
+  code --> contract
+  diagram --> contract
+  diagram --> results
+  imports --> code
   imports --> syntax
+  init --> code
+  init --> contract
   init --> diagram
   init --> imports
-  init --> model
   init --> ownership
+  init --> results
+  lint --> code
+  lint --> contract
   lint --> diagram
   lint --> imports
-  lint --> model
   lint --> ownership
+  lint --> results
+  ownership --> code
+  ownership --> contract
   ownership --> markup
-  ownership --> model
-  report --> model
-  syntax --> model
+  report --> code
+  report --> contract
+  report --> results
+  results --> code
+  results --> contract
+  syntax --> code
+  tests -->|test| code
+  tests -->|test| contract
   tests -->|test| diagram
   tests -->|test| imports
   tests -->|test| init
   tests -->|test| lint
-  tests -->|test| model
   tests -->|test| ownership
   tests -->|test| report
+  tests -->|test| results
   tests -->|test| views
+  views --> code
+  views --> contract
   views --> diagram
   views --> lint
-  views --> model
   views --> ownership
+  views --> results
   web --> markup
   imports --> languages
+  languages --> code
   languages -->|test| imports
-  languages --> model
   languages --> syntax
 
   %% exports imports: Facades, FileImports, ImportsError, collect_with_assets, collect_with_facades, swift_targets
@@ -345,7 +364,9 @@ flowchart LR
   %% packages init: serde, serde_json, thiserror, toml
   %% packages lint: thiserror
   %% packages markup:
-  %% packages model: serde, thiserror
+  %% packages contract: serde, thiserror
+  %% packages code: serde
+  %% packages results: serde, thiserror
   %% packages ownership: ignore, thiserror
   %% packages python: jsonc_parser, serde_json, toml, tree_sitter, tree_sitter_python
   %% packages report: serde, serde_json, thiserror
@@ -371,7 +392,9 @@ flowchart LR
   %% map shell: src/imports/shell/
   %% map syntax: src/imports/syntax/
   %% map markup: src/markup/
-  %% map model: src/model/
+  %% map code: src/code/
+  %% map contract: src/contract/
+  %% map results: src/results/
   %% map report: src/report/
 ```
 <!-- architecture:end -->

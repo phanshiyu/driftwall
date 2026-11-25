@@ -6,7 +6,8 @@ use std::fs;
 use tempfile::TempDir;
 
 use super::*;
-use crate::model::{Location, Severity, Violation, ViolationKind};
+use crate::code::Location;
+use crate::results::{Severity, Violation, ViolationKind};
 
 const CONTRACT: &str = "flowchart LR\n  a[\"a\"]\n  b[\"b\"]\n  c[\"c\"]\n  a --> b\n  a --> c\n";
 const INDEX: &str = "packages/a/src/index.ts";
@@ -161,7 +162,7 @@ fn undeclared(dir: &TempDir) -> Vec<Undeclared> {
     observation
         .blind_spots
         .skipped
-        .get(&crate::model::SkipReason::UndeclaredOwner)
+        .get(&crate::code::SkipReason::UndeclaredOwner)
         .into_iter()
         .flatten()
         .map(|reference| {

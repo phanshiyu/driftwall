@@ -5,10 +5,10 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use thiserror::Error;
 
-use crate::model::{
+use crate::contract::{
     BoundaryEdge, Contract, Edge, EdgeKind, Endpoint, LayerOrder, Narrowing, NodeId, OpenAccess,
-    PictureView,
 };
+use crate::results::PictureView;
 
 /// What can go wrong while drawing a picture or syncing the blocks of a Markdown file.
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -688,7 +688,7 @@ enum Pairs {
 /// The pairs of layers, by place in the chain, that are open for the nodes of each layer in
 /// `members`, all of them or only those not implied by a layer between them.
 fn open_pairs(contract: &Contract, members: &[Vec<&NodeId>], pairs: Pairs) -> Vec<(usize, usize)> {
-    // why: the allowance is the model's own question, so a picture and a lint cannot disagree.
+    // why: the allowance is the contract's own question, so a picture and a lint cannot disagree.
     let open = |upper: usize, lower: usize| {
         let (Some(from), Some(to)) = (members.get(upper), members.get(lower)) else {
             return false;

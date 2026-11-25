@@ -1,9 +1,10 @@
 //! The rule table: severity and hint per [`ViolationKind`].
 //!
 //! Every function here matches exhaustively on the kind with no wildcard arm, so adding a kind
-//! to the model fails to compile until it has a severity and a hint.
+//! to `results` fails to compile until it has a severity and a hint.
 
-use crate::model::{Location, ResolvedImport, Severity, Violation, ViolationKind};
+use crate::code::{Location, ResolvedImport};
+use crate::results::{Severity, Violation, ViolationKind};
 
 /// How serious a finding of `kind` is.
 pub(super) const fn severity(kind: ViolationKind) -> Severity {
@@ -107,7 +108,7 @@ pub(super) fn violation(kind: ViolationKind, at: Option<Location>, message: Stri
         hint: Some(hint(kind).to_owned()),
         test_only: false,
         key: String::new(),
-        site: crate::model::SiteDetail::default(),
+        site: crate::results::SiteDetail::default(),
     }
 }
 

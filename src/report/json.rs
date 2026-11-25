@@ -2,7 +2,7 @@
 
 use serde::Serialize;
 
-use crate::model::{BaselineOutcome, BlindSummary, LintReport, Violation};
+use crate::results::{BaselineOutcome, BlindSummary, LintReport, Violation};
 
 use super::ReportError;
 use super::common::counts;
@@ -20,7 +20,7 @@ struct Document<'a> {
     blind_spots: &'a BlindSummary,
 }
 
-/// A finding as JSON has it: the model's fields, then `key` (`<kind> <key>`) for a finding a
+/// A finding as JSON has it: the finding's fields, then `key` (`<kind> <key>`) for a finding a
 /// baseline can hold, so a consumer can group sites the way the text output does.
 #[derive(Serialize)]
 struct Site<'a> {

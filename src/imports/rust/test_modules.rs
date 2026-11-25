@@ -16,7 +16,7 @@ use super::path_modules::PathModules;
 use super::spec::GRAMMAR as RUST_GRAMMAR;
 use super::statement::{in_cfg_test, test_file as rust_test_file};
 use super::tree::enclosing_modules;
-use crate::model::Language;
+use crate::code::Language;
 
 /// One `mod name;` declaration: the file it pulls in and whether it is written in test code.
 struct Declaration {

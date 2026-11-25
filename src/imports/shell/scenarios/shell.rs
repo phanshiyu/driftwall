@@ -2,7 +2,7 @@
 
 use super::fixtures::{pairs, repo};
 use super::*;
-use crate::model::{ImportKind, SkipReason};
+use crate::code::{ImportKind, SkipReason};
 
 /// The resolved targets of `scripts/run.sh` holding `text`, next to the library files every test
 /// shares, as (line, target).

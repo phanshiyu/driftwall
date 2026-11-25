@@ -2,7 +2,7 @@
 
 use std::fmt;
 
-use super::{NodeId, PackageUse};
+use super::NodeId;
 
 /// Which of the two package directives a rule is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -81,14 +81,6 @@ pub struct PackageRule {
     pub kind: PackageRuleKind,
     /// The names, in the order written. Empty only for an allow-list.
     pub names: Vec<PackagePattern>,
-}
-
-impl PackageRule {
-    /// Whether a name of this rule matches `package`.
-    #[must_use]
-    pub fn matches(&self, package: &PackageUse) -> bool {
-        self.names.iter().any(|name| name.matches(&package.name))
-    }
 }
 
 impl PartialEq for PackageRule {

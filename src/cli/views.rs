@@ -4,8 +4,8 @@ use std::path::PathBuf;
 
 use anyhow::{Result, bail};
 use driftwall::lint::{self, LintOptions, Observation};
-use driftwall::model::Overview;
 use driftwall::report;
+use driftwall::results::Overview;
 use driftwall::views;
 
 use crate::args::{BriefArgs, NeighborsArgs, ViewFormat};
@@ -106,7 +106,8 @@ fn declared_nodes(overview: &Overview) -> String {
 
 #[cfg(test)]
 mod tests {
-    use driftwall::model::{BlindTally, NodeId, NodeSummary};
+    use driftwall::contract::NodeId;
+    use driftwall::results::{BlindTally, NodeSummary};
 
     use super::*;
 

@@ -9,8 +9,8 @@ use std::path::{Path, PathBuf};
 
 use tree_sitter::{Node, Parser};
 
+use crate::code::Language;
 use crate::imports::syntax::paths::join_normalised;
-use crate::model::Language;
 
 /// The manifest file name.
 const MANIFEST_FILE: &str = "Package.swift";

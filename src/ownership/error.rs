@@ -5,7 +5,8 @@ use std::path::PathBuf;
 
 use thiserror::Error;
 
-use crate::model::{Location, MapSite, ModelError};
+use crate::code::{Location, MapSite};
+use crate::contract::ModelError;
 
 /// Why a `.arch` file was rejected.
 #[derive(Debug, Error, PartialEq, Eq)]

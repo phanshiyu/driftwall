@@ -3,7 +3,7 @@
 
 use super::fixtures::repo;
 use super::*;
-use crate::model::SkipReason;
+use crate::code::SkipReason;
 
 /// (line, name, kind, `test_only`) of every package use of `file`.
 fn uses(imports: &FileImports) -> Vec<(u32, &str, &'static str, bool)> {

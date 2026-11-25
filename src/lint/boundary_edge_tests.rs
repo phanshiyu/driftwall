@@ -5,10 +5,12 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use super::*;
+use crate::code::{ImportKind, ResolvedImport};
+use crate::contract::EdgeKind;
 use crate::diagram;
 use crate::imports::FileImports;
 use crate::lint::fixtures::{at, node};
-use crate::model::{EdgeKind, ImportKind, ResolvedImport, Severity, Violation, ViolationKind};
+use crate::results::{Severity, Violation, ViolationKind};
 
 const KINDS: [EdgeKind; 8] = [
     EdgeKind::Implemented,

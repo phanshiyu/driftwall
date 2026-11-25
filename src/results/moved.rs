@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Serialize, Serializer};
 
-use super::NodeId;
+use crate::contract::NodeId;
 
 /// A source file whose owning node differs between the base ref and the working tree.
 #[derive(Debug, Clone, PartialEq, Eq)]

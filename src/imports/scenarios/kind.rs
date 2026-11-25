@@ -4,8 +4,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use super::*;
-use crate::model::ImportKind::{Runtime, TypeOnly};
-use crate::model::{ImportKind, Language};
+use crate::code::ImportKind::{Runtime, TypeOnly};
+use crate::code::{ImportKind, Language};
 
 /// (line, kind, `test_only`) of every resolved import, in output order.
 type Flags = Vec<(u32, ImportKind, bool)>;

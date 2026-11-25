@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use super::*;
-use crate::model::SkipReason;
+use crate::code::SkipReason;
 
 const NONE: [&str; 0] = [];
 

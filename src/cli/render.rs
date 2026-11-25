@@ -8,7 +8,7 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use driftwall::diagram;
 use driftwall::lint;
-use driftwall::model::{MarkdownSync, PictureView};
+use driftwall::results::{MarkdownSync, PictureView};
 
 use crate::args::RenderArgs;
 use crate::commands::{Run, lint_options, require_directory};

@@ -9,7 +9,7 @@ use std::path::Path;
 
 use tree_sitter::Node;
 
-use crate::model::ImportKind;
+use crate::code::ImportKind;
 
 /// The nearest ancestor of `node`, or `node` itself, whose kind is one of `kinds`. `node` when
 /// there is none, so a location is always found.

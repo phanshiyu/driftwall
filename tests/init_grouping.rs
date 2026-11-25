@@ -57,7 +57,7 @@ mod support {
     }
 
     /// The parsed `architecture.mmd`.
-    pub fn contract(dir: &TempDir) -> driftwall::model::Contract {
+    pub fn contract(dir: &TempDir) -> driftwall::contract::Contract {
         driftwall::diagram::parse(&read(dir, "architecture.mmd")).unwrap()
     }
 }

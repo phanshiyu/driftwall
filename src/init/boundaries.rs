@@ -6,7 +6,8 @@ use std::path::{Path, PathBuf};
 
 use super::ids::{RESERVED, sanitize};
 use super::units::Unit;
-use crate::model::{Contract, DirTag, NodeId, Scope, Tag};
+use crate::code::{DirTag, Scope, Tag};
+use crate::contract::{Contract, NodeId};
 
 /// A unit with this many nodes or more is grouped by directory instead of as a whole.
 const MANY_NODES: usize = 8;
@@ -163,8 +164,8 @@ pub(super) fn common_ancestor(dirs: &[PathBuf]) -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::contract::{NodeInfo, Prefix};
     use crate::init::units::UnitKind;
-    use crate::model::{NodeInfo, Prefix};
 
     fn id(raw: &str) -> NodeId {
         NodeId::new(raw).unwrap()

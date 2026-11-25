@@ -1,9 +1,10 @@
-//! Who owns a file and which rule decided it, and what a path is: the answer types of `explain`,
-//! `locate` and `driftwall where`.
+//! Who owns a file and which rule decided it, and what a path is: what `explain` and `locate` read
+//! from the repository.
 
 use std::path::{Path, PathBuf};
 
-use super::{Exclusion, MapSite, NodeId, PackageUse};
+use super::{Exclusion, MapSite};
+use crate::contract::NodeId;
 
 /// What a walked path is to driftwall.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -38,19 +39,6 @@ pub struct Located {
     /// or ignored file. Unowned for a tag file, a contract, and a file no rule covers. A folded
     /// entry file is [`Owner::Folded`].
     pub owner: Owner,
-}
-
-/// Everything `driftwall where` knows about one path: what it is, who owns it, and which packages
-/// it uses.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct WhereAnswer {
-    /// The path as the user gave it.
-    pub file: PathBuf,
-    /// What the path is and who owns it.
-    pub located: Located,
-    /// The package uses of the file, empty unless it is a source file in a repository with a valid
-    /// contract.
-    pub packages: Vec<PackageUse>,
 }
 
 /// The rule that decided a file's owner.

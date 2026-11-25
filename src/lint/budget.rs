@@ -3,10 +3,9 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use crate::model::{
-    Contract, Edge, InterfaceEntry, Location, Measure, NodeBudget, NodeId, Ownership, Site,
-    Violation, ViolationKind,
-};
+use crate::code::{Location, Ownership};
+use crate::contract::{Contract, Edge, NodeId};
+use crate::results::{InterfaceEntry, Measure, NodeBudget, Site, Violation, ViolationKind};
 
 use super::rules::violation;
 
@@ -96,8 +95,8 @@ pub(super) fn findings(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::contract::Budget;
     use crate::lint::fixtures::{at, edge, node};
-    use crate::model::Budget;
     use std::path::PathBuf;
 
     fn contract(budget: Budget) -> Contract {
@@ -260,6 +259,6 @@ mod tests {
         );
         assert!(found.iter().all(|v| v.kind == ViolationKind::OverBudget));
         assert_eq!(found[0].at, Some(at("c.mmd", 7)));
-        assert_eq!(found[0].severity, crate::model::Severity::Warning);
+        assert_eq!(found[0].severity, crate::results::Severity::Warning);
     }
 }

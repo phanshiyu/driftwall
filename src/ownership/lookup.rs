@@ -4,7 +4,8 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use super::module_name;
-use crate::model::{DirTag, NodeId, Scope, Tag};
+use crate::code::{DirTag, Scope, Tag};
+use crate::contract::NodeId;
 
 /// The node `file` gets from `tags`, or `None` when no tag covers it.
 ///
@@ -33,7 +34,7 @@ pub fn owner_in(tags: &BTreeMap<PathBuf, DirTag>, file: &Path) -> Option<NodeId>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::Prefix;
+    use crate::contract::Prefix;
     use std::collections::BTreeSet;
 
     fn tag(dir: &str, tag: Tag, scope: Scope) -> (PathBuf, DirTag) {

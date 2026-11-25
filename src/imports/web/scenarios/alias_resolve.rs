@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use super::*;
-use crate::model::Language;
+use crate::code::Language;
 
 fn config(base: &str, bare_imports: bool, entries: &[(&str, &[&str])]) -> AliasConfig {
     AliasConfig {

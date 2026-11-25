@@ -10,9 +10,9 @@ use super::module::{Segment, Site, WrittenPath};
 use super::resolve::through_bindings;
 use super::scope::Bindings;
 use super::tree::use_leaves;
+use crate::code::Symbol;
 use crate::imports::syntax::resolution::Files;
 use crate::imports::syntax::table::Table;
-use crate::model::Symbol;
 
 /// The item kinds whose `name` is a name of the module an import can use as a symbol. A `mod` is
 /// not one: a module is looked up as a file, and `mod parse; pub use parse::parse;` re-exports a

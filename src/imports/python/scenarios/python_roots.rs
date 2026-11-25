@@ -3,7 +3,7 @@
 
 use super::fixtures::{Repo, pairs, repo};
 use super::*;
-use crate::model::{ImportKind, SkipReason};
+use crate::code::{ImportKind, SkipReason};
 
 /// The files every configured-root test shares: a package `mypkg` below `lib/` and a package
 /// `tools` that imports it, so only a configured root can reach it.
@@ -305,8 +305,8 @@ fn a_script_reachable_only_through_a_makefile_pythonpath_is_unreachable() {
     let imports = repo.imports("vendorkit/bt/parity.py");
     assert_eq!(imports, {
         let mut expected = FileImports::default();
-        expected.skipped.push(crate::model::Skipped {
-            at: crate::model::Location {
+        expected.skipped.push(crate::code::Skipped {
+            at: crate::code::Location {
                 file: "vendorkit/bt/parity.py".into(),
                 line: 3,
             },

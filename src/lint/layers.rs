@@ -1,6 +1,8 @@
 //! The layer order rule: code in a lower boundary may not depend on a higher one.
 
-use crate::model::{Contract, Edge, EdgeKind, ResolvedImport, Violation, ViolationKind};
+use crate::code::ResolvedImport;
+use crate::contract::{Contract, Edge, EdgeKind};
+use crate::results::{Violation, ViolationKind};
 
 use super::rules::site_violation;
 
@@ -66,9 +68,11 @@ pub(super) fn upward_site(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::code::Ownership;
+    use crate::contract::{LayerOrder, NodeInfo};
     use crate::imports::FileImports;
     use crate::lint::fixtures::{at, edge, node};
-    use crate::model::{LayerOrder, NodeInfo, Ownership, Severity};
+    use crate::results::Severity;
     use std::collections::BTreeMap;
     use std::path::{Path, PathBuf};
 

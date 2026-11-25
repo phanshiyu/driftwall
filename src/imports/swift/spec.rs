@@ -3,9 +3,9 @@
 use std::path::Path;
 
 use super::statement;
+use crate::code::Language;
 use crate::imports::syntax::queries;
 use crate::imports::syntax::spec::{Grammar, LanguageSpec, Scan, whole_file};
-use crate::model::Language;
 
 /// The grammar of Swift files.
 pub static GRAMMAR: Grammar = Grammar {

@@ -2,9 +2,11 @@
 
 use std::path::Path;
 
-use crate::model::{EdgeKind, LintReport, Location, Severity, SkipReason, ViolationKind};
+use crate::code::{Location, SkipReason};
+use crate::contract::EdgeKind;
+use crate::results::{LintReport, Severity, ViolationKind};
 
-/// The kebab-case name of a kind, as the model spells it.
+/// The kebab-case name of a kind, as `results` spells it.
 pub(super) const fn kind_str(kind: ViolationKind) -> &'static str {
     kind.name()
 }
@@ -17,7 +19,7 @@ pub(super) const fn severity_str(severity: Severity) -> &'static str {
     }
 }
 
-/// The kebab-case name of a skip reason, as the model serialises it. Exhaustive like [`kind_str`].
+/// The kebab-case name of a skip reason, as `results` serialises it. Exhaustive like [`kind_str`].
 pub(super) const fn skip_reason_str(reason: SkipReason) -> &'static str {
     match reason {
         SkipReason::UndeclaredPackage => "undeclared-package",
@@ -31,7 +33,7 @@ pub(super) const fn skip_reason_str(reason: SkipReason) -> &'static str {
     }
 }
 
-/// The kebab-case name of an edge kind, as the model serialises it.
+/// The kebab-case name of an edge kind, as `results` serialises it.
 pub(super) const fn edge_kind_str(kind: EdgeKind) -> &'static str {
     match kind {
         EdgeKind::Implemented => "implemented",
@@ -103,7 +105,9 @@ mod tests {
     use super::{
         arrow, capped, edge_kind_str, kind_str, plural, severity_str, site_str, skip_reason_str,
     };
-    use crate::model::{EdgeKind, Location, Severity, SkipReason};
+    use crate::code::{Location, SkipReason};
+    use crate::contract::EdgeKind;
+    use crate::results::Severity;
 
     #[test]
     fn edge_kind_names_match_the_models_serde_names() {
