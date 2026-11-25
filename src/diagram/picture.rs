@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
 
 use crate::model::{
-    Contract, Edge, EdgeKind, Endpoint, LayerOrder, NodeId, OpenAccess, PictureView,
+    Contract, Edge, EdgeKind, Endpoint, LayerOrder, Narrowing, NodeId, OpenAccess, PictureView,
 };
 
 /// What can go wrong while drawing a picture or syncing the blocks of a Markdown file.
@@ -478,7 +478,10 @@ fn reduced_open_pairs(contract: &Contract, chain: &LayerOrder) -> Vec<(String, S
                     to: (*b).clone(),
                 };
                 contract.denial(&pair).is_none()
-                    && matches!(contract.open_access(&pair), Some(OpenAccess::Allowed(_)))
+                    && matches!(
+                        contract.open_access(&pair, Narrowing::Design),
+                        Some(OpenAccess::Allowed(_))
+                    )
             })
         })
     };

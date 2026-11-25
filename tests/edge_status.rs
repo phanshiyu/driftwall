@@ -299,6 +299,65 @@ fn a_template_arrow_has_one_status_for_all_its_expansions() {
     assert_eq!(from_lint(&json(&dir, "lint"), &declared), expected);
 }
 
+/// `billing` is split (its view owns a file) and `orders` is not (its view owns nothing yet): the
+/// template narrows billing's access to `ui` and leaves orders the open allowance.
+#[test]
+fn brief_and_lint_agree_on_a_split_and_an_unsplit_feature() {
+    let dir = repo(&[
+        (
+            "architecture.mmd",
+            "flowchart LR
+  subgraph features[\"Features\"]
+    subgraph billing[\"Billing\"]
+      billing-controller
+      billing-view
+    end
+    subgraph orders[\"Orders\"]
+      orders-controller
+      orders-view
+    end
+  end
+  subgraph ui[\"Ui\"]
+    ui-kit
+  end
+  %% order open: features > ui
+  %% each features: view --> ui
+  %% map billing-*: src/billing/
+  %% map orders-*: src/orders/
+  %% map ui-kit: src/ui/
+",
+        ),
+        (
+            "src/billing/view.ts",
+            "import { k } from '../ui/kit';\nexport const v = k;\n",
+        ),
+        (
+            "src/billing/controller.ts",
+            "import { k } from '../ui/kit';\nexport const c = k;\n",
+        ),
+        (
+            "src/orders/controller.ts",
+            "import { k } from '../ui/kit';\nexport const c = k;\n",
+        ),
+        ("src/ui/kit.ts", "export const k = 1;\n"),
+    ]);
+    let brief = json(&dir, "brief");
+    let status = |from: &str| {
+        brief["edges"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|edge| edge["from"] == from && edge["to"] == "ui-kit")
+            .map(|edge| edge["status"].as_str().unwrap().to_owned())
+    };
+    assert_eq!(status("billing-controller").as_deref(), Some("undeclared"));
+    assert_eq!(status("orders-controller").as_deref(), Some("open"));
+    assert_eq!(status("billing-view").as_deref(), Some("ok"));
+    let (expected, _, declared) = from_brief(&brief);
+    assert_eq!(expected.len(), 1, "{expected:?}");
+    assert_eq!(from_lint(&json(&dir, "lint"), &declared), expected);
+}
+
 #[test]
 fn a_restricted_edge_used_from_production_is_stale() {
     let dir = fixture();

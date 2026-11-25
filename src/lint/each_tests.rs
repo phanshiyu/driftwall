@@ -8,7 +8,9 @@ use super::*;
 use crate::diagram;
 use crate::imports::FileImports;
 use crate::lint::fixtures::at;
-use crate::model::{ImportKind, ResolvedImport, Severity, Violation, ViolationKind};
+use crate::model::{
+    ImportKind, Narrowing, NodeId, OpenAccess, ResolvedImport, Severity, Violation, ViolationKind,
+};
 
 /// Two features, `billing` (controller, service, view) and `search` (controller, service), and
 /// `shared` beside `features`. The `extra` lines start at line 16.
@@ -47,6 +49,15 @@ fn owners(contract: &Contract) -> Ownership {
 
 /// Imports as `(from node, to node, test-only)`.
 fn lint(contract: &Contract, sites: &[(&str, &str, bool)]) -> Vec<Violation> {
+    lint_owning(contract, &owners(contract), sites)
+}
+
+/// Like [`lint`], with the files `ownership` says the nodes own.
+fn lint_owning(
+    contract: &Contract,
+    ownership: &Ownership,
+    sites: &[(&str, &str, bool)],
+) -> Vec<Violation> {
     let mut imports: BTreeMap<PathBuf, FileImports> = BTreeMap::new();
     for &(from, to, test_only) in sites {
         let file = format!("{from}/x.ts");
@@ -60,13 +71,7 @@ fn lint(contract: &Contract, sites: &[(&str, &str, bool)]) -> Vec<Violation> {
                     .with_test_only(test_only),
             );
     }
-    reconcile(
-        contract,
-        &owners(contract),
-        &imports,
-        Path::new("architecture.mmd"),
-    )
-    .violations
+    reconcile(contract, ownership, &imports, Path::new("architecture.mmd")).violations
 }
 
 fn of_kind(found: &[Violation], kind: ViolationKind) -> Vec<&Violation> {
@@ -206,7 +211,10 @@ fn expansions_never_trip_isolation() {
 fn expansions_narrow_no_pair_of_layers_of_an_open_order() {
     // why: the expansions are inside `features`, so `features` keeps its whole allowance to `shared`.
     let c = contract(&format!("  %% order open: features > shared\n{SERVICE}"));
-    assert_eq!(c.arrows_between("features", "shared"), 0);
+    assert!(matches!(
+        c.open_access(&pair("billing-view", "util"), Narrowing::Design),
+        Some(OpenAccess::Allowed(_))
+    ));
     let found = lint(
         &c,
         &[
@@ -223,7 +231,122 @@ fn an_explicit_edge_to_the_lower_layer_narrows_where_the_template_does_not() {
     let c = contract(&format!(
         "  %% order open: features > shared\n{SERVICE}  billing-view --> util\n"
     ));
-    assert_eq!(c.arrows_between("features", "shared"), 1);
+    assert!(matches!(
+        c.open_access(&pair("search-service", "util"), Narrowing::Design),
+        Some(OpenAccess::Narrowed { arrows: 1, .. })
+    ));
+}
+
+fn pair(from: &str, to: &str) -> Edge {
+    Edge {
+        from: NodeId::new(from).unwrap(),
+        to: NodeId::new(to).unwrap(),
+    }
+}
+
+/// Two features with a view each, over `ui`; `extra` starts at line 16.
+fn migration(extra: &str) -> Contract {
+    diagram::parse(&format!(
+        "flowchart LR
+  subgraph features
+    subgraph billing
+      billing-controller
+      billing-view
+    end
+    subgraph orders
+      orders-controller
+      orders-view
+    end
+  end
+  subgraph ui
+    ui-kit
+  end
+  %% order open: features > ui
+{extra}"
+    ))
+    .unwrap()
+}
+
+/// Every node owns a file except those in `bare`.
+fn owners_except(contract: &Contract, bare: &[&str]) -> Ownership {
+    let mut ownership = owners(contract);
+    ownership
+        .owners
+        .retain(|_, owner| !bare.contains(&owner.as_str()));
+    ownership
+}
+
+#[test]
+fn an_expansion_narrows_only_the_child_on_its_role_side() {
+    let c = migration("  %% each features: view --> ui\n");
+    let found = lint(
+        &c,
+        &[
+            ("billing-view", "ui-kit", false),
+            ("billing-controller", "ui-kit", false),
+            ("orders-controller", "ui-kit", false),
+        ],
+    );
+    let bad = of_kind(&found, ViolationKind::UndeclaredEdge);
+    // why: both children have a view that owns a file, so each child's controller is narrowed.
+    assert_eq!(bad.len(), 2, "{found:#?}");
+    assert!(
+        bad.iter().any(|v| v
+            .message
+            .contains("the `%% each features` on line 16 limits `billing`")),
+        "{found:#?}"
+    );
+}
+
+#[test]
+fn an_expansion_whose_role_node_owns_no_file_does_not_narrow() {
+    let c = migration("  %% each features: view --> ui\n");
+    let ownership = owners_except(&c, &["orders-view"]);
+    let found = lint_owning(
+        &c,
+        &ownership,
+        &[
+            ("billing-controller", "ui-kit", false),
+            ("orders-controller", "ui-kit", false),
+        ],
+    );
+    let bad = of_kind(&found, ViolationKind::UndeclaredEdge);
+    assert_eq!(bad.len(), 1, "{found:#?}");
+    assert!(
+        bad[0].message.contains("`billing-controller`"),
+        "{found:#?}"
+    );
+}
+
+#[test]
+fn the_design_mode_ignores_ownership_but_keeps_the_child_scope() {
+    let c = migration("  %% each features: view --> ui\n");
+    assert!(matches!(
+        c.open_access(&pair("orders-controller", "ui-kit"), Narrowing::Design),
+        Some(OpenAccess::Narrowed {
+            arrows: 1,
+            each: Some(_),
+            ..
+        })
+    ));
+    let none = BTreeSet::new();
+    assert!(matches!(
+        c.open_access(
+            &pair("orders-controller", "ui-kit"),
+            Narrowing::Owned(&none)
+        ),
+        Some(OpenAccess::Allowed(_))
+    ));
+}
+
+#[test]
+fn a_written_edge_narrows_the_whole_layer_pair_even_beside_a_template() {
+    let c = migration("  %% each features: view --> ui\n  billing-view --> ui-kit\n");
+    let ownership = owners_except(&c, &["orders-view"]);
+    let found = lint_owning(&c, &ownership, &[("orders-controller", "ui-kit", false)]);
+    let bad = of_kind(&found, ViolationKind::UndeclaredEdge);
+    assert_eq!(bad.len(), 1, "{found:#?}");
+    assert!(!bad[0].message.contains("%% each"), "{found:#?}");
 }
 
 #[test]

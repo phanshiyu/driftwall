@@ -6,8 +6,8 @@ use std::path::{Path, PathBuf};
 use crate::model::{
     BlindSpots, BoundaryEdgeSummary, Contract, Cover, Declaration, Declared, DirTag, Edge,
     EdgeKind, EdgeStatus, EdgeSummary, ImportKind, InterfaceEntry, LintReport, MapTarget,
-    NodeBudget, NodeId, NodeSummary, NodeView, OpenAccess, Overview, Ownership, PackageSummary,
-    Scope, Seen, Site, Symbol, Tag, ViaEdge, edge_status,
+    Narrowing, NodeBudget, NodeId, NodeSummary, NodeView, OpenAccess, Overview, Ownership,
+    PackageSummary, Scope, Seen, Site, Symbol, Tag, ViaEdge, edge_status,
 };
 
 use super::reconcile::boundary_seen;
@@ -104,7 +104,13 @@ pub fn overview(
         })
         .collect();
     let boundary = boundary_seen(contract, &sites);
-    let edges = edge_summaries(contract, observed, symbols, &boundary);
+    let edges = edge_summaries(
+        contract,
+        observed,
+        symbols,
+        &boundary,
+        &ownership.owning_nodes(),
+    );
     let boundary_edges = boundary_edge_summaries(contract, observed, &boundary);
 
     let (errors, warnings) = report.counts();
@@ -128,6 +134,7 @@ fn edge_summaries(
     observed: &BTreeMap<Edge, Vec<Site>>,
     symbols: &BTreeMap<Edge, BTreeSet<Symbol>>,
     boundary: &[Seen],
+    owning: &BTreeSet<NodeId>,
 ) -> Vec<EdgeSummary> {
     let all_edges: BTreeSet<&Edge> = contract.edges.keys().chain(observed.keys()).collect();
     all_edges
@@ -139,7 +146,7 @@ fn edge_summaries(
             // why: an open chain allows the pair as a solid edge, named by its line, not declared.
             let denied = contract.denial(edge).is_some();
             let open = (winner.is_none() && !denied)
-                .then(|| contract.open_access(edge))
+                .then(|| contract.open_access(edge, Narrowing::Owned(owning)))
                 .flatten()
                 .and_then(|access| match access {
                     OpenAccess::Allowed(order) => Some(ViaEdge {

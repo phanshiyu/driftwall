@@ -364,6 +364,37 @@ fn malformed_markdown_exits_2_naming_the_line() {
 }
 
 #[test]
+fn a_template_narrows_one_feature_in_the_picture_not_the_layer_pair() {
+    let contract = "flowchart LR
+  subgraph features
+    subgraph billing
+      billing-view
+      billing-service
+    end
+    subgraph orders
+      orders-view
+      orders-service
+    end
+    features-shell
+  end
+  subgraph ui
+    ui-kit
+  end
+  %% order open: features > ui
+  %% each features: view --> ui
+";
+    let dir = repo(&[("architecture.mmd", contract)]);
+    let output = run(dir.path(), &["render"]);
+    assert_eq!(output.status.code(), Some(0), "{}", err(&output));
+    // why: the picture is the design as drawn, so no code is read, but a template narrows only its own feature: the shell, in no feature, keeps the allowance.
+    assert!(
+        out(&output).ends_with("  features ==>|open| ui\n"),
+        "{}",
+        out(&output)
+    );
+}
+
+#[test]
 fn open_arrows_follow_narrowing_and_denials() {
     let contract = "flowchart LR
   subgraph app

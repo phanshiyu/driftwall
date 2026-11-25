@@ -1,6 +1,8 @@
 //! The implicit allowance of an open layer order, see "Open order" in `docs/DESIGN.md`.
 
-use super::{Contract, Edge, Endpoint, LayerOrder};
+use std::collections::BTreeSet;
+
+use super::{Contract, Edge, Endpoint, LayerOrder, NodeId, Template};
 
 /// What the open chains say about a dependency between two nodes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -8,7 +10,8 @@ pub enum OpenAccess<'a> {
     /// The chain allows the pair implicitly, as a solid edge would.
     Allowed(&'a LayerOrder),
     /// The chain lists the importer's boundary above the target's, but the contract declares edges
-    /// between the two boundaries, so only those apply and the pair is not among them.
+    /// between the two boundaries that apply to this pair, so only those do and the pair is not
+    /// among them.
     Narrowed {
         /// The chain.
         order: &'a LayerOrder,
@@ -16,36 +19,120 @@ pub enum OpenAccess<'a> {
         from: &'a str,
         /// The imported boundary.
         to: &'a str,
-        /// How many declared edges run from inside `from` to inside `to`.
+        /// How many declared edges narrow this pair.
         arrows: usize,
+        /// Set when only `%% each` expansions narrow the pair: the template that speaks.
+        each: Option<EachLimit<'a>>,
     },
 }
 
+/// The `%% each` line that narrows a pair, and the names its message uses.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EachLimit<'a> {
+    /// The boundary the template names.
+    pub boundary: &'a str,
+    /// The line of the template.
+    pub line: u32,
+    /// What is limited: the child on the importing role side, else the importer's boundary.
+    pub from: &'a str,
+    /// What it is limited towards: the child on the imported role side, else the target boundary.
+    pub to: &'a str,
+}
+
+/// Whether narrowing by `%% each` expansions reads the code.
+#[derive(Debug, Clone, Copy)]
+pub enum Narrowing<'a> {
+    /// The design as drawn: every expansion counts as if its role nodes own files.
+    Design,
+    /// Lint's view: an expansion narrows only when its role nodes are in this set of nodes that own
+    /// at least one file.
+    Owned(&'a BTreeSet<NodeId>),
+}
+
 impl Contract {
-    /// How many declared edges, node edges and boundary edges of any kind, run from inside the
-    /// boundary `upper` to inside the boundary `lower`.
-    #[must_use]
-    pub fn arrows_between(&self, upper: &str, lower: &str) -> usize {
+    /// How many declared edges narrow the pair `edge` of the layers `upper` above `lower`, and the
+    /// first expansion among them when no written edge narrows it. A written edge, node or
+    /// boundary, narrows the whole pair of layers. An expansion narrows only a pair with an end
+    /// inside its child on the role side, and, under [`Narrowing::Owned`], only when its role
+    /// nodes own a file.
+    fn narrowing_arrows<'a>(
+        &'a self,
+        upper: &'a str,
+        lower: &'a str,
+        edge: &Edge,
+        narrowing: Narrowing<'_>,
+    ) -> (usize, Option<EachLimit<'a>>) {
         // why: the same member lookup as boundary edges, so a later change to membership applies here.
         let from = Endpoint::Boundary(upper.to_owned());
         let to = Endpoint::Boundary(lower.to_owned());
         let runs = |pair: &Edge| {
             from.contains(&self.nodes, &pair.from) && to.contains(&self.nodes, &pair.to)
         };
-        let nodes = self.edges.keys().filter(|edge| runs(edge)).count();
-        let boundaries = self
-            .boundary_edges
-            .iter()
-            .filter(|declared| declared.pairs(&self.nodes).iter().any(runs))
-            .count();
-        nodes + boundaries
+        let mut written = self.edges.keys().filter(|pair| runs(pair)).count();
+        let mut expansions = 0;
+        let mut first = None;
+        for declared in &self.boundary_edges {
+            let pairs = declared.pairs(&self.nodes);
+            let Some(template) = &declared.template else {
+                written += usize::from(pairs.iter().any(runs));
+                continue;
+            };
+            let narrows = pairs
+                .iter()
+                .any(|pair| runs(pair) && self.expansion_narrows(template, pair, edge, narrowing));
+            if narrows {
+                expansions += 1;
+                first.get_or_insert(EachLimit {
+                    boundary: &template.boundary,
+                    line: declared.line,
+                    from: if template.from_role {
+                        &template.child
+                    } else {
+                        upper
+                    },
+                    to: if template.to_role {
+                        &template.child
+                    } else {
+                        lower
+                    },
+                });
+            }
+        }
+        (
+            written + expansions,
+            if written == 0 { first } else { None },
+        )
+    }
+
+    /// Whether the expansion `template`, which declares `declared`, narrows the pair `edge`.
+    fn expansion_narrows(
+        &self,
+        template: &Template,
+        declared: &Edge,
+        edge: &Edge,
+        narrowing: Narrowing<'_>,
+    ) -> bool {
+        let inside = |node: &NodeId| {
+            self.nodes
+                .get(node)
+                .is_some_and(|info| info.within(&template.child))
+        };
+        let near =
+            (template.from_role && inside(&edge.from)) || (template.to_role && inside(&edge.to));
+        near && match narrowing {
+            Narrowing::Design => true,
+            Narrowing::Owned(owned) => {
+                (!template.from_role || owned.contains(&declared.from))
+                    && (!template.to_role || owned.contains(&declared.to))
+            }
+        }
     }
 
     /// What the `%% order open:` chains say about the dependency `edge`, or `None` when no open
     /// chain lists the importer's boundary above the target's. The first chain in file order that
-    /// allows the pair speaks; narrowing is a property of the two boundaries, so chains agree on it.
+    /// allows the pair speaks.
     #[must_use]
-    pub fn open_access(&self, edge: &Edge) -> Option<OpenAccess<'_>> {
+    pub fn open_access(&self, edge: &Edge, narrowing: Narrowing<'_>) -> Option<OpenAccess<'_>> {
         let (from_info, to_info) = (self.nodes.get(&edge.from)?, self.nodes.get(&edge.to)?);
         let mut narrowed = None;
         for order in self.rules.order.iter().filter(|order| order.open) {
@@ -58,7 +145,7 @@ impl Contract {
             if upper >= lower {
                 continue;
             }
-            let arrows = self.arrows_between(from, to);
+            let (arrows, each) = self.narrowing_arrows(from, to, edge, narrowing);
             if arrows == 0 {
                 return Some(OpenAccess::Allowed(order));
             }
@@ -67,6 +154,7 @@ impl Contract {
                 from,
                 to,
                 arrows,
+                each,
             });
         }
         narrowed
@@ -126,11 +214,11 @@ mod tests {
         let contract = contract();
         let order = &contract.rules.order[0];
         assert_eq!(
-            contract.open_access(&pair("a1", "c1")),
+            contract.open_access(&pair("a1", "c1"), Narrowing::Design),
             Some(OpenAccess::Allowed(order))
         );
         assert_eq!(
-            contract.open_access(&pair("f1", "s1")),
+            contract.open_access(&pair("f1", "s1"), Narrowing::Design),
             Some(OpenAccess::Allowed(order))
         );
     }
@@ -138,10 +226,22 @@ mod tests {
     #[test]
     fn upward_same_boundary_and_unlisted_pairs_are_not_covered() {
         let contract = contract();
-        assert_eq!(contract.open_access(&pair("c1", "a1")), None);
-        assert_eq!(contract.open_access(&pair("a1", "a2")), None);
-        assert_eq!(contract.open_access(&pair("x", "c1")), None);
-        assert_eq!(contract.open_access(&pair("a1", "x")), None);
+        assert_eq!(
+            contract.open_access(&pair("c1", "a1"), Narrowing::Design),
+            None
+        );
+        assert_eq!(
+            contract.open_access(&pair("a1", "a2"), Narrowing::Design),
+            None
+        );
+        assert_eq!(
+            contract.open_access(&pair("x", "c1"), Narrowing::Design),
+            None
+        );
+        assert_eq!(
+            contract.open_access(&pair("a1", "x"), Narrowing::Design),
+            None
+        );
     }
 
     /// `o1` in `orders` inside `features`, which the chain lists.
@@ -162,15 +262,21 @@ mod tests {
         nested(&mut contract);
         let order = &contract.rules.order[0];
         assert_eq!(
-            contract.open_access(&pair("o1", "c1")),
+            contract.open_access(&pair("o1", "c1"), Narrowing::Design),
             Some(OpenAccess::Allowed(order))
         );
         assert_eq!(
-            contract.open_access(&pair("a1", "o1")),
+            contract.open_access(&pair("a1", "o1"), Narrowing::Design),
             Some(OpenAccess::Allowed(order))
         );
-        assert_eq!(contract.open_access(&pair("o1", "a1")), None);
-        assert_eq!(contract.open_access(&pair("o1", "f1")), None);
+        assert_eq!(
+            contract.open_access(&pair("o1", "a1"), Narrowing::Design),
+            None
+        );
+        assert_eq!(
+            contract.open_access(&pair("o1", "f1"), Narrowing::Design),
+            None
+        );
     }
 
     #[test]
@@ -182,12 +288,13 @@ mod tests {
             .insert(pair("o1", "c2"), EdgeKind::Implemented);
         let order = &contract.rules.order[0];
         assert_eq!(
-            contract.open_access(&pair("f1", "c1")),
+            contract.open_access(&pair("f1", "c1"), Narrowing::Design),
             Some(OpenAccess::Narrowed {
                 order,
                 from: "features",
                 to: "core",
-                arrows: 1
+                arrows: 1,
+                each: None
             })
         );
     }
@@ -196,7 +303,10 @@ mod tests {
     fn a_plain_chain_grants_nothing() {
         let mut contract = contract();
         contract.rules.order[0].open = false;
-        assert_eq!(contract.open_access(&pair("a1", "c1")), None);
+        assert_eq!(
+            contract.open_access(&pair("a1", "c1"), Narrowing::Design),
+            None
+        );
     }
 
     #[test]
@@ -204,7 +314,7 @@ mod tests {
         let mut contract = contract();
         contract.edges.insert(pair("f1", "c1"), EdgeKind::Test);
         assert!(matches!(
-            contract.open_access(&pair("f1", "c2")),
+            contract.open_access(&pair("f1", "c2"), Narrowing::Design),
             Some(OpenAccess::Narrowed {
                 from: "features",
                 to: "core",
@@ -213,11 +323,11 @@ mod tests {
             })
         ));
         assert!(matches!(
-            contract.open_access(&pair("f1", "s1")),
+            contract.open_access(&pair("f1", "s1"), Narrowing::Design),
             Some(OpenAccess::Allowed(_))
         ));
         assert!(matches!(
-            contract.open_access(&pair("a1", "c1")),
+            contract.open_access(&pair("a1", "c1"), Narrowing::Design),
             Some(OpenAccess::Allowed(_))
         ));
     }
@@ -232,11 +342,13 @@ mod tests {
             line: 9,
             template: None,
         });
-        assert_eq!(contract.arrows_between("app", "core"), 1);
         assert!(matches!(
-            contract.open_access(&pair("a2", "c1")),
+            contract.open_access(&pair("a2", "c1"), Narrowing::Design),
             Some(OpenAccess::Narrowed { arrows: 1, .. })
         ));
-        assert_eq!(contract.arrows_between("app", "shared"), 0);
+        assert!(matches!(
+            contract.open_access(&pair("a2", "s1"), Narrowing::Design),
+            Some(OpenAccess::Allowed(_))
+        ));
     }
 }

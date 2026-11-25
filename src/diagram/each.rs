@@ -133,7 +133,8 @@ pub(super) fn expand(
             .iter()
             .map(|arrow| classify(rule, arrow, &kids, nodes, boundaries))
             .collect::<Result<Vec<_>, _>>()?;
-        for (arrow, (from, to)) in rule.arrows.iter().zip(ends) {
+        for (arrow, ends_of) in rule.arrows.iter().zip(ends) {
+            let (from, to) = &ends_of;
             for kid in &kids {
                 let (Some(from), Some(to)) = (
                     from.expand(nodes, kid, &arrow.from),
@@ -156,6 +157,9 @@ pub(super) fn expand(
                     line,
                     template: Some(Template {
                         boundary: rule.boundary.clone(),
+                        child: kid.clone(),
+                        from_role: matches!(ends_of.0, End::Role),
+                        to_role: matches!(ends_of.1, End::Role),
                         from: arrow.from.clone(),
                         to: arrow.to.clone(),
                         arrow: arrow.text(),

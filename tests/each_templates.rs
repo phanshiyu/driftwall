@@ -107,9 +107,66 @@ mod support {
     pub fn json(output: &Output) -> serde_json::Value {
         serde_json::from_str(&out(output)).unwrap()
     }
+
+    /// Open chain `app > features > ui`, three features with a controller and a view, and the
+    /// template `view -.-> ui`; `written` adds lines to the contract.
+    pub fn migration(written: &str) -> tempfile::TempDir {
+        let contract = format!(
+            "flowchart LR
+      subgraph app
+        app-main
+      end
+      subgraph features
+        subgraph billing
+          billing-controller
+          billing-view
+        end
+        subgraph orders
+          orders-controller
+          orders-view
+        end
+        subgraph search
+          search-controller
+          search-view
+        end
+      end
+      subgraph ui
+        ui-kit
+      end
+      %% order open: app > features > ui
+      %% each features: view -.-> ui
+    {written}  %% map app-main: src/app/
+      %% map billing-*: src/features/billing/
+      %% map orders-*: src/features/orders/
+      %% map search-*: src/features/search/
+      %% map ui-kit: src/ui/
+    "
+        );
+        let import = "import { k } from '../../ui/kit';\nexport const x = k;\n";
+        tree(&[
+            ("architecture.mmd", &contract),
+            ("src/app/main.ts", "export const m = 1;\n"),
+            // why: billing is split, its view owns a file; orders and search are not split yet.
+            ("src/features/billing/view.ts", import),
+            ("src/features/billing/controller.ts", import),
+            ("src/features/orders/controller.ts", import),
+            ("src/features/search/controller.ts", "export const c = 1;\n"),
+            ("src/ui/kit.ts", "export const k = 1;\n"),
+        ])
+    }
+
+    pub fn errors(output: &std::process::Output) -> Vec<String> {
+        json(output)["violations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|v| v["severity"] == "error")
+            .map(|v| v["message"].as_str().unwrap().to_owned())
+            .collect()
+    }
 }
 
-use support::{CONTRACT, err, json, kinds, out, repo, run, tree};
+use support::{CONTRACT, err, errors, json, kinds, migration, out, repo, run, tree};
 
 #[test]
 fn the_template_lints_clean_on_the_layout() {
@@ -336,7 +393,7 @@ fn a_fixed_end_narrows_an_open_layer_to_the_role_that_may_use_it() {
     );
     let message = value["violations"][0]["message"].as_str().unwrap();
     assert!(
-        message.contains("limits `features` to the edges it declares towards `ui`"),
+        message.contains("the `%% each features` on line 21 limits `billing` to the edges it declares towards `ui`"),
         "{message}"
     );
 }
@@ -480,6 +537,33 @@ fn the_fixed_end_contract_errors_exit_2_with_the_each_line() {
         assert!(message.contains("line 21"), "{each}: {message}");
         assert!(message.contains(expect), "{each}: {message}");
     }
+}
+
+#[test]
+fn a_template_switches_on_one_feature_at_a_time_as_it_is_split() {
+    let dir = migration("");
+    let output = run(dir.path(), &["lint", "--format", "json"]);
+    let found = errors(&output);
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert!(
+        found[0].starts_with("`billing-controller` imports `ui-kit`"),
+        "{found:?}"
+    );
+    assert!(
+        found[0].contains("the `%% each features` on line 23 limits `billing`"),
+        "{found:?}"
+    );
+}
+
+#[test]
+fn a_written_edge_still_narrows_the_whole_pair_of_layers() {
+    let dir = migration("  orders-view --> ui-kit\n");
+    let output = run(dir.path(), &["lint", "--format", "json"]);
+    let found = errors(&output);
+    assert_eq!(found.len(), 2, "{found:?}");
+    assert!(found.iter().any(|m| m.starts_with("`billing-controller`")));
+    assert!(found.iter().any(|m| m.starts_with("`orders-controller`")));
+    assert!(found.iter().all(|m| !m.contains("%% each")), "{found:?}");
 }
 
 #[test]

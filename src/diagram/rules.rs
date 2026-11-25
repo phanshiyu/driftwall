@@ -7,7 +7,7 @@ use super::each;
 use super::error::DiagramError;
 use crate::model::{
     BoundaryEdge, Budget, Contract, Denial, EachArrow, EachRule, Edge, EdgeKind, Endpoint,
-    LayerOrder, NodeId, NodeInfo, OpenAccess, Rules, children_apart,
+    LayerOrder, Narrowing, NodeId, NodeInfo, OpenAccess, Rules, children_apart,
 };
 
 /// A rule directive found on a comment line, with the text after its keyword.
@@ -534,7 +534,10 @@ pub(super) fn check_denials_remove_something(contract: &Contract) -> Result<(), 
                     from: from.clone(),
                     to: to.clone(),
                 };
-                matches!(contract.open_access(&pair), Some(OpenAccess::Allowed(_)))
+                matches!(
+                    contract.open_access(&pair, Narrowing::Design),
+                    Some(OpenAccess::Allowed(_))
+                )
             })
         });
         if !allowed {

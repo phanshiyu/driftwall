@@ -128,6 +128,12 @@ pub struct BoundaryEdge {
 pub struct Template {
     /// The boundary the `%% each` line names.
     pub boundary: String,
+    /// The child boundary of `boundary` this expansion is for.
+    pub child: String,
+    /// Whether the importing end is a role of `child`, not a fixed end.
+    pub from_role: bool,
+    /// Whether the imported end is a role of `child`, not a fixed end.
+    pub to_role: bool,
     /// The role of the importing end in the arrow.
     pub from: String,
     /// The role of the imported end in the arrow.

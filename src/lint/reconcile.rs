@@ -6,8 +6,8 @@ use std::path::{Path, PathBuf};
 use crate::imports::FileImports;
 use crate::model::{
     BoundaryEdge, Contract, Cover, Declaration, Declared, Denial, Edge, EdgeKind, EdgeStatus,
-    ImportKind, LintReport, Location, OpenAccess, Ownership, ResolvedImport, Seen, Symbol,
-    Violation, ViolationKind, edge_status, path_key,
+    ImportKind, LintReport, Location, Narrowing, OpenAccess, Ownership, ResolvedImport, Seen,
+    Symbol, Violation, ViolationKind, edge_status, path_key,
 };
 
 use super::isolation;
@@ -43,6 +43,7 @@ pub fn reconcile(
     let mut violations = ownership_findings(contract, ownership, contract_file);
 
     let crossings = crossings(contract, ownership, imports);
+    let owning = ownership.owning_nodes();
     for (edge, import) in &crossings {
         // why: a denied site has one finding, and nothing allows it, so nothing else is asked.
         if let Some(denial) = contract.denial(edge) {
@@ -56,7 +57,7 @@ pub fn reconcile(
         match covers.first() {
             _ if one_finding => {}
             // why: an open chain allows the pair as a solid edge would, until an arrow narrows it.
-            None => match contract.open_access(edge) {
+            None => match contract.open_access(edge, Narrowing::Owned(&owning)) {
                 Some(OpenAccess::Allowed(_)) => {}
                 access => violations.push(
                     site_violation(
@@ -169,9 +170,16 @@ fn undeclared_message(
             from: upper,
             to: lower,
             arrows,
+            each: None,
         }) => format!(
             "{base}; the `%% order open` on line {} limits `{upper}` to the edges it declares towards `{lower}` ({arrows} declared) and this pair is not among them",
             order.line
+        ),
+        Some(OpenAccess::Narrowed {
+            each: Some(each), ..
+        }) => format!(
+            "{base}; the `%% each {}` on line {} limits `{}` to the edges it declares towards `{}` and this pair is not among them",
+            each.boundary, each.line, each.from, each.to
         ),
         _ => base,
     }
@@ -328,9 +336,13 @@ pub(super) fn boundary_seen(contract: &Contract, sites: &[(&Edge, ImportKind, bo
 
 /// Whether `declared` and `other` are expansions of one `%% each` arrow.
 fn same_arrow(declared: &BoundaryEdge, other: &BoundaryEdge) -> bool {
-    declared.template.is_some()
-        && other.line == declared.line
-        && other.template == declared.template
+    // why: the template differs by child and by which ends are roles, not by the arrow.
+    match (&declared.template, &other.template) {
+        (Some(a), Some(b)) => {
+            other.line == declared.line && a.boundary == b.boundary && a.arrow == b.arrow
+        }
+        _ => false,
+    }
 }
 
 /// The same findings for every boundary edge, judged by [`boundary_seen`] and once per arrow.

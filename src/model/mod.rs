@@ -26,7 +26,7 @@ pub use boundary::{
 };
 pub use map::{GlobError, MapGlob, MapRule, MapSite, MapTarget, Specificity};
 pub use moved::{BoundaryMove, MoveCause, Moved};
-pub use open_order::OpenAccess;
+pub use open_order::{EachLimit, Narrowing, OpenAccess};
 pub use package_rule::{PackagePattern, PackageRule, PackageRuleKind};
 pub use rules::{
     Budget, Denial, DenySummary, EachArrow, EachRule, EachSummary, InterfaceEntry, IsolatedSummary,
@@ -508,6 +508,14 @@ pub struct Ownership {
     /// Source files that only `.driftwallignore` hides. Never owned or unmapped, and never a
     /// finding.
     pub ignored: BTreeSet<PathBuf>,
+}
+
+impl Ownership {
+    /// The nodes that own at least one source file.
+    #[must_use]
+    pub fn owning_nodes(&self) -> BTreeSet<NodeId> {
+        self.owners.values().cloned().collect()
+    }
 }
 
 /// A symbol an import uses from its target file, exactly as the importing code writes it.

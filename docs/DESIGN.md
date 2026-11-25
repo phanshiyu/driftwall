@@ -426,14 +426,28 @@ layer-to-layer arrows. In an open chain they are implicit and arrows only narrow
   `L` is limited to the declared edges and the allowance no longer applies to that pair of layers.
   "Any edge" is any node edge between a node of `U` and a node of `L`, and any boundary edge one of
   whose covered pairs goes from a node of `U` to a node of `L` (`U --> L`, `a --> L`, `U --> b`),
-  whatever its arrow. Membership is read with the member lookup of boundary edges. Only the pair of
-  layers `(U, L)` is narrowed: `U` to another lower layer `M` has its own allowance, and a layer
+  whatever its arrow. Membership is read with the member lookup of boundary edges. A written edge
+  narrows the whole pair of layers. An edge that a `%% each` expansion produces for child `C`
+  narrows less, see "Template expansions" below. Only the pair of layers `(U, L)` is narrowed: `U` to another lower layer `M` has its own allowance, and a layer
   that declares no edge towards a lower layer keeps the whole allowance towards it.
   Example, chain `app > features > shared > core`. With no arrow at all, `features` may use `shared`
   and `core`. After `a1 --> c1`, with `a1` in `features` and `c1` in `core`: `a1` importing `c1` is
   allowed (the edge), a `features` node importing another `core` node `c2` is `undeclared-edge`, and
   every `features` import of a `shared` node is still allowed, since no edge runs from `features` to
   `shared`. `app` is unaffected.
+- Template expansions. The expansion of an `%% each` arrow for child `C` narrows only the node pairs
+  with an end inside `C`, the end on the role side of the arrow: importers in `C` for `view -->
+  ui`, imports into `C` for `shell --> controller`, either role end for a role-to-role arrow. So
+  `billing-view --> ui` narrows billing's access to `ui` and not orders'. An expansion whose role
+  node (for a role-to-role arrow, either role node) owns no file does not narrow at all: a feature
+  not split yet, whose `<feature>-view` is declared and owns nothing, keeps the open allowance
+  until the node owns a file, and from then billing's other nodes importing `ui` are
+  `undeclared-edge` while `billing-view` is allowed. This is the only place narrowing reads the
+  code. Contract-only readers, the dead-denial error of "Denial" and `render`'s open arrows, treat
+  every expansion as owning files (the design as drawn) but keep the scope to `C`. Everything else
+  about an expansion is as for any declared edge: allowing sites, staleness, status, isolation,
+  order and cycles. Nodes of `U` outside every child of the template's boundary are not narrowed by
+  its expansions.
 - Kinds. A `-->|type|`, `-->|test|`, `-.->` or `-->|type, test|` edge narrows like a solid one,
   because any declared arrow narrows: a designer who wrote down how `features` reaches `core` has
   stated the whole list. So `a1 -->|test| c1` makes a production import `a1` to `c1` an
@@ -448,7 +462,9 @@ layer-to-layer arrows. In an open chain they are implicit and arrows only narrow
   chain lists the two boundaries and narrowing has switched its allowance off, the message says so:
   "`a1` imports `c2` (...) but architecture.mmd declares no edge a1 --> c2; the `%% order open` on
   line 5 limits `features` to the edges it declares towards `core` (1 declared) and this pair is not
-  among them".
+  among them". A pair narrowed only by expansions says "...; the `%% each features` on line 12
+  limits `billing` to the edges it declares towards `ui` and this pair is not among them", naming
+  the child (or the layer, on the end that is a fixed end) and the first such template in file order.
 - No cycles. Implicit allowances are not declared edges and are ignored: `%% no-cycles` judges
   declared edges only, and an allowance only points down, so it cannot close a cycle.
 - Stale and redundant. The allowance is not a declared edge, so it is never stale, and a site it
@@ -640,8 +656,8 @@ inside the `|...|` label does not end the arrow). An end is a role, a node id su
   with the arrow's kind; a child without the role is skipped. With a boundary as the fixed end the
   expansion is a boundary edge for every rule (see "Boundary edges"), otherwise a node edge. Every
   rule of this section and of "Contract rules" treats an expansion as it treats a written edge, so
-  `view --> ui` narrows an open chain's `features` to `ui` pair of layers to the view nodes (see
-  "Open order"), and an error or warning an expansion causes points at the `%% each` line. Contract
+  `view --> ui` narrows an open chain's `features` to `ui`, feature by feature, to the view nodes
+  (see "Open order"), and an error or warning an expansion causes points at the `%% each` line. Contract
   errors: an arrow with two fixed ends (write it as an ordinary edge; at least one end is a role); a
   fixed end that is `<boundary>` itself, a boundary inside one of its child boundaries, or a node
   inside one of them (a node or boundary written directly in `<boundary>` and outside every child
@@ -672,10 +688,12 @@ Lint treats an expansion as a declared edge of its kind:
   12) already covers it`.
 - Isolation. An expansion joins two nodes of one child, so it never joins two children of an
   isolated boundary: a template never trips `%% isolated`.
-- Open order. An expansion joins two nodes of one child. The nodes of a child lie in the same layer
-  of a chain unless the child itself holds nested layers, so it narrows no pair of layers in the
-  ordinary layout, and where it does hold two layers it is a declared edge between them like any
-  other (see "Open order").
+- Open order. An expansion between two roles joins two nodes of one child, so in the ordinary layout
+  it narrows no pair of layers, and where the child holds two layers it is a declared edge between
+  them. An expansion with a fixed end in another layer (`view --> ui`) is a declared edge between
+  the layers too, but it narrows only for its own child, and only once its role node owns a file
+  (see "Open order", "Template expansions"): a repo mid-migration switches the template on one
+  feature at a time as each is split.
 - Order and no-cycles see the expansions as node edges: an upward expansion is a contract error of
   `%% order`, and a template that closes a cycle is a `%% no-cycles` error. Their messages name the
   expansion `each features: controller --> service` and the `%% each` line.
