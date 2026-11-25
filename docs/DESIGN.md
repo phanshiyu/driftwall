@@ -2764,15 +2764,22 @@ they declare things in.
   label, and every declared edge is an arrow with its kind: written node edges, boundary edges
   (a subgraph id is an edge end, Mermaid accepts it) and the expansions of `%% each`. `-->` for a
   solid edge, `-.->` for a dotted one, `|test|`, `|type|` and `|type, test|` as the label. For every
-  `%% order open:` line, an arrow `U ==>|open| L` joins each two consecutive listed boundaries. A plain
-  `%% order:` line adds nothing, and no other rule is drawn.
+  `%% order open:` line, the open arrows `U ==>|open| L`, drawn only where the allowance of "Open
+  order" still holds. Within one chain, a layer pair `(U, L)` with `U` above `L` is open when the
+  allowance applies to at least one pair of nodes `u` in `U` and `l` in `L` after narrowing (a
+  declared edge between the two layers switches it off) and after `%% deny` (a denied pair has
+  none): the picture asks the same model code as `lint` does (`open_access` and `denial`). The
+  arrows drawn are the transitive reduction of the open pairs: `U ==>|open| L` is dropped when some
+  layer `M` between them has `U` to `M` and `M` to `L` both open. With nothing narrowed or denied
+  that is one arrow per two consecutive layers; where a pair is not open, the arrows that skip over
+  it appear. A plain `%% order:` line adds nothing, and no other rule is drawn.
 - `--depth N`, with `N >= 1` (the top-level boundaries are depth 1). Every boundary at depth `N` is
   drawn as one box `id["label"]` with its contents hidden, and a boundary above it is still a
   `subgraph`. Each edge end maps to the box that hides it (an end that is not hidden maps to itself).
   An edge whose two ends map to the same box is dropped. Edges between the same two drawn ends merge
   into one: solid if any of them is solid, else dotted, and the label is kept only if every merged
   edge has the same label (`test`, `type`, `type, test`, or none), else there is none. The open
-  arrows map and merge the same way (they all say `open`). A `N` deeper than the nesting changes
+  arrows are computed first, then map and merge the same way (they all say `open`). A `N` deeper than the nesting changes
   nothing. A boundary self-edge such as `features --> features` is not dropped unless `features` is a
   box.
 - `--focus B`. The boundary `B` is drawn in full, at every depth. An edge with exactly one end in `B`

@@ -31,7 +31,7 @@
 
 - `driftwall render [PATH] [--contract FILE] [--depth N | --focus BOUNDARY]` prints a generated
   Mermaid picture of the contract (no code needed): every boundary, node and edge, the open chains as
-  `==>|open|` arrows, `--depth N` to draw boundaries at depth N as one box with merged edges, and
+  `==>|open|` arrows (only where narrowing and `%% deny` leave the allowance, reduced so a skipped layer shows a skip arrow), `--depth N` to draw boundaries at depth N as one box with merged edges, and
   `--focus B` to draw one boundary in full with the outside as boxes. `render --update FILE.md` fills
   the `<!-- driftwall render -->` blocks of a Markdown file and `render --check FILE.md` exits 1
   naming each stale block, so a documented overview cannot drift. A boundary label the contract

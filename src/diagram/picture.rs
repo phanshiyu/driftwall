@@ -5,7 +5,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use thiserror::Error;
 
-use crate::model::{Contract, EdgeKind, Endpoint, NodeId, PictureView};
+use crate::model::{
+    Contract, Edge, EdgeKind, Endpoint, LayerOrder, NodeId, OpenAccess, PictureView,
+};
 
 /// What can go wrong while drawing a picture or syncing the blocks of a Markdown file.
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -422,16 +424,16 @@ fn is_inside(scene: &Scene, end: &Drawn, view: &PictureView) -> bool {
 }
 
 /// The `U ==>|open| L` arrows of every `%% order open:` line, mapped and merged like edges.
+///
+/// A pair of layers is drawn when the open allowance still applies to some pair of their nodes,
+/// after narrowing and denials, and not when a layer between them is open to both ends.
 fn open_arrows(scene: &Scene, view: &PictureView) -> Vec<String> {
     if matches!(view, PictureView::Focus(_)) {
         return Vec::new();
     }
-    let mut pairs: BTreeSet<(Drawn, Drawn)> = BTreeSet::new();
+    let mut pairs: BTreeSet<(String, String)> = BTreeSet::new();
     for chain in scene.contract.rules.order.iter().filter(|chain| chain.open) {
-        for pair in chain.boundaries.windows(2) {
-            let (Some(upper), Some(lower)) = (pair.first(), pair.last()) else {
-                continue;
-            };
+        for (upper, lower) in reduced_open_pairs(scene.contract, chain) {
             let (Some(a), Some(b)) = (
                 scene.map(&Endpoint::Boundary(upper.clone()), view),
                 scene.map(&Endpoint::Boundary(lower.clone()), view),
@@ -441,11 +443,56 @@ fn open_arrows(scene: &Scene, view: &PictureView) -> Vec<String> {
             if a == b && matches!(a, Drawn::Box(_)) {
                 continue;
             }
-            pairs.insert((a, b));
+            pairs.insert((a.id().to_owned(), b.id().to_owned()));
         }
     }
     pairs
         .iter()
-        .map(|(a, b)| format!("{} ==>|open| {}", a.id(), b.id()))
+        .map(|(a, b)| format!("{a} ==>|open| {b}"))
         .collect()
+}
+
+/// The layer pairs of `chain` that are open and not implied by a layer between them.
+fn reduced_open_pairs(contract: &Contract, chain: &LayerOrder) -> Vec<(String, String)> {
+    let layers = &chain.boundaries;
+    let members: Vec<Vec<&NodeId>> = layers
+        .iter()
+        .map(|layer| {
+            contract
+                .nodes
+                .iter()
+                .filter(|(_, info)| chain.place(info).is_some_and(|(id, _)| id == layer))
+                .map(|(id, _)| id)
+                .collect()
+        })
+        .collect();
+    // why: the allowance is the model's own question, so a picture and a lint cannot disagree.
+    let open = |upper: usize, lower: usize| {
+        let (Some(from), Some(to)) = (members.get(upper), members.get(lower)) else {
+            return false;
+        };
+        from.iter().any(|a| {
+            to.iter().any(|b| {
+                let pair = Edge {
+                    from: (*a).clone(),
+                    to: (*b).clone(),
+                };
+                contract.denial(&pair).is_none()
+                    && matches!(contract.open_access(&pair), Some(OpenAccess::Allowed(_)))
+            })
+        })
+    };
+    let mut found = Vec::new();
+    for upper in 0..layers.len() {
+        for lower in upper + 1..layers.len() {
+            let implied = (upper + 1..lower).any(|mid| open(upper, mid) && open(mid, lower));
+            if !implied
+                && open(upper, lower)
+                && let (Some(u), Some(l)) = (layers.get(upper), layers.get(lower))
+            {
+                found.push((u.clone(), l.clone()));
+            }
+        }
+    }
+    found
 }

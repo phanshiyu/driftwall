@@ -81,8 +81,8 @@ fn the_full_picture_has_every_boundary_node_edge_and_open_arrow() {
             "  features --> core",
             "  features-shell --> billing-view",
             "  search-view -->|type| core-ui",
-            "  app ==>|open| features",
-            "  features ==>|open| core",
+            // why: edges narrow app to features and features to core, so only the skip is open.
+            "  app ==>|open| core",
         ]
     );
 }
@@ -109,8 +109,8 @@ fn depth_one_draws_top_level_boundaries_as_boxes_and_merges_their_edges() {
             "  app --> features",
             // why: solid beats dotted, and `test`, `type` and none differ, so no label.
             "  features --> core",
-            "  app ==>|open| features",
-            "  features ==>|open| core",
+            // why: edges narrow app to features and features to core, so only the skip is open.
+            "  app ==>|open| core",
         ]
     );
 }
@@ -386,5 +386,99 @@ fn a_malformed_file_is_an_error_naming_the_line() {
     assert_eq!(
         synced(&format!("<!-- driftwall render --focus nope -->\n{end}")),
         Err(PictureError::UnknownBoundary("nope".to_owned()))
+    );
+}
+
+const LAYERS: &str = "flowchart LR
+  subgraph app
+    app-main
+  end
+  subgraph features
+    subgraph billing
+      billing-view
+      billing-service
+    end
+  end
+  subgraph ui
+    ui-kit
+    ui-extra
+  end
+  subgraph core
+    core-db
+    core-cache
+  end
+  %% order open: app > features > ui > core
+";
+
+fn open_arrows_of(extra: &str, view: &PictureView) -> Vec<String> {
+    let contract = parse(&format!("{LAYERS}{extra}")).unwrap();
+    picture(&contract, view, "a.mmd")
+        .unwrap()
+        .lines()
+        .filter(|line| line.contains("==>"))
+        .map(|line| line.trim().to_owned())
+        .collect()
+}
+
+#[test]
+fn with_nothing_narrowed_the_open_arrows_are_the_consecutive_layers() {
+    assert_eq!(
+        open_arrows_of("", &PictureView::Full),
+        [
+            "app ==>|open| features",
+            "features ==>|open| ui",
+            "ui ==>|open| core"
+        ]
+    );
+}
+
+#[test]
+fn narrowing_removes_an_arrow_and_the_reduction_adds_the_skip() {
+    assert_eq!(
+        open_arrows_of("  %% each features: view --> ui-kit\n", &PictureView::Full),
+        [
+            "app ==>|open| features",
+            "app ==>|open| ui",
+            "features ==>|open| core",
+            "ui ==>|open| core"
+        ]
+    );
+}
+
+#[test]
+fn a_whole_layer_denial_removes_an_arrow() {
+    assert_eq!(
+        open_arrows_of("  %% deny ui: core\n", &PictureView::Full),
+        [
+            "app ==>|open| features",
+            "features ==>|open| core",
+            "features ==>|open| ui"
+        ]
+    );
+}
+
+#[test]
+fn a_node_denial_that_leaves_a_pair_open_keeps_the_arrow() {
+    assert_eq!(
+        open_arrows_of("  %% deny ui-kit: core-db\n", &PictureView::Full),
+        open_arrows_of("", &PictureView::Full)
+    );
+}
+
+#[test]
+fn open_arrows_collapse_and_merge_with_depth() {
+    let extra = "  %% each features: view --> ui\n  %% deny ui: core\n";
+    assert_eq!(
+        open_arrows_of(extra, &PictureView::Depth(1)),
+        [
+            "app ==>|open| features",
+            "app ==>|open| ui",
+            "features ==>|open| core"
+        ]
+    );
+    // why: `features` is a depth 1 boundary, so depth 2 draws the same arrows.
+    assert_eq!(
+        open_arrows_of(extra, &PictureView::Depth(2)),
+        open_arrows_of(extra, &PictureView::Depth(1))
     );
 }
