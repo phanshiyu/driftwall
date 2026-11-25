@@ -186,6 +186,8 @@ fn focus_draws_the_boundary_in_full_and_the_outside_as_its_outermost_boundary() 
             "  core[\"Core\"]",
             // why: `features` holds `billing`, so its member `features-shell` is drawn as itself.
             "  features-shell",
+            // why: `features --> core` covers billing, so billing inherits it, drawn from the focus.
+            "  billing --> core",
             // why: a solid and a dotted edge merge into a solid one, and their labels differ.
             "  billing-service --> core",
             "  billing-view --> billing-service",
@@ -480,5 +482,162 @@ fn open_arrows_collapse_and_merge_with_depth() {
     assert_eq!(
         open_arrows_of(extra, &PictureView::Depth(2)),
         open_arrows_of(extra, &PictureView::Depth(1))
+    );
+}
+
+const FEATURES: &str = "flowchart LR
+  subgraph app
+    app-main
+  end
+  subgraph features
+    subgraph security
+      security-view
+      security-store
+    end
+    subgraph billing
+      billing-view
+    end
+    features-shell
+  end
+  subgraph core
+    core-db
+  end
+  subgraph storage
+    storage-db
+  end
+  features --> storage
+  %% order open: app > features > core
+  %% each features: view --> storage-db
+";
+
+fn focus_lines(src: &str, focus: &str) -> Vec<String> {
+    let contract = parse(src).unwrap();
+    let text = picture(&contract, &PictureView::Focus(focus.to_owned()), "a.mmd").unwrap();
+    text.lines().map(|line| line.trim().to_owned()).collect()
+}
+
+#[test]
+fn focus_shows_the_edges_a_boundary_around_it_wrote_from_the_focus() {
+    let text = focus_lines(FEATURES, "security");
+    assert!(
+        text.contains(&"security --> storage".to_owned()),
+        "{text:?}"
+    );
+    assert!(
+        text.contains(&"storage[\"storage\"]".to_owned()),
+        "{text:?}"
+    );
+    // why: the template arrow is written on a node inside, so it stays that node.
+    assert!(
+        text.contains(&"security-view --> storage".to_owned()),
+        "{text:?}"
+    );
+}
+
+#[test]
+fn focus_shows_the_open_chain_the_focus_sits_in() {
+    let text = focus_lines(FEATURES, "security");
+    assert!(
+        text.contains(&"app ==>|open| security".to_owned()),
+        "{text:?}"
+    );
+    // why: no arrow runs from features to core, so the allowance holds for the focus.
+    assert!(
+        text.contains(&"security ==>|open| core".to_owned()),
+        "{text:?}"
+    );
+    assert!(
+        !text.iter().any(|line| line.contains("billing")),
+        "{text:?}"
+    );
+    assert!(
+        !text.iter().any(|line| line.contains("features")),
+        "{text:?}"
+    );
+}
+
+#[test]
+fn focus_open_arrows_follow_narrowing_and_denials() {
+    // why: `features --> core` narrows features to core for every member, so no open arrow runs there.
+    let narrowed = format!("{FEATURES}  features --> core\n");
+    let text = focus_lines(&narrowed, "security");
+    assert!(
+        !text.iter().any(|line| line.contains("==>|open| core")),
+        "{text:?}"
+    );
+    assert!(text.contains(&"security --> core".to_owned()), "{text:?}");
+    let denied = format!("{FEATURES}  %% deny security: core\n");
+    let text = focus_lines(&denied, "security");
+    assert!(
+        !text.iter().any(|line| line.contains("==>|open| core")),
+        "{text:?}"
+    );
+    assert!(
+        text.contains(&"app ==>|open| security".to_owned()),
+        "{text:?}"
+    );
+}
+
+#[test]
+fn focus_open_arrows_are_reduced_like_the_normal_picture() {
+    let src = "flowchart LR
+  subgraph app
+    app-main
+  end
+  subgraph features
+    subgraph security
+      security-view
+    end
+  end
+  subgraph shared
+    shared-x
+  end
+  subgraph core
+    core-db
+  end
+  %% order open: app > features > shared > core
+";
+    let text = focus_lines(src, "security");
+    assert!(
+        text.contains(&"security ==>|open| shared".to_owned()),
+        "{text:?}"
+    );
+    assert!(
+        !text.iter().any(|line| line.contains("==>|open| core")),
+        "{text:?}"
+    );
+}
+
+#[test]
+fn a_focus_that_no_open_layer_holds_draws_no_open_arrows() {
+    let text = focus_lines(FEATURES, "billing");
+    assert!(
+        text.contains(&"app ==>|open| billing".to_owned()),
+        "{text:?}"
+    );
+    let src = FEATURES.replace("app > features > core", "app > core");
+    let text = focus_lines(&src, "billing");
+    assert!(!text.iter().any(|line| line.contains("==>")), "{text:?}");
+}
+
+#[test]
+fn a_boundary_edge_over_its_own_ends_draws_the_other_members_as_the_outside() {
+    let src = format!("{FEATURES}  features --> features\n");
+    let text = focus_lines(&src, "security");
+    assert!(
+        text.contains(&"security --> billing".to_owned()),
+        "{text:?}"
+    );
+    assert!(
+        text.contains(&"billing --> security".to_owned()),
+        "{text:?}"
+    );
+    assert!(
+        text.contains(&"security --> features-shell".to_owned()),
+        "{text:?}"
+    );
+    assert!(
+        !text.iter().any(|line| line == "security --> security"),
+        "{text:?}"
     );
 }

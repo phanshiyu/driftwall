@@ -2801,12 +2801,33 @@ they declare things in.
   arrows are computed first, then map and merge the same way (they all say `open`). A `N` deeper than the nesting changes
   nothing. A boundary self-edge such as `features --> features` is not dropped unless `features` is a
   box.
-- `--focus B`. The boundary `B` is drawn in full, at every depth. An edge with exactly one end in `B`
-  (`B` itself or anything inside it) is drawn, with the outside end drawn as the outermost boundary
-  that holds it and does not hold `B`, as a box, or as the node itself when there is no such
-  boundary. Edges merge as above. Edges with both ends outside `B`, edges to a boundary that holds
-  `B`, and the open arrows are not drawn. `B` must be a boundary with a node at some depth: an
-  unknown id or a node is exit `2`.
+- `--focus B`. The boundary `B` is drawn in full, at every depth, with what it inherits, so a feature
+  inside `features` does not look like it uses nothing. `B` must be a boundary with a node at some
+  depth: an unknown id or a node is exit `2`. "Inside `B`" means `B`, a boundary in it or a node in it;
+  a boundary that holds `B` is an ancestor.
+  - Declared edges. A declared edge, written, boundary or `%% each` expansion, that covers at least
+    one pair of nodes with exactly one end inside `B` is drawn, one arrow for each such pair, and
+    arrows between the same two drawn ends merge as above. The end of the edge that is inside `B` is
+    drawn as written (a node, or a boundary inside `B`), and an end that is `B` or an ancestor of `B`
+    is drawn as `B`, the focus subgraph id: `features --> storage` is `security --> storage`. The
+    outside end is the outermost boundary that holds it and does not hold `B`, as a box, or the node
+    itself when there is none; when the edge's own outside end is an ancestor of `B` (`features -->
+    features`) it is found from the covered node, so `security --> billing` and `billing -->
+    security`. An edge that covers pairs inside `B` only is drawn as written, unless an end is an
+    ancestor of `B`, which is then not drawn. An edge with no pair at all with an end inside `B`
+    is not drawn.
+  - Open arrows. For each `%% order open:` chain that lists a layer holding `B` (`B` or an ancestor),
+    `B` stands for that layer, with the nodes of `B` as its only members. `B ==>|open| L'` is drawn
+    for each layer `L` below it and `U' ==>|open| B` for each layer `U` above it, where `L'` and
+    `U'` are the layers drawn as outside ends (the outermost boundary holding them that does not
+    hold `B`, as a box), when some pair of nodes `(x, y)` from the two layers has the open allowance
+    after narrowing and `%% deny`, asked of the same model code as the full picture (`open_access`
+    and `denial`). Narrowing is that of the layer pair, so `features --> core` switches off
+    `security ==>|open| core` as it does `features ==>|open| core`. The arrows are reduced as in the
+    full picture, in each direction: `B ==>|open| L` is dropped when a layer `M` between has `B` to
+    `M` and `M` to `L` open, and `U ==>|open| B` when some `M` between has `U` to `M` and `M` to `B`
+    open. A chain that lists no layer holding `B` draws nothing, so an open arrow between layers
+    inside `B` is not drawn.
 - `--depth` with `--focus`, and `--depth 0`, are argument errors: exit `2`.
 
 Keeping a copy in Markdown. A block is a line `<!-- driftwall render [--depth N | --focus B] -->`, any

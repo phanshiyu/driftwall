@@ -6,7 +6,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
 
 use crate::model::{
-    Contract, Edge, EdgeKind, Endpoint, LayerOrder, Narrowing, NodeId, OpenAccess, PictureView,
+    BoundaryEdge, Contract, Edge, EdgeKind, Endpoint, LayerOrder, Narrowing, NodeId, OpenAccess,
+    PictureView,
 };
 
 /// What can go wrong while drawing a picture or syncing the blocks of a Markdown file.
@@ -127,33 +128,37 @@ impl<'a> Scene<'a> {
         )
     }
 
-    /// The end that stands for `end` in the picture of `view`, or `None` when it is not drawn.
-    fn map(&self, end: &Endpoint, view: &PictureView) -> Option<Drawn> {
+    /// The end that stands for `end` in the picture of `view`.
+    fn map(&self, end: &Endpoint, view: &PictureView) -> Drawn {
         let chain = self.chain(end);
         match view {
-            PictureView::Full => Some(plain(end)),
+            PictureView::Full => plain(end),
             PictureView::Depth(depth) => {
                 let depth = usize::try_from(*depth).unwrap_or(usize::MAX);
                 let hidden_in = chain.get(depth.saturating_sub(1));
-                Some(hidden_in.map_or_else(|| plain(end), |box_id| Drawn::Box(box_id.clone())))
+                hidden_in.map_or_else(|| plain(end), |box_id| Drawn::Box(box_id.clone()))
             }
-            PictureView::Focus(focus) => {
-                let focus_chain = self.chains.get(focus)?;
-                if chain.contains(focus) {
-                    return Some(plain(end));
-                }
-                // why: a boundary around the focus is not drawn, and an edge to it says nothing.
-                if matches!(end, Endpoint::Boundary(id) if focus_chain.contains(id)) {
-                    return None;
-                }
-                Some(
-                    chain
-                        .iter()
-                        .find(|id| !focus_chain.contains(id))
-                        .map_or_else(|| plain(end), |outer| Drawn::Box(outer.clone())),
-                )
-            }
+            PictureView::Focus(focus) => self.focus_end(end, focus),
         }
+    }
+
+    /// The end that stands for `end` in the picture of `--focus focus`: itself inside the focus,
+    /// the focus for a boundary that holds it, else the outermost boundary around it that does not
+    /// hold the focus, as a box, or the node itself when there is none.
+    fn focus_end(&self, end: &Endpoint, focus: &str) -> Drawn {
+        let empty = Vec::new();
+        let focus_chain = self.chains.get(focus).unwrap_or(&empty);
+        let chain = self.chain(end);
+        if chain.iter().any(|id| id == focus) {
+            return plain(end);
+        }
+        if matches!(end, Endpoint::Boundary(id) if focus_chain.contains(id)) {
+            return Drawn::Boundary(focus.to_owned());
+        }
+        chain
+            .iter()
+            .find(|id| !focus_chain.contains(id))
+            .map_or_else(|| plain(end), |outer| Drawn::Box(outer.clone()))
     }
 
     /// Whether `end` is the focus or inside it.
@@ -344,47 +349,47 @@ fn arrows(scene: &Scene, view: &PictureView) -> (Vec<String>, BTreeSet<Drawn>) {
                 Endpoint::Node(edge.from.clone()),
                 Endpoint::Node(edge.to.clone()),
                 *kind,
+                None,
             )
         })
         .chain(
             contract
                 .boundary_edges
                 .iter()
-                .map(|e| (e.from.clone(), e.to.clone(), e.kind)),
+                .map(|e| (e.from.clone(), e.to.clone(), e.kind, Some(e))),
         );
     // why: keyed by the ids so the arrows come out sorted by id, whatever the end kinds are.
     let mut merged: BTreeMap<(String, String), (Drawn, Drawn, Merged)> = BTreeMap::new();
     let mut extras = BTreeSet::new();
-    for (from, to, kind) in declared {
-        if let PictureView::Focus(focus) = view
-            && scene.inside(&from, focus) == scene.inside(&to, focus)
-            && !scene.inside(&from, focus)
-        {
-            continue;
-        }
-        let (Some(a), Some(b)) = (scene.map(&from, view), scene.map(&to, view)) else {
-            continue;
+    for (from, to, kind, written) in declared {
+        let ends = match view {
+            PictureView::Focus(focus) => focus_ends(scene, focus, (&from, &to), written),
+            PictureView::Full | PictureView::Depth(_) => {
+                vec![(scene.map(&from, view), scene.map(&to, view))]
+            }
         };
-        if a == b && matches!(a, Drawn::Box(_)) {
-            continue;
-        }
         let (dotted, label) = parts(kind);
-        merged
-            .entry((a.id().to_owned(), b.id().to_owned()))
-            .and_modify(|(_, _, m)| {
-                m.solid |= !dotted;
-                if m.label != Some(label) {
-                    m.label = None;
-                }
-            })
-            .or_insert((
-                a,
-                b,
-                Merged {
-                    solid: !dotted,
-                    label: Some(label),
-                },
-            ));
+        for (a, b) in ends {
+            if a == b && matches!(a, Drawn::Box(_)) {
+                continue;
+            }
+            merged
+                .entry((a.id().to_owned(), b.id().to_owned()))
+                .and_modify(|(_, _, m)| {
+                    m.solid |= !dotted;
+                    if m.label != Some(label) {
+                        m.label = None;
+                    }
+                })
+                .or_insert((
+                    a,
+                    b,
+                    Merged {
+                        solid: !dotted,
+                        label: Some(label),
+                    },
+                ));
+        }
     }
     let mut lines: Vec<String> = Vec::new();
     for (from, to, edge) in merged.values() {
@@ -394,16 +399,74 @@ fn arrows(scene: &Scene, view: &PictureView) -> (Vec<String>, BTreeSet<Drawn>) {
             || format!("{} {arrow} {}", from.id(), to.id()),
             |label| format!("{} {arrow}|{label}| {}", from.id(), to.id()),
         ));
-        if matches!(view, PictureView::Focus(_)) {
-            for end in [from, to] {
-                if matches!(end, Drawn::Node(_) | Drawn::Box(_)) && !is_inside(scene, end, view) {
-                    extras.insert(end.clone());
-                }
-            }
-        }
+        extras.extend(outside(scene, [from, to], view));
     }
-    lines.extend(open_arrows(scene, view));
+    let (open, open_ends) = open_arrows(scene, view);
+    lines.extend(open);
+    extras.extend(open_ends);
     (lines, extras)
+}
+
+/// The drawn ends of a declared edge under `--focus focus`: one `(from, to)` for every covered pair
+/// with exactly one node inside the focus, and for every pair inside it. An end the edge wrote inside the focus is drawn as it
+/// is, an end that is the focus or holds it is the focus, and an outside end is drawn as an
+/// outside end of the picture, found from the covered node when the edge's own end holds the focus.
+fn focus_ends(
+    scene: &Scene,
+    focus: &str,
+    (from, to): (&Endpoint, &Endpoint),
+    boundary_edge: Option<&BoundaryEdge>,
+) -> Vec<(Drawn, Drawn)> {
+    let pairs = match (from, to, boundary_edge) {
+        (Endpoint::Node(a), Endpoint::Node(b), None) => vec![Edge {
+            from: a.clone(),
+            to: b.clone(),
+        }],
+        (_, _, edge) => edge
+            .map(|edge| edge.pairs(&scene.contract.nodes))
+            .unwrap_or_default(),
+    };
+    let holds = |end: &Endpoint| {
+        matches!(end, Endpoint::Boundary(id)
+            if scene.chains.get(focus).is_some_and(|chain| chain.contains(id)))
+    };
+    let side = |end: &Endpoint, node: &NodeId| {
+        let node = Endpoint::Node(node.clone());
+        if holds(end) && !scene.inside(&node, focus) {
+            scene.focus_end(&node, focus)
+        } else {
+            scene.focus_end(end, focus)
+        }
+    };
+    // why: a pair inside the focus is drawn as written, unless an end is an ancestor of the focus.
+    let around = |end: &Endpoint| {
+        matches!(end, Endpoint::Boundary(id)
+            if id != focus && scene.chains.get(focus).is_some_and(|chain| chain.contains(id)))
+    };
+    pairs
+        .iter()
+        .filter(|pair| {
+            let from_in = scene.inside(&Endpoint::Node(pair.from.clone()), focus);
+            let to_in = scene.inside(&Endpoint::Node(pair.to.clone()), focus);
+            from_in != to_in || (from_in && !around(from) && !around(to))
+        })
+        .map(|pair| (side(from, &pair.from), side(to, &pair.to)))
+        .collect()
+}
+
+/// The ends of an arrow that a focus picture must declare because they lie outside the focus.
+fn outside<'a>(
+    scene: &'a Scene,
+    ends: [&'a Drawn; 2],
+    view: &'a PictureView,
+) -> impl Iterator<Item = Drawn> + 'a {
+    ends.into_iter()
+        .filter(move |end| {
+            matches!(view, PictureView::Focus(_))
+                && matches!(end, Drawn::Node(_) | Drawn::Box(_))
+                && !is_inside(scene, end, view)
+        })
+        .cloned()
 }
 
 /// Whether the drawn end is part of the focus subtree, so it needs no extra declaration.
@@ -423,39 +486,95 @@ fn is_inside(scene: &Scene, end: &Drawn, view: &PictureView) -> bool {
     }
 }
 
-/// The `U ==>|open| L` arrows of every `%% order open:` line, mapped and merged like edges.
+/// The `U ==>|open| L` arrows of every `%% order open:` line, mapped and merged like edges, and
+/// the outside ends a focus picture draws for them.
 ///
 /// A pair of layers is drawn when the open allowance still applies to some pair of their nodes,
-/// after narrowing and denials, and not when a layer between them is open to both ends.
-fn open_arrows(scene: &Scene, view: &PictureView) -> Vec<String> {
-    if matches!(view, PictureView::Focus(_)) {
-        return Vec::new();
-    }
+/// after narrowing and denials, and not when a layer between them is open to both ends. In a focus
+/// picture the layer that holds the focus counts as the focus, and only the pairs with the focus at
+/// one end are drawn.
+fn open_arrows(scene: &Scene, view: &PictureView) -> (Vec<String>, BTreeSet<Drawn>) {
     let mut pairs: BTreeSet<(String, String)> = BTreeSet::new();
+    let mut extras = BTreeSet::new();
     for chain in scene.contract.rules.order.iter().filter(|chain| chain.open) {
-        for (upper, lower) in reduced_open_pairs(scene.contract, chain) {
+        let mut members = layer_members(scene.contract, chain);
+        let held = match view {
+            PictureView::Focus(focus) => {
+                let Some(holder) = focus_layer(scene, chain, focus, &mut members) else {
+                    continue;
+                };
+                Some(holder)
+            }
+            PictureView::Full | PictureView::Depth(_) => None,
+        };
+        for (upper, lower) in reduced_open_pairs(scene.contract, &members) {
+            if held.is_some_and(|holder| upper != holder && lower != holder) {
+                continue;
+            }
             let (Some(a), Some(b)) = (
-                scene.map(&Endpoint::Boundary(upper.clone()), view),
-                scene.map(&Endpoint::Boundary(lower.clone()), view),
+                layer_end(scene, chain, upper, held, view),
+                layer_end(scene, chain, lower, held, view),
             ) else {
                 continue;
             };
             if a == b && matches!(a, Drawn::Box(_)) {
                 continue;
             }
+            extras.extend(outside(scene, [&a, &b], view));
             pairs.insert((a.id().to_owned(), b.id().to_owned()));
         }
     }
-    pairs
+    let lines = pairs
         .iter()
         .map(|(a, b)| format!("{a} ==>|open| {b}"))
-        .collect()
+        .collect();
+    (lines, extras)
 }
 
-/// The layer pairs of `chain` that are open and not implied by a layer between them.
-fn reduced_open_pairs(contract: &Contract, chain: &LayerOrder) -> Vec<(String, String)> {
-    let layers = &chain.boundaries;
-    let members: Vec<Vec<&NodeId>> = layers
+/// The place in `chain` of the layer that holds `focus`, with that layer's `members` cut down to the
+/// nodes of the focus, or `None` when no layer of the chain holds it.
+fn focus_layer<'a>(
+    scene: &'a Scene,
+    chain: &LayerOrder,
+    focus: &str,
+    members: &mut [Vec<&'a NodeId>],
+) -> Option<usize> {
+    let around = scene.chains.get(focus)?;
+    let holder = chain
+        .boundaries
+        .iter()
+        .position(|layer| around.contains(layer))?;
+    *members.get_mut(holder)? = scene
+        .contract
+        .nodes
+        .iter()
+        .filter(|(_, info)| info.within(focus))
+        .map(|(id, _)| id)
+        .collect();
+    Some(holder)
+}
+
+/// The drawn end of layer number `index` of `chain`: the focus when it is the layer `held`.
+fn layer_end(
+    scene: &Scene,
+    chain: &LayerOrder,
+    index: usize,
+    held: Option<usize>,
+    view: &PictureView,
+) -> Option<Drawn> {
+    if let (Some(holder), PictureView::Focus(focus)) = (held, view)
+        && holder == index
+    {
+        return Some(Drawn::Boundary(focus.clone()));
+    }
+    let layer = chain.boundaries.get(index)?;
+    Some(scene.map(&Endpoint::Boundary(layer.clone()), view))
+}
+
+/// The nodes of each layer of `chain`, in the order the chain lists the layers.
+fn layer_members<'a>(contract: &'a Contract, chain: &LayerOrder) -> Vec<Vec<&'a NodeId>> {
+    chain
+        .boundaries
         .iter()
         .map(|layer| {
             contract
@@ -465,7 +584,12 @@ fn reduced_open_pairs(contract: &Contract, chain: &LayerOrder) -> Vec<(String, S
                 .map(|(id, _)| id)
                 .collect()
         })
-        .collect();
+        .collect()
+}
+
+/// The pairs of layers, by place in the chain, that are open and not implied by a layer between
+/// them, for the nodes of each layer in `members`.
+fn reduced_open_pairs(contract: &Contract, members: &[Vec<&NodeId>]) -> Vec<(usize, usize)> {
     // why: the allowance is the model's own question, so a picture and a lint cannot disagree.
     let open = |upper: usize, lower: usize| {
         let (Some(from), Some(to)) = (members.get(upper), members.get(lower)) else {
@@ -486,14 +610,11 @@ fn reduced_open_pairs(contract: &Contract, chain: &LayerOrder) -> Vec<(String, S
         })
     };
     let mut found = Vec::new();
-    for upper in 0..layers.len() {
-        for lower in upper + 1..layers.len() {
+    for upper in 0..members.len() {
+        for lower in upper + 1..members.len() {
             let implied = (upper + 1..lower).any(|mid| open(upper, mid) && open(mid, lower));
-            if !implied
-                && open(upper, lower)
-                && let (Some(u), Some(l)) = (layers.get(upper), layers.get(lower))
-            {
-                found.push((u.clone(), l.clone()));
+            if !implied && open(upper, lower) {
+                found.push((upper, lower));
             }
         }
     }
