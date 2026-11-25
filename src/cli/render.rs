@@ -63,7 +63,7 @@ pub fn run(args: &RenderArgs) -> Result<Run> {
         (None, None) => PictureView::Full,
     };
     Ok(Run {
-        stdout: lint::render_picture(&args.path, &options.contract, &view)?,
+        stdout: lint::render_picture(&args.path, &options.contract, &view, args.short_labels)?,
         outcome: Outcome::Clean,
     })
 }

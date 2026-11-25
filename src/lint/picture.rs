@@ -16,7 +16,8 @@ fn source_name(contract: &Path) -> String {
         .into_owned()
 }
 
-/// The Mermaid picture of the contract at `contract`, relative to `root`, for `view`.
+/// The Mermaid picture of the contract at `contract`, relative to `root`, for `view`, with labels
+/// cut before their first `:` when `short_labels`.
 ///
 /// # Errors
 /// The contract cannot be read or parsed, the depth is 0, or the focus is not a boundary.
@@ -24,9 +25,15 @@ pub fn render_picture(
     root: &Path,
     contract: &Path,
     view: &PictureView,
+    short_labels: bool,
 ) -> Result<String, LintError> {
     let parsed = read_contract(root, contract)?;
-    Ok(diagram::picture(&parsed, view, &source_name(contract))?)
+    Ok(diagram::picture(
+        &parsed,
+        view,
+        short_labels,
+        &source_name(contract),
+    )?)
 }
 
 /// Rewrites the `driftwall render` blocks of `markdown` from the contract at `contract`, relative

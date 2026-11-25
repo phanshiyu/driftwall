@@ -89,6 +89,9 @@ pub struct RenderArgs {
         conflicts_with_all = ["depth", "focus", "update"]
     )]
     pub check: Option<PathBuf>,
+    /// Cut every node and boundary label to the text before its first `:`.
+    #[arg(long, conflicts_with_all = ["update", "check"])]
+    pub short_labels: bool,
 }
 
 /// Output formats of the commands that present the architecture or a contract change.

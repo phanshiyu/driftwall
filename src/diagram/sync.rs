@@ -9,7 +9,7 @@ const END: &str = "<!-- driftwall render end -->";
 
 /// What one line of the file is, as far as blocks go.
 enum Marker {
-    Start(PictureView),
+    Start { view: PictureView, short: bool },
     End,
 }
 
@@ -28,22 +28,39 @@ fn marker(text: &str, line: u32) -> Option<Result<Marker, PictureError>> {
         line,
         args: args.to_owned(),
     };
-    let words: Vec<&str> = args.split_whitespace().collect();
-    Some(match words.as_slice() {
-        [] => Ok(Marker::Start(PictureView::Full)),
-        ["--depth", depth] => depth
-            .parse::<u32>()
-            .map(|depth| Marker::Start(PictureView::Depth(depth)))
-            .map_err(|_| bad()),
-        ["--focus", boundary] => Ok(Marker::Start(PictureView::Focus((*boundary).to_owned()))),
-        _ => Err(bad()),
-    })
+    let mut words = args.split_whitespace();
+    let mut view = None;
+    let mut short = false;
+    // why: the flags may come in any order, and each at most once.
+    while let Some(word) = words.next() {
+        let found = match word {
+            "--short-labels" if !short => {
+                short = true;
+                continue;
+            }
+            "--depth" => words
+                .next()
+                .and_then(|depth| depth.parse::<u32>().ok())
+                .map(PictureView::Depth),
+            "--focus" => words.next().map(|id| PictureView::Focus(id.to_owned())),
+            _ => None,
+        };
+        match (found, view.is_some()) {
+            (Some(found), false) => view = Some(found),
+            _ => return Some(Err(bad())),
+        }
+    }
+    Some(Ok(Marker::Start {
+        view: view.unwrap_or(PictureView::Full),
+        short,
+    }))
 }
 
 /// A block that has started: its line, its view and its line ending.
 struct Open {
     line: u32,
     view: PictureView,
+    short: bool,
     eol: &'static str,
 }
 
@@ -68,21 +85,26 @@ pub fn sync(
         let line = u32::try_from(index + 1).unwrap_or(u32::MAX);
         let found = marker(raw, line).transpose()?;
         match (found, open.take()) {
-            (Some(Marker::Start(_)), Some(block)) => {
+            (Some(Marker::Start { .. }), Some(block)) => {
                 return Err(PictureError::Nested {
                     line,
                     first: block.line,
                 });
             }
-            (Some(Marker::Start(view)), None) => {
+            (Some(Marker::Start { view, short }), None) => {
                 text.push_str(raw);
                 inside.clear();
                 let eol = if raw.ends_with("\r\n") { "\r\n" } else { "\n" };
-                open = Some(Open { line, view, eol });
+                open = Some(Open {
+                    line,
+                    view,
+                    short,
+                    eol,
+                });
             }
             (Some(Marker::End), None) => return Err(PictureError::StrayEnd { line }),
             (Some(Marker::End), Some(block)) => {
-                let drawn = picture(contract, &block.view, source)?;
+                let drawn = picture(contract, &block.view, block.short, source)?;
                 let fresh = format!("```mermaid\n{drawn}```\n").replace('\n', block.eol);
                 if fresh != inside {
                     stale.push(block.line);

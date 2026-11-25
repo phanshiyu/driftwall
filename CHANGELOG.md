@@ -39,6 +39,10 @@
   every declared edge that covers a pair with exactly one end inside `B` (written on `B`, on a
   boundary around it, or by a template) is drawn from `B` or its node, and the `==>|open|` arrows
   between `B` and the layers below and above the layer that holds it, after narrowing and `%% deny`.
+  A contract with a `%% order` line is drawn `flowchart TB` with invisible `U ~~~ L` links between
+  consecutive layers that no arrow joins, so the layers stack in order instead of ranking by edges;
+  without one it stays `LR`. `--short-labels` cuts every label to the text before its first `:`, in
+  the Markdown markers too (`<!-- driftwall render --depth 1 --short-labels -->`).
   `render --update FILE.md` fills
   the `<!-- driftwall render -->` blocks of a Markdown file and `render --check FILE.md` exits 1
   naming each stale block, so a documented overview cannot drift. A boundary label the contract
