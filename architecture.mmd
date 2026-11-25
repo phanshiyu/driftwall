@@ -1,22 +1,15 @@
-%% driftwall architecture contract (dogfooded).
-%% Grammar: flowchart subset. See docs/DESIGN.md#contract-format.
-%% Solid arrow  = implemented dependency, enforced.
-%% Dotted arrow = planned dependency, tolerated until built.
+%% driftwall architecture contract.
+%% Solid arrow  (-->)  = implemented dependency, enforced.
+%% Dotted arrow (-.->) = planned dependency, tolerated until built.
 flowchart LR
-  subgraph entry["Entry"]
-    cli["cli: args, exit codes"]
-  end
 
   subgraph engine["Engine"]
-    lint["lint: reconcile code graph vs diagram"]
     init["init: baseline generator"]
+    lint["lint: reconcile code graph vs diagram"]
   end
 
-  subgraph sources["Sources"]
-    diagram["diagram: parse + render contract"]
-    ownership["ownership: walk, .arch, ignores"]
-    imports["imports: tree-sitter extract + resolve"]
-    markup["markup: HTML and Svelte script scanner"]
+  subgraph entry["Entry"]
+    cli["cli: args, exit codes"]
   end
 
   subgraph shared["Shared"]
@@ -24,22 +17,75 @@ flowchart LR
     report["report: text, json, sarif"]
   end
 
-  cli --> lint
+  subgraph sources["Sources"]
+    subgraph reading["Reading code"]
+      subgraph languages["Languages"]
+        ecmascript["ecmascript: TS, JS, Svelte, HTML; tsconfig, vite, workspaces"]
+        python["python: imports, roots, stdlib"]
+        rust["rust: use paths, modules, Cargo"]
+        shell["shell: source and script references"]
+        swift["swift: imports, SwiftPM targets"]
+      end
+      imports["imports: collect a repo's imports, one language at a time"]
+      syntax["syntax: tree-sitter specs, statements, shared resolution"]
+    end
+    diagram["diagram: parse + render contract"]
+    markup["markup: HTML and Svelte script scanner"]
+    ownership["ownership: walk, maps, ignores"]
+  end
+
   cli --> init
-  cli --> report
-  cli --> ownership
+  cli --> lint
   cli --> model
-  lint --> diagram
-  lint --> ownership
-  lint --> imports
-  lint --> model
+  cli --> ownership
+  cli --> report
+  diagram --> model
+  ecmascript --> markup
+  imports --> model
+  imports --> syntax
   init --> diagram
-  init --> ownership
   init --> imports
   init --> model
-  diagram --> model
+  init --> ownership
+  lint --> diagram
+  lint --> imports
+  lint --> model
+  lint --> ownership
   ownership --> markup
   ownership --> model
-  imports --> markup
-  imports --> model
   report --> model
+  syntax --> model
+  imports --> languages
+  languages --> model
+  languages --> syntax
+
+  %% order: entry > engine > sources > shared
+  %% isolated: languages
+  %% no-cycles
+  %% no-cycles: boundaries
+  %% tests: isolated
+  %% facade imports
+
+  %% packages markup:
+  %% forbid-packages model: tree_sitter*, ignore, rayon, clap, anyhow
+  %% forbid-packages report: tree_sitter*, ignore, rayon, clap, anyhow
+  %% forbid-packages diagram: tree_sitter*, ignore, rayon, clap, anyhow
+  %% forbid-packages lint: tree_sitter*, ignore, clap, anyhow
+  %% forbid-packages init: tree_sitter*, ignore, clap, anyhow
+  %% forbid-packages ownership: tree_sitter*, clap, anyhow
+
+  %% map cli: src/cli/, src/lib.rs
+  %% map lint: src/lint/
+  %% map init: src/init/
+  %% map diagram: src/diagram/
+  %% map ownership: src/ownership/
+  %% map imports: src/imports/
+  %% map ecmascript: src/imports/ecmascript/
+  %% map python: src/imports/python/
+  %% map rust: src/imports/rust/
+  %% map swift: src/imports/swift/
+  %% map shell: src/imports/shell/
+  %% map syntax: src/imports/syntax/
+  %% map markup: src/markup/
+  %% map model: src/model/
+  %% map report: src/report/

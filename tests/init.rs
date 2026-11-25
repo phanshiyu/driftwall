@@ -758,15 +758,23 @@ fn this_repository_baselines_clean_without_its_contract() {
     let declared =
         driftwall::diagram::parse(&fs::read_to_string(root.join("architecture.mmd")).unwrap())
             .unwrap();
+    // why: the language split under `imports` is design; init must find each top-level module.
     let mut expected: Vec<String> = declared
-        .nodes
-        .keys()
-        .map(|id| id.as_str().to_owned())
+        .maps
+        .iter()
+        .filter(|rule| {
+            rule.globs
+                .iter()
+                .filter_map(driftwall::model::MapGlob::directory)
+                .any(|dir| dir.components().count() == 2)
+        })
+        .map(|rule| rule.target.to_string())
         .collect();
     expected.sort();
+    expected.dedup();
     assert_eq!(
         node_ids(&dir),
         expected,
-        "init must rediscover exactly the nodes of the hand-written contract: src/lib.rs only declares modules, so it is folded"
+        "init must rediscover exactly the top-level modules of the hand-written contract: src/lib.rs only declares modules, so it is folded"
     );
 }

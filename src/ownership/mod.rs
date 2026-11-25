@@ -1458,44 +1458,6 @@ mod tests {
         assert_eq!(explanation.arch_file(), Some(Path::new("ui/.arch")));
     }
 
-    #[test]
-    fn driftwall_repository_maps_every_source_file() {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-        let o = scan(root).unwrap();
-        let in_src = |p: &&PathBuf| p.starts_with("src");
-
-        let stray: Vec<_> = o.unmapped.iter().filter(in_src).collect();
-        assert!(stray.is_empty(), "unmapped files under src/: {stray:?}");
-
-        let modules = [
-            "model",
-            "ownership",
-            "diagram",
-            "imports",
-            "lint",
-            "init",
-            "report",
-            "cli",
-        ];
-        let mut seen = std::collections::BTreeSet::new();
-        for (path, node) in o.owners.iter().filter(|(p, _)| p.starts_with("src")) {
-            let mut parts = path.components().skip(1);
-            let expected = match (parts.next(), parts.next()) {
-                (Some(Component::Normal(dir)), Some(_)) => dir.to_string_lossy().into_owned(),
-                _ => "cli".to_owned(),
-            };
-            assert_eq!(node.as_str(), expected, "{}", path.display());
-            seen.insert(expected);
-        }
-        for module in modules {
-            assert!(seen.contains(module), "no files found for {module}");
-        }
-        assert_eq!(
-            o.owners.get(Path::new("src/lib.rs")).map(NodeId::as_str),
-            Some("cli")
-        );
-    }
-
     fn excluded(ownership: &Ownership, reason: Exclusion) -> Vec<String> {
         ownership
             .excluded

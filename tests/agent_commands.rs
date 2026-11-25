@@ -655,7 +655,7 @@ fn neighbors_lint_on_this_repository_shows_its_edges() {
     assert_eq!(code(&output), 0, "{}", stderr(&output));
     let out = stdout(&output);
     assert!(out.starts_with("node: lint\n"), "{out}");
-    assert!(out.contains("dirs: src/lint\n"), "{out}");
+    assert!(out.contains("dirs: src/lint/\n"), "{out}");
     assert!(out.contains("  lint --> model ("), "{out}");
     assert!(out.contains("  cli --> lint ("), "{out}");
 }
