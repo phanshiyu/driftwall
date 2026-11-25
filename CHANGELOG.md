@@ -37,6 +37,13 @@
   under `rules changed:`, and a node changing boundary (or a boundary changing nesting) as `node X
   moved from boundary A to B`. JSON `rules_added`, `rules_removed` and `boundary_moves`.
   `--exit-code` fails on these too. See "Diff beyond the contract" in `docs/DESIGN.md`.
+- Edge status: every edge now has one named status (`ok`, `open`, `undeclared`, `stale`, `planned`,
+  `planned-realized`, `test-only`), computed by one function that `lint` and `brief` share. `brief`
+  and `neighbors` JSON gain `"status"` on every edge and boundary edge (additive: `kind` is
+  unchanged, and `kind: null` still means undeclared), and their text ends an edge with `STALE`,
+  `PLANNED-REALIZED` or `TEST-ONLY` where `UNDECLARED` stood, so it tells the story of `lint`.
+  Lines of `ok` edges are unchanged. `lint` output is unchanged. See "Edge status" in
+  `docs/DESIGN.md`.
 
 ## 0.1.1 - 2026-11-25
 

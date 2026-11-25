@@ -271,7 +271,7 @@ declares has nothing extra. A pair a boundary edge allows is annotated `via feat
 `brief` lists the boundary edges in a `boundary edges:` block before
 the `rules:` block, one per line with the arrow, the line, how many pairs it covers and how many of
 them code realises (`features --> core (line 31): 6 of 24 pairs realised`); in JSON they are
-`boundary_edges` (`from`, `to`, `kind`, `line`, `covers`, `realised`), absent when there are none.
+`boundary_edges` (`from`, `to`, `kind`, `status`, `line`, `covers`, `realised`), absent when there are none.
 `diff` treats a boundary edge like a node edge, keyed by its two endpoints: added, removed and
 changed kind, in the same text forms as node edges (`a --> b` becomes `features --> core`), in JSON as
 `added_boundary_edges`, `removed_boundary_edges` and `changed_boundary_edges` with the endpoints as
@@ -2744,7 +2744,8 @@ needs a valid contract: with none, `where` answers as before and lists nothing.
   excluded files are not assets, and neither is in `files`) and every edge, declared or observed, with
   the number of import sites that realise it and how they are used (kinds, symbols, see "Import
   kind" and "Symbols and public surfaces"). An edge code uses and the contract lacks is marked
-  `UNDECLARED`. It is informational: exit `0` unless the tool fails (`2`).
+  `UNDECLARED`, and one `lint` has a finding for `STALE`, `PLANNED-REALIZED` or `TEST-ONLY`, see
+  "Edge status". It is informational: exit `0` unless the tool fails (`2`).
   It ends with the blind spots block, and a node line ends with ` blind: 3 not read, 1 excluded,
   2 ignored, 4 skipped, 1 unresolved` (only the non-zero parts; absent when all are zero):
 
