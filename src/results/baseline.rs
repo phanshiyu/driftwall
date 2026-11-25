@@ -14,7 +14,7 @@ use crate::code::Location;
 use super::{LintReport, Severity, Violation, ViolationKind};
 
 /// Every kind a baseline can hold, in no particular order.
-const BASELINABLE: [ViolationKind; 20] = [
+const BASELINABLE: [ViolationKind; 21] = [
     ViolationKind::UnmappedFile,
     ViolationKind::UnknownNode,
     ViolationKind::UndeclaredEdge,
@@ -33,6 +33,7 @@ const BASELINABLE: [ViolationKind; 20] = [
     ViolationKind::ForbiddenPackage,
     ViolationKind::StalePackage,
     ViolationKind::StaleFacade,
+    ViolationKind::FacadeWithoutExports,
     ViolationKind::IsolationBreach,
     ViolationKind::StaleIsolation,
 ];
@@ -69,6 +70,7 @@ impl ViolationKind {
             Self::ForbiddenPackage => "forbidden-package",
             Self::StalePackage => "stale-package",
             Self::StaleFacade => "stale-facade",
+            Self::FacadeWithoutExports => "facade-without-exports",
             Self::IsolationBreach => "isolation-breach",
             Self::StaleIsolation => "stale-isolation",
             Self::StaleBaseline => "stale-baseline",

@@ -1,7 +1,8 @@
 //! The re-export table of a TypeScript or JavaScript file: its `export .. from` statements and the
 //! names it exports itself, see "Re-exports" in `docs/DESIGN.md`.
 
-use std::path::Path;
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
 
 use tree_sitter::{Node, Tree};
 
@@ -15,17 +16,129 @@ use crate::imports::syntax::table::Table;
 pub fn table(tree: &Tree, source: &str, file: &Path, files: &Files<'_>, env: &Env<'_>) -> Table {
     let mut table = Table::default();
     let root = tree.root_node();
+    let imports = ImportedNames::of(root, source);
+    let mut aliases = Vec::new();
     let mut cursor = root.walk();
     for statement in root.children(&mut cursor) {
-        if statement.kind() != "export_statement" {
-            continue;
-        }
-        match statement.child_by_field_name("source") {
-            Some(from) => reexport(statement, from, source, file, (files, env), &mut table),
-            None => local(statement, source, &mut table),
+        let line = u32::try_from(statement.start_position().row + 1).unwrap_or(u32::MAX);
+        let declaration = match statement.kind() {
+            "type_alias_declaration" => Some(statement),
+            "export_statement" if statement.child_by_field_name("source").is_none() => statement
+                .child_by_field_name("declaration")
+                .filter(|node| node.kind() == "type_alias_declaration"),
+            _ => None,
+        };
+        if let Some(found) =
+            declaration.and_then(|node| alias(node, source, file, &imports, (files, env)))
+        {
+            table.lines.insert(line);
+            aliases.push(found.0.clone());
+            table.names.insert(found.0, found.1);
+        } else if statement.kind() == "export_statement" {
+            match statement.child_by_field_name("source") {
+                Some(from) => reexport(statement, from, source, file, (files, env), &mut table),
+                None => local(statement, source, &mut table),
+            }
         }
     }
+    // why: `type X = Y; export { X };` lists a name the file only forwards, not one it defines.
+    for name in aliases {
+        table.local.remove(&name);
+    }
     table
+}
+
+/// The names the top-level `import` statements of a file bind, to the specifier node and the name
+/// they have in that module (`default` for a default import). A namespace import binds none.
+struct ImportedNames<'t>(BTreeMap<String, (Node<'t>, String)>);
+
+impl<'t> ImportedNames<'t> {
+    fn of(root: Node<'t>, source: &str) -> Self {
+        let text = |node: Node<'_>| node.utf8_text(source.as_bytes()).ok().map(str::to_owned);
+        let mut names = BTreeMap::new();
+        let mut cursor = root.walk();
+        for statement in root.children(&mut cursor) {
+            let mut inside = statement.walk();
+            let clause = statement
+                .children(&mut inside)
+                .find(|child| child.kind() == "import_clause");
+            let (Some(from), Some(clause)) = (statement.child_by_field_name("source"), clause)
+            else {
+                continue;
+            };
+            let mut inner = clause.walk();
+            for part in clause.named_children(&mut inner) {
+                match part.kind() {
+                    "identifier" => {
+                        names.extend(text(part).map(|name| (name, (from, "default".to_owned()))));
+                    }
+                    "named_imports" => {
+                        let mut specs = part.walk();
+                        for spec in part.named_children(&mut specs) {
+                            let original = spec.child_by_field_name("name").and_then(text);
+                            let bound = spec.child_by_field_name("alias").and_then(text);
+                            if let Some(original) = original {
+                                let bound = bound.unwrap_or_else(|| original.clone());
+                                names.insert(bound, (from, original));
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        Self(names)
+    }
+}
+
+/// The (alias name, defining file and name) of a `type X = Y;` whose body is exactly a reference to
+/// a name imported from another repository file, or `import('./y').Y`. `None` for every other
+/// body, which defines a type of its own.
+fn alias(
+    declaration: Node<'_>,
+    source: &str,
+    file: &Path,
+    imports: &ImportedNames<'_>,
+    (files, env): (&Files<'_>, &Env<'_>),
+) -> Option<(String, (PathBuf, String))> {
+    let text = |node: Node<'_>| node.utf8_text(source.as_bytes()).ok().map(str::to_owned);
+    let name = text(declaration.child_by_field_name("name")?)?;
+    let body = declaration.child_by_field_name("value")?;
+    let (from, original) = match body.kind() {
+        "type_identifier" => imports.0.get(&text(body)?)?.clone(),
+        "generic_type" => {
+            let head = body.child_by_field_name("name")?;
+            if head.kind() != "type_identifier" {
+                return None;
+            }
+            imports.0.get(&text(head)?)?.clone()
+        }
+        // why: the grammar reads `import('./y').Y` in a type position as a member of a call.
+        "member_expression" => {
+            let call = body.child_by_field_name("object")?;
+            if call.child_by_field_name("function")?.kind() != "import" {
+                return None;
+            }
+            let argument = call.child_by_field_name("arguments")?.named_child(0)?;
+            (argument, text(body.child_by_field_name("property")?)?)
+        }
+        _ => return None,
+    };
+    let specifier = literal_text(from, source)?;
+    let reference = Reference {
+        specifier,
+        names: &[],
+        node: from,
+        source,
+    };
+    let target = ecmascript(&reference, file, files, env)
+        .into_iter()
+        .find_map(|resolution| match resolution {
+            Resolution::Resolved { target, .. } => Some(target),
+            _ => None,
+        })
+        .filter(|target| target != file)?;
+    Some((name, (target, original)))
 }
 
 /// Files the names of `export { .. } from` and `export * from` in `table`.

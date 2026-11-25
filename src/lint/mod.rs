@@ -227,6 +227,9 @@ pub fn observe(root: &Path, options: &LintOptions) -> Result<Observation, LintEr
         &imports,
         &options.contract,
     ));
+    report
+        .violations
+        .extend(facade::without_exports(&contract, &options.contract));
     report.violations.sort();
     report.violations.dedup();
     let symbols = observed_symbols(&contract, &edge_ownership, &imports);

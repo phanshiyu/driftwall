@@ -21,6 +21,19 @@ pub fn paths<'s>(node: Node<'_>, source: &'s str) -> Vec<WrittenPath<'s>> {
     }
 }
 
+/// The path a type alias body names, generic arguments dropped: `a::B`, `a::B<T>` and a bare `B`
+/// (a one-segment path). `None` for any other type: a reference, tuple, function or trait object.
+pub fn alias_body<'s>(body: Node<'_>, source: &'s str) -> Option<WrittenPath<'s>> {
+    let mut segments = Vec::new();
+    match body.kind() {
+        "type_identifier" | "scoped_type_identifier" | "generic_type" => {
+            flatten(body, source, &mut segments)?;
+        }
+        _ => return None,
+    }
+    Some(WrittenPath::in_code(segments))
+}
+
 /// Names of the inline `mod name { }` blocks around `node`, outermost first.
 pub fn enclosing_modules<'s>(node: Node<'_>, source: &'s str) -> Vec<&'s str> {
     let mut names = Vec::new();

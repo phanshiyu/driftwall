@@ -395,6 +395,7 @@ fn every_rule_kind_the_fixture_trips_is_recorded_and_then_suppressed() {
     baselined(&dir);
     let text = fs::read_to_string(dir.path().join(BASELINE)).unwrap();
     for entry in [
+        "facade-without-exports 1 store",
         "forbidden-package 1 billing lodash",
         "isolation-breach 1 features: billing --> search",
         "over-budget 1 billing files",

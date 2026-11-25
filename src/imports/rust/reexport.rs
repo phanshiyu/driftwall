@@ -9,7 +9,7 @@ use super::env::Env;
 use super::module::{Segment, Site, WrittenPath};
 use super::resolve::through_bindings;
 use super::scope::Bindings;
-use super::tree::use_leaves;
+use super::tree::{self, use_leaves};
 use crate::code::Symbol;
 use crate::imports::syntax::resolution::Files;
 use crate::imports::syntax::table::Table;
@@ -36,7 +36,15 @@ pub fn table(tree: &Tree, source: &str, file: &Path, files: &Files<'_>, env: &En
     let site = Site::of(file, &[], files.known, env.paths);
     let mut cursor = root.walk();
     for item in root.children(&mut cursor) {
-        if ITEMS.contains(&item.kind()) {
+        if item.kind() == "type_item"
+            && let Some((name, target)) =
+                alias(item, source, file, &bindings, site.as_ref(), files, env)
+        {
+            table
+                .lines
+                .insert(u32::try_from(item.start_position().row + 1).unwrap_or(u32::MAX));
+            table.names.insert(name, target);
+        } else if ITEMS.contains(&item.kind()) {
             let name = item
                 .child_by_field_name("name")
                 .and_then(|name| name.utf8_text(source.as_bytes()).ok());
@@ -74,6 +82,44 @@ pub fn table(tree: &Tree, source: &str, file: &Path, files: &Files<'_>, env: &En
         }
     }
     table
+}
+
+/// The (alias name, defining file and name) of a top-level `type X = P;` whose body is exactly a
+/// path to an item of another repository file. Any visibility counts, and so do generic parameters
+/// (`type X<T> = P<T>;`). `None` when the body is anything else, or names std, a third-party crate
+/// or an item of `file` itself: the alias then defines a type of its own.
+fn alias(
+    item: Node<'_>,
+    source: &str,
+    file: &Path,
+    bindings: &Bindings<'_>,
+    site: Option<&Site>,
+    files: &Files<'_>,
+    env: &Env<'_>,
+) -> Option<(String, (std::path::PathBuf, String))> {
+    let text = |node: Node<'_>| node.utf8_text(source.as_bytes()).ok();
+    let name = text(item.child_by_field_name("name")?)?;
+    let written = tree::alias_body(item.child_by_field_name("type")?, source)?;
+    // why: a bare name is an item the file imported, so it stands for the path its `use` wrote.
+    let imported = match written.first_name() {
+        Some(first) if written.last_name() == Some(first) => bindings.get(&[], first),
+        _ => None,
+    };
+    let path = through_bindings(
+        &imported.unwrap_or(written),
+        bindings,
+        &[],
+        site,
+        files,
+        env,
+    );
+    let (target, symbol) = path.target(site, files, env)?;
+    let Symbol::Name(original) = symbol else {
+        return None;
+    };
+    // why: only a path of module then item names the item; deeper ones name an inline module's item.
+    (target != file && path.last_name() == Some(original.as_str()))
+        .then(|| (name.to_owned(), (target, original)))
 }
 
 /// `path` read from the module the file declares: a leading name that a `mod name;` of the file

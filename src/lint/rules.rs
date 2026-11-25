@@ -29,7 +29,8 @@ pub(super) const fn severity(kind: ViolationKind) -> Severity {
         | ViolationKind::StalePackage
         | ViolationKind::StaleIsolation
         | ViolationKind::StaleBaseline
-        | ViolationKind::StaleFacade => Severity::Warning,
+        | ViolationKind::StaleFacade
+        | ViolationKind::FacadeWithoutExports => Severity::Warning,
     }
 }
 
@@ -88,6 +89,9 @@ pub(super) const fn hint(kind: ViolationKind) -> &'static str {
         }
         ViolationKind::StaleFacade => {
             "remove the node from the `%% facade` line, or restore the re-exports in code"
+        }
+        ViolationKind::FacadeWithoutExports => {
+            "list the names other nodes may use with `%% exports <node>: ...`, or ask the user to approve dropping the facade"
         }
         ViolationKind::StaleBaseline => {
             "run `driftwall lint --write-baseline <file>` to shrink the baseline"

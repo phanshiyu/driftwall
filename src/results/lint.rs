@@ -47,6 +47,8 @@ pub enum ViolationKind {
     StalePackage,
     /// A node named by `%% facade` owns no file that re-exports anything.
     StaleFacade,
+    /// A node named by `%% facade` has no `%% exports` line, so everything it re-exports is public.
+    FacadeWithoutExports,
     /// An import goes between two children of a `%% isolated` boundary.
     IsolationBreach,
     /// A `%% isolated` boundary has fewer than two children.

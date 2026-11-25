@@ -66,8 +66,8 @@ fn without_a_facade_the_caller_depends_on_the_definition() {
 
 #[test]
 fn with_a_facade_the_caller_depends_on_the_facade_and_the_facade_keeps_its_edge() {
-    let dir = repo("  %% facade lib\n", PAGE);
-    let output = driftwall(&dir, &["lint"]);
+    let dir = repo("  %% facade lib\n  %% exports lib: Comment\n", PAGE);
+    let output = driftwall(&dir, &["lint", "--strict"]);
     let text = stdout(&output);
     assert!(output.status.success(), "{text}");
     assert!(text.contains("clean"), "{text}");
@@ -93,6 +93,95 @@ fn a_facade_that_re_exports_nothing_is_stale() {
     let text = stdout(&driftwall(&dir, &["lint"]));
     assert!(text.contains("warning[stale-facade]"), "{text}");
     assert!(text.contains("%% facade page"), "{text}");
+}
+
+#[test]
+fn a_facade_without_an_exports_line_is_warned_about_with_its_line() {
+    let dir = repo("  %% facade lib\n", PAGE);
+    let output = driftwall(&dir, &["lint"]);
+    let text = stdout(&output);
+    assert!(output.status.success(), "{text}");
+    assert!(
+        text.contains(
+            "warning[facade-without-exports]: `%% facade lib` on line 7 of architecture.mmd makes `lib` a facade, but no `%% exports lib` line states its surface, so every name it re-exports is public"
+        ),
+        "{text}"
+    );
+    assert!(
+        text.contains("hint: list the names other nodes may use with `%% exports <node>: ...`, or ask the user to approve dropping the facade"),
+        "{text}"
+    );
+    // why: the finding has no source location, so the line starts with the severity.
+    assert!(
+        text.starts_with("warning[facade-without-exports]"),
+        "{text}"
+    );
+    let strict = driftwall(&dir, &["lint", "--strict"]);
+    assert_eq!(strict.status.code(), Some(1), "{}", stdout(&strict));
+}
+
+#[test]
+fn a_facade_with_an_exports_line_is_silent() {
+    let dir = repo("  %% facade lib\n  %% exports lib: Comment\n", PAGE);
+    let text = stdout(&driftwall(&dir, &["lint"]));
+    assert!(!text.contains("facade-without-exports"), "{text}");
+}
+
+#[test]
+fn each_facade_node_without_exports_is_one_finding() {
+    let dir = repo("  %% facade lib\n  %% facade types\n", PAGE);
+    let text = stdout(&driftwall(&dir, &["lint"]));
+    assert_eq!(
+        text.matches("[facade-without-exports]").count(),
+        2,
+        "{text}"
+    );
+    let one = repo(
+        "  %% facade lib, types\n  %% exports types: Comment\n",
+        PAGE,
+    );
+    let text = stdout(&driftwall(&one, &["lint"]));
+    assert_eq!(
+        text.matches("[facade-without-exports]").count(),
+        1,
+        "{text}"
+    );
+    assert!(text.contains("`%% facade lib`"), "{text}");
+}
+
+#[test]
+fn the_json_and_the_baseline_key_the_finding_by_its_node() {
+    let dir = repo("  %% facade lib\n", PAGE);
+    let json: serde_json::Value =
+        serde_json::from_str(&stdout(&driftwall(&dir, &["lint", "--format", "json"]))).unwrap();
+    let found = json["violations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|v| v["kind"] == "facade-without-exports")
+        .unwrap();
+    assert_eq!(found["key"], "facade-without-exports lib");
+    assert_eq!(found["severity"], "warning");
+    let baseline = dir.path().join("debt.txt");
+    let written = driftwall(
+        &dir,
+        &["lint", "--write-baseline", baseline.to_str().unwrap()],
+    );
+    assert!(written.status.success(), "{}", stdout(&written));
+    let text = std::fs::read_to_string(&baseline).unwrap();
+    assert!(text.contains("facade-without-exports 1 lib\n"), "{text}");
+    let strict = driftwall(
+        &dir,
+        &["lint", "--strict", "--baseline", baseline.to_str().unwrap()],
+    );
+    assert!(strict.status.success(), "{}", stdout(&strict));
+}
+
+#[test]
+fn sarif_lists_the_rule() {
+    let dir = repo("  %% facade lib\n", PAGE);
+    let sarif = stdout(&driftwall(&dir, &["lint", "--format", "sarif"]));
+    assert!(sarif.contains("\"facade-without-exports\""), "{sarif}");
 }
 
 #[test]

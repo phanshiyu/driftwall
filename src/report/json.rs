@@ -258,6 +258,7 @@ mod tests {
                 "stale-isolation",
                 "stale-baseline",
                 "denied-edge",
+                "facade-without-exports",
             ]
         );
     }

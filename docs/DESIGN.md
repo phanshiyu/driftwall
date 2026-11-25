@@ -1611,6 +1611,8 @@ not an edge. A path that finds no module file falls back to the crate root file.
   `#[cfg_attr(..)]` and a `#[path]` written in a file that a `#[path]` itself placed are not read.
 - **Crates outside the repository.** A path that starts with `std`, `core`, `alloc` or a dependency
   of the nearest `Cargo.toml` is a package use, not an edge, see "Package uses".
+- **Type aliases.** A top-level `type X = path::Y;` naming an item of another repository file is a
+  re-export of that item, see "Type aliases" in "Re-exports".
 - **Not followed:** `extern crate` renames, names that only a glob of a non-module brings in
   (`use crate::*; gitlab::x()`), local names from an inline `mod name { }`, and macro-generated
   paths.
@@ -1893,6 +1895,35 @@ language's section, then each name it uses is followed.
   tuple of string literals, that list is the names it can export through a glob; otherwise they are
   its public names (no leading underscore). A name that is a submodule is a module binding and is
   not followed.
+- **Type aliases.** An alias whose body is exactly a reference to a type another repository file
+  defines is a re-export of that type, read into the same table and followed exactly like one:
+  chains (alias of alias, alias of a `pub use`), `%% facade` (callers of a facade file depend on it),
+  the recorded symbol (the name at the definition, so `%% exports` judges it there) and the
+  interface budget all treat it as a re-export. Otherwise an alias would be a definition of its own
+  and `pub type Review = crate::store::Review;` would hide the dependency on `store` from every
+  caller. The alias statement keeps its own edge to the file it names, as a re-export statement
+  does. A body that is anything else defines a new type and the alias stays defined in its file.
+  - Rust: a top-level `type X = P;` of any visibility, none included (`pub(crate)`, `pub(super)`,
+    private), with generic parameters (`type X<T> = P<T>;`), where the path `P`, generic arguments
+    dropped, names an item of another repository file: a written path (`crate::store::Review`), a
+    path through a module the file imported (`store::Review` after `use crate::store;`) or a bare
+    name the file imported (`Review` after `use crate::store::Review;`). The generic arguments stay
+    ordinary references at their own sites. An alias to `std`, a third-party crate, an item of the
+    same file, a reference, tuple, slice, function or trait object type, and an alias inside an
+    inline `mod` or a function are not re-exports. A type alias inside `impl` or a trait (associated
+    type) is not top-level and is not read.
+  - TypeScript and JavaScript: a top-level `type X = Y;` or `export type X = Y;`, generic
+    parameters allowed (`type X<T> = Y<T>`), whose body is a type reference to a name an `import`
+    or `import type` of the same file binds from another repository file (renames follow, a default
+    import is `default`), or `import('./y').Y`. A union, intersection, object, array, mapped,
+    conditional, `keyof` or indexed type defines a new type and is not followed, nor is a reference to
+    a namespace import (`ns.Y`), a local type or a package. `type X = Y; export { X };` is the same
+    alias. An `import('./y').Y<T>` with type arguments is not read: the grammar does not parse it
+    as a type.
+  - Not followed: Swift `typealias` (Swift imports name modules, never symbols or files, see "Swift
+    resolution", so there is no table to follow into), and Python (an alias is a plain assignment
+    `X = Y`, which the Python table, limited to the `from .x import Y` statements of `__init__.py`,
+    treats as a definition).
 - **Facades.** Following to the definition is the default. A node that deliberately presents
   other nodes' items as its own (an anti-corruption layer, a wire module) is declared with
   `%% facade <node>[, <node>]`, one or more nodes per line and any number of lines. When an
@@ -1906,7 +1937,14 @@ language's section, then each name it uses is followed.
   facade are judged at the facade node, since that is where the site now is. A facade node
   whose files re-export nothing is the warning `stale-facade` at its directive's line
   ("`%% facade ui-lib` on line 9 names a node whose files re-export nothing"), so a stale
-  declaration is not left behind. A node that is not declared is a contract error with the line.
+  declaration is not left behind. A facade node with no `%% exports` line is the warning
+  `facade-without-exports`: nothing then limits the names a caller may use, so every name the
+  facade re-exports is public. It has one finding per facade node, with no source location (the
+  line is in the message): "`%% facade ui-lib` on line 9 of architecture.mmd makes `ui-lib` a
+  facade, but no `%% exports ui-lib` line states its surface, so every name it re-exports is
+  public", hint "list the names other nodes may use with `%% exports <node>: ...`, or ask the user
+  to approve dropping the facade". It never groups in the text output (see "Grouped findings"),
+  and `--strict` fails on it. A node that is not declared is a contract error with the line.
   A node listed twice is also an error. `render` writes the directive back as one line, nodes
   sorted. `brief` shows `  facade: ui-lib` in its `rules:` block and the JSON `rules` has
   `facades`, a sorted list of node ids, absent when empty. `diff` reports the `%% facade`
@@ -1918,7 +1956,7 @@ language's section, then each name it uses is followed.
   `use crate::ui::Other` (defined in `ui/other.rs`, another node) is judged against that node. The
   facade module's own node needs no `exports` line for what it only forwards. An import that stays
   on the module file is judged against the module's node as before.
-- **Not read.** Re-exports inside inline `mod` blocks or functions, and dynamic ones (`__getattr__`,
+- **Not read.** Re-exports and aliases inside inline `mod` blocks or functions, and dynamic ones (`__getattr__`,
   `globals()`). A conditional one (`#[cfg(..)]`, `if TYPE_CHECKING:`) is read like any other.
 
 ### Import location
@@ -2180,8 +2218,8 @@ Every resolved import records the symbols it uses, exactly as written in the cod
   uses `*`. A module binding (`import a.b`, `import a.b as c`, `from a import submodule`, a literal
   `importlib.import_module("a.b")`) uses no symbol, as in Rust: it is a dependency on the module file.
 - A side-effect import (`import './x'`) uses no symbol.
-- A name that a module re-exports is recorded at the file that defines it, under the name it has
-  there, see "Re-exports".
+- A name that a module re-exports, or aliases with a type alias, is recorded at the file that
+  defines it, under the name it has there, see "Re-exports".
 
 Method calls on values (`client.fetch()`) are not resolved: knowing which `fetch` needs type
 information. driftwall reports only what the syntax proves.
@@ -2240,6 +2278,7 @@ module and no symbol and adds nothing to `uses:`.
 | `redundant-edge` | warning | node edge that a boundary edge already covers with a kind at least as wide, see "Boundary edges" |
 | `test-only-edge` | warning | solid edge whose every import site is test-only, declare it `-->|test|`; also an unlabelled dotted edge whose every site is test-only, which the app does not use yet |
 | `stale-facade` | warning | a node named by `%% facade` owns no file that re-exports anything, see "Re-exports" |
+| `facade-without-exports` | warning | a node named by `%% facade` has no `%% exports` line, so every name it re-exports is public; no source location, see "Re-exports" |
 | `unresolved-import` | warning | relative import resolves to nothing, whatever its extension; Python absolute import into a first-party package that holds no such module; shell `source` of a path that finds no file |
 | `private-symbol` | error | an import uses a symbol outside the target node's declared surface |
 | `over-budget` | warning | a node exceeds a `%% budget` limit (fan-out, files or lines), see "Budgets" |
@@ -2325,6 +2364,7 @@ test debt and production debt are separate entries. Paths use `/`.
 | `forbidden-package` | `<node> <package>` | uses |
 | `stale-package` | `<node> <entry>` | 1 |
 | `stale-facade` | `<node>` | 1 |
+| `facade-without-exports` | `<node>` | 1 |
 | `isolation-breach` | `<boundary>: <from> --> <to>` | import sites |
 | `stale-isolation` | `<boundary>` | 1 |
 
@@ -2903,7 +2943,7 @@ agents and for code scanning, which needs a result per line.
   `production-imports-test` writes `` imports test file `t` in N places ``, and `forbidden-package`
   (which has no target) writes `` imports `pkg` in N places ``. A kind or message the generaliser
   does not recognise ends in ` (N places)` instead, so a group always reads as a group. Kinds that
-  are one per key (`stale-edge`, `unmapped-file`, ...) never have two members, so never group.
+  are one per key (`stale-edge`, `unmapped-file`, `facade-without-exports`, ...) never have two members, so never group.
 - **The baseline suffix** `; the baseline allows <N>, found <M>` appears once, at the end of the
   header, not on every site.
 - **Order:** a group is printed where its first site would have been, in the order findings have

@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- A type alias is followed like a re-export. `pub type Review = crate::store::Review;` used to
+  count as a definition in its own file, so a caller of the alias depended on the aliasing module
+  and never on `store`, and any rule could be bypassed by aliasing across it. An alias whose body
+  is exactly a reference to a type another repository file defines is now read into the re-export
+  table: chains, `%% facade`, the symbol recorded for `%% exports` and the `interface` budget all
+  see the defining file, and the alias statement keeps its own edge. Rust: a top-level `type`
+  of any visibility, with generics, whose path names an item of another repository file (not
+  `std`, a third-party crate or a local item). TypeScript: `type X = Y` or `export type X = Y`,
+  with generics, where `Y` is an imported name, or `import('./y').Y`; a union, intersection,
+  object, mapped or conditional type defines a new type and is not followed. Swift `typealias`
+  and Python aliases are not followed. A repository that relied on an alias to hide an edge now
+  reports it. See "Type aliases" in "Re-exports" in `docs/DESIGN.md`.
+- New warning `facade-without-exports`: a node named by `%% facade` with no `%% exports` line.
+  A facade makes callers depend on the facade, and with no stated surface every name it
+  re-exports is public. One finding per facade node, with no source location and the facade line
+  in the message; the baseline key is the node. `--strict` fails on it, and `lint` text, JSON and
+  SARIF carry it like every kind.
 - Test code is no longer held to a node's `%% exports` surface: `private-symbol` applies to
   production imports only, as package rules already do. A test that an edge allows may drive a
   node's internals, which is what a test is for; production callers stay held to the surface.

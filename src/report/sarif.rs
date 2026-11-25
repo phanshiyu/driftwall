@@ -237,6 +237,7 @@ mod tests {
             ids,
             [
                 "denied-edge",
+                "facade-without-exports",
                 "forbidden-package",
                 "ignored-tag-files",
                 "isolation-breach",
@@ -259,7 +260,7 @@ mod tests {
                 "upward-edge",
             ]
         );
-        assert_eq!(value["runs"][0]["results"].as_array().unwrap().len(), 21);
+        assert_eq!(value["runs"][0]["results"].as_array().unwrap().len(), 22);
     }
 
     #[test]

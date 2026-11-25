@@ -36,9 +36,11 @@ pub fn facade(
     env: &Environment<'_>,
 ) -> Option<Table> {
     let maybe = match language {
-        Language::Rust => source.contains("pub") && source.contains("use"),
+        Language::Rust => {
+            (source.contains("pub") && source.contains("use")) || source.contains("type")
+        }
         Language::TypeScript | Language::JavaScript => {
-            source.contains("export") && source.contains("from")
+            source.contains("type") || (source.contains("export") && source.contains("from"))
         }
         Language::Python => {
             file.file_name().is_some_and(|name| name == "__init__.py") && source.contains("import")

@@ -17,6 +17,7 @@ mod kind;
 mod probe;
 mod query;
 mod reexport;
+mod reexport_alias;
 mod reexport_facade;
 mod reexport_web;
 mod references;
