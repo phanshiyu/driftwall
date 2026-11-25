@@ -973,6 +973,9 @@ pub struct EdgeSummary {
     pub to: NodeId,
     /// The declared kind, or `None` when code uses the edge and the contract does not declare it.
     pub kind: Option<EdgeKind>,
+    /// Where the edge stands, the same status `lint` reports a finding for (see "Edge status" in
+    /// `docs/DESIGN.md`). `undeclared` exactly when `kind` is `None`.
+    pub status: EdgeStatus,
     /// Number of import sites in code that realise the edge.
     pub realised: usize,
     /// Every import site that realises the edge, in sorted order.
@@ -1011,6 +1014,8 @@ pub struct BoundaryEdgeSummary {
     pub to: Endpoint,
     /// The declared kind.
     pub kind: EdgeKind,
+    /// Where the boundary edge stands over all the pairs it covers.
+    pub status: EdgeStatus,
     /// Its line in the contract.
     pub line: u32,
     /// How many pairs of nodes it covers.

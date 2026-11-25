@@ -84,7 +84,10 @@ fn an_edge_of_only_test_imports_is_annotated_test_only() {
         "a/main.test.ts",
         "import { b } from '../b/lib';\nexport const t = b;\n",
     )]));
-    assert_eq!(edge_line(&dir), "  a --> b (1 import) (test-only) uses: b");
+    assert_eq!(
+        edge_line(&dir),
+        "  a --> b (1 import) (test-only) TEST-ONLY uses: b"
+    );
 }
 
 #[test]

@@ -4,10 +4,13 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use crate::model::{
-    BlindSpots, BoundaryEdgeSummary, Contract, Declared, DirTag, Edge, EdgeKind, EdgeSummary,
-    ImportKind, InterfaceEntry, LintReport, MapTarget, NodeBudget, NodeId, NodeSummary, NodeView,
-    OpenAccess, Overview, Ownership, PackageSummary, Scope, Site, Symbol, Tag, ViaEdge,
+    BlindSpots, BoundaryEdgeSummary, Contract, Cover, Declaration, Declared, DirTag, Edge,
+    EdgeKind, EdgeStatus, EdgeSummary, ImportKind, InterfaceEntry, LintReport, MapTarget,
+    NodeBudget, NodeId, NodeSummary, NodeView, OpenAccess, Overview, Ownership, PackageSummary,
+    Scope, Seen, Site, Symbol, Tag, ViaEdge, edge_status,
 };
+
+use super::reconcile::boundary_seen;
 
 /// Combines the contract, ownership, observed edges, the symbols they use and the lint report
 /// into an [`Overview`].
@@ -91,8 +94,18 @@ pub fn overview(
         })
         .collect();
 
-    let edges = edge_summaries(contract, observed, symbols);
-    let boundary_edges = boundary_edge_summaries(contract, observed);
+    // why: both summaries judge boundary edges, so they share one observation of them.
+    let sites: Vec<(&Edge, ImportKind, bool)> = observed
+        .iter()
+        .flat_map(|(edge, sites)| {
+            sites
+                .iter()
+                .map(move |site| (edge, site.kind, site.test_only))
+        })
+        .collect();
+    let boundary = boundary_seen(contract, &sites);
+    let edges = edge_summaries(contract, observed, symbols, &boundary);
+    let boundary_edges = boundary_edge_summaries(contract, observed, &boundary);
 
     let (errors, warnings) = report.counts();
     Overview {
@@ -114,6 +127,7 @@ fn edge_summaries(
     contract: &Contract,
     observed: &BTreeMap<Edge, Vec<Site>>,
     symbols: &BTreeMap<Edge, BTreeSet<Symbol>>,
+    boundary: &[Seen],
 ) -> Vec<EdgeSummary> {
     let all_edges: BTreeSet<&Edge> = contract.edges.keys().chain(observed.keys()).collect();
     all_edges
@@ -137,10 +151,12 @@ fn edge_summaries(
             let kind = winner
                 .map(|cover| cover.kind)
                 .or_else(|| open.as_ref().map(|_| EdgeKind::Implemented));
+            let status = pair_status(contract, edge, sites, winner, open.is_some(), boundary);
             EdgeSummary {
                 from: edge.from.clone(),
                 to: edge.to.clone(),
                 kind,
+                status,
                 realised: sites.len(),
                 sites: sites.to_vec(),
                 symbols: symbols.get(edge).cloned().unwrap_or_default(),
@@ -163,22 +179,61 @@ fn edge_summaries(
         .collect()
 }
 
+/// The status of the pair `edge`, from the edge `lint` judges for it: its node edge when it has
+/// one, else the boundary edge that wins it (judged over all its pairs, `boundary` holds what code
+/// does on each), else the open chain that allows it, else nothing.
+fn pair_status(
+    contract: &Contract,
+    edge: &Edge,
+    sites: &[Site],
+    winner: Option<Cover<'_>>,
+    open: bool,
+    boundary: &[Seen],
+) -> EdgeStatus {
+    if let Some(kind) = contract.edges.get(edge) {
+        let seen = sites.iter().fold(Seen::Unseen, |seen, site| {
+            seen.with_site(*kind, site.kind, site.test_only)
+        });
+        return edge_status(Declaration::Edge(*kind), seen);
+    }
+    let Some(cover) = winner else {
+        let declaration = if open {
+            Declaration::Open
+        } else {
+            Declaration::None
+        };
+        return edge_status(declaration, Seen::Unseen);
+    };
+    let held = match cover.by {
+        Declared::Boundary(declared) => contract
+            .boundary_edges
+            .iter()
+            .position(|other| std::ptr::eq(other, declared))
+            .and_then(|index| boundary.get(index).copied()),
+        Declared::Node => None,
+    };
+    edge_status(Declaration::Edge(cover.kind), held.unwrap_or(Seen::Unseen))
+}
+
 /// Every boundary edge with the number of pairs it covers and the number code realises.
 fn boundary_edge_summaries(
     contract: &Contract,
     observed: &BTreeMap<Edge, Vec<Site>>,
+    boundary: &[Seen],
 ) -> Vec<BoundaryEdgeSummary> {
     contract
         .boundary_edges
         .iter()
+        .zip(boundary)
         // why: an expansion is listed with its template in `rules:`, not as a boundary edge.
-        .filter(|declared| declared.template.is_none())
-        .map(|declared| {
+        .filter(|(declared, _)| declared.template.is_none())
+        .map(|(declared, seen)| {
             let pairs = declared.pairs(&contract.nodes);
             BoundaryEdgeSummary {
                 from: declared.from.clone(),
                 to: declared.to.clone(),
                 kind: declared.kind,
+                status: edge_status(Declaration::Edge(declared.kind), *seen),
                 line: declared.line,
                 covers: pairs.len(),
                 realised: pairs

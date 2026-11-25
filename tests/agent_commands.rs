@@ -219,6 +219,7 @@ fn brief_json_parses_and_matches_the_text() {
             "from": "a",
             "to": "b",
             "kind": "implemented",
+            "status": "ok",
             "realised": 1,
             "sites": [{ "file": "a/main.ts", "line": 1, "kind": "runtime", "test_only": false }],
             "symbols": ["b"],

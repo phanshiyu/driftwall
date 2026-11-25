@@ -390,7 +390,7 @@ fn brief_counts_the_boundary_edge_and_names_the_edge_behind_each_pair() {
     assert_eq!(edge["kind"], "implemented");
     assert_eq!(
         value["boundary_edges"][0],
-        serde_json::json!({"from": "features", "to": "core", "kind": "implemented", "line": 16, "covers": 24, "realised": 24})
+        serde_json::json!({"from": "features", "to": "core", "kind": "implemented", "status": "ok", "line": 16, "covers": 24, "realised": 24})
     );
 }
 

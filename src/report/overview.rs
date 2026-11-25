@@ -7,9 +7,9 @@ use std::path::PathBuf;
 use serde::Serialize;
 
 use crate::model::{
-    BlindRef, BlindSpots, BlindSummary, BlindTally, BoundaryEdgeSummary, EdgeKind, EdgeSummary,
-    ImportKind, InterfaceEntry, Layer, MAX_SITES, NodeBudget, NodeSummary, NodeView, Overview,
-    PackageSummary, RulesSummary, Site, SkipReason, Symbol,
+    BlindRef, BlindSpots, BlindSummary, BlindTally, BoundaryEdgeSummary, EdgeKind, EdgeStatus,
+    EdgeSummary, ImportKind, InterfaceEntry, Layer, MAX_SITES, NodeBudget, NodeSummary, NodeView,
+    Overview, PackageSummary, RulesSummary, Site, SkipReason, Symbol,
 };
 
 use super::ReportError;
@@ -168,13 +168,14 @@ fn boundary_edges_block(overview: &Overview) -> String {
         // why: fmt::Write into a String is infallible, so the discarded Result carries no error.
         let _ = writeln!(
             out,
-            "  {} {} {} (line {}): {} of {} realised",
+            "  {} {} {} (line {}): {} of {} realised{}",
             declared.from,
             declared.kind.arrow(),
             declared.to,
             declared.line,
             declared.realised,
             plural(declared.covers, "pair"),
+            marker(declared.status),
         );
     }
     out
@@ -434,14 +435,23 @@ fn layer_str(layer: &Layer) -> String {
     format!("{} ({} of {})", layer.boundary, layer.rank + 1, layer.of)
 }
 
-/// `a --> b (2 imports)`, then the kinds of the imports (see [`usage`]), ` UNDECLARED` when the
-/// contract has no such edge and ` uses: module, x, y` when the imports use the module or symbols.
+/// The marker a line ends its edge with, where `lint` has a finding for the status: ` UNDECLARED`,
+/// ` STALE`, ` PLANNED-REALIZED` or ` TEST-ONLY`. Nothing for the statuses without a finding. It
+/// names every status, so a new one must choose.
+const fn marker(status: EdgeStatus) -> &'static str {
+    match status {
+        EdgeStatus::Undeclared => " UNDECLARED",
+        EdgeStatus::Stale => " STALE",
+        EdgeStatus::PlannedRealized => " PLANNED-REALIZED",
+        EdgeStatus::TestOnly => " TEST-ONLY",
+        EdgeStatus::Ok | EdgeStatus::Open | EdgeStatus::Planned => "",
+    }
+}
+
+/// `a --> b (2 imports)`, then the kinds of the imports (see [`usage`]), the marker of its status
+/// (see [`marker`]) and ` uses: module, x, y` when the imports use the module or symbols.
 fn edge_line(edge: &EdgeSummary) -> String {
-    let undeclared = if edge.kind.is_none() {
-        " UNDECLARED"
-    } else {
-        ""
-    };
+    let undeclared = marker(edge.status);
     let names: Vec<&str> = edge
         .module
         .then_some(MODULE_USE)
@@ -590,6 +600,11 @@ mod tests {
             from: id(from),
             to: id(to),
             kind,
+            status: if kind.is_none() {
+                EdgeStatus::Undeclared
+            } else {
+                EdgeStatus::Ok
+            },
             realised: lines.len(),
             sites: lines.iter().map(|&line| site("src/x.ts", line)).collect(),
             symbols: BTreeSet::new(),
@@ -1206,6 +1221,7 @@ blind spots: none
                 "from": "cli",
                 "to": "lint",
                 "kind": "implemented",
+                "status": "ok",
                 "realised": 4,
                 "sites": [
                     { "file": "src/x.ts", "line": 4, "kind": "runtime", "test_only": false },
