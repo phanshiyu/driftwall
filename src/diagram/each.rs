@@ -7,7 +7,7 @@ use super::error::DiagramError;
 use super::parse::{edge_tail, split_ident, valid_id};
 use super::rules::not_a_boundary;
 use crate::model::{
-    BoundaryEdge, EachArrow, EachRule, Endpoint, NodeId, NodeInfo, Template, children,
+    BoundaryEdge, EachArrow, EachRule, Endpoint, NodeId, NodeInfo, Template, child_of, children,
 };
 
 /// Reads the text after `each`: `<boundary>: <arrow>, <arrow>`.
@@ -128,29 +128,19 @@ pub(super) fn expand(
                 ),
             });
         }
-        // why: a role no child has is a typo, while a role some child lacks is an optional part.
-        for role in rule.arrows.iter().flat_map(|a| [&a.from, &a.to]) {
-            if !kids.iter().any(|kid| resolve(nodes, kid, role).is_some()) {
-                return Err(DiagramError::MalformedRule {
-                    line,
-                    rule: "each".to_owned(),
-                    reason: format!(
-                        "role `{role}` resolves in no child of `{}`: none of {} has a node `<child>-{role}`",
-                        rule.boundary,
-                        kids.join(", "),
-                    ),
-                });
-            }
-        }
-        for arrow in &rule.arrows {
+        let ends = rule
+            .arrows
+            .iter()
+            .map(|arrow| classify(rule, arrow, &kids, nodes, boundaries))
+            .collect::<Result<Vec<_>, _>>()?;
+        for (arrow, (from, to)) in rule.arrows.iter().zip(ends) {
             for kid in &kids {
                 let (Some(from), Some(to)) = (
-                    resolve(nodes, kid, &arrow.from),
-                    resolve(nodes, kid, &arrow.to),
+                    from.expand(nodes, kid, &arrow.from),
+                    to.expand(nodes, kid, &arrow.to),
                 ) else {
                     continue;
                 };
-                let (from, to) = (Endpoint::Node(from), Endpoint::Node(to));
                 if let Some(first) = edges.iter().find(|e| e.from == from && e.to == to) {
                     return Err(DiagramError::DuplicateEdge {
                         line,
@@ -175,4 +165,138 @@ pub(super) fn expand(
         }
     }
     Ok(edges)
+}
+
+/// One end of a template arrow once read against the contract.
+enum End {
+    /// A role, resolved inside each child.
+    Role,
+    /// An id the contract declares, the same for every child.
+    Fixed(Endpoint),
+}
+
+impl End {
+    /// The end of the expansion for `child`, or `None` when the child lacks the role.
+    fn expand(
+        &self,
+        nodes: &BTreeMap<NodeId, NodeInfo>,
+        child: &str,
+        role: &str,
+    ) -> Option<Endpoint> {
+        match self {
+            Self::Role => resolve(nodes, child, role).map(Endpoint::Node),
+            Self::Fixed(end) => Some(end.clone()),
+        }
+    }
+}
+
+/// Reads both ends of `arrow` as role or fixed end, with the contract errors of "Edge templates".
+fn classify(
+    rule: &EachRule,
+    arrow: &EachArrow,
+    kids: &[String],
+    nodes: &BTreeMap<NodeId, NodeInfo>,
+    boundaries: &BTreeMap<String, u32>,
+) -> Result<(End, End), DiagramError> {
+    let malformed = |reason: String| DiagramError::MalformedRule {
+        line: rule.line,
+        rule: "each".to_owned(),
+        reason,
+    };
+    let mut ends = Vec::new();
+    for name in [&arrow.from, &arrow.to] {
+        let resolves = kids.iter().any(|kid| resolve(nodes, kid, name).is_some());
+        let declared = NodeId::new(name)
+            .ok()
+            .filter(|id| nodes.contains_key(id))
+            .map(Endpoint::Node)
+            .or_else(|| {
+                boundaries
+                    .contains_key(name)
+                    .then(|| Endpoint::Boundary(name.clone()))
+            });
+        let Some(fixed) = declared else {
+            // why: a role no child has is a typo, while a role some child lacks is an optional part.
+            if !resolves {
+                return Err(malformed(format!(
+                    "role `{name}` resolves in no child of `{}`: none of {} has a node `<child>-{name}`",
+                    rule.boundary,
+                    kids.join(", "),
+                )));
+            }
+            ends.push(End::Role);
+            continue;
+        };
+        if resolves {
+            return Err(malformed(format!(
+                "`{name}` is ambiguous: it is the declared {} `{name}` and also the role `{name}` of a child of `{}`",
+                match fixed {
+                    Endpoint::Node(_) => "node",
+                    Endpoint::Boundary(_) => "boundary",
+                },
+                rule.boundary,
+            )));
+        }
+        check_fixed(rule, name, &fixed, nodes).map_err(malformed)?;
+        ends.push(End::Fixed(fixed));
+    }
+    match (ends.pop(), ends.pop()) {
+        (Some(End::Fixed(_)), Some(End::Fixed(_))) => Err(malformed(format!(
+            "`{}` joins two declared ids, `{}` and `{}`: write it as an ordinary edge",
+            arrow.text(),
+            arrow.from,
+            arrow.to
+        ))),
+        (Some(to), Some(from)) => Ok((from, to)),
+        _ => Err(malformed("an arrow has two ends".to_owned())),
+    }
+}
+
+/// Why `fixed` cannot be the fixed end of a template over `rule.boundary`, if it cannot.
+fn check_fixed(
+    rule: &EachRule,
+    name: &str,
+    fixed: &Endpoint,
+    nodes: &BTreeMap<NodeId, NodeInfo>,
+) -> Result<(), String> {
+    let boundary = rule.boundary.as_str();
+    if name == boundary {
+        return Err(format!(
+            "`{name}` is the boundary of the template: an arrow cannot end at it"
+        ));
+    }
+    let inside = |child: &str| {
+        format!(
+            "`{name}` is inside `{child}`, a child of `{boundary}`: a fixed end lies outside the children"
+        )
+    };
+    match fixed {
+        Endpoint::Node(id) => {
+            let info = nodes
+                .get(id)
+                .ok_or_else(|| format!("`{name}` is not declared"))?;
+            if let Some(child) = child_of(id, info, boundary)
+                && child != id.as_str()
+            {
+                return Err(inside(child));
+            }
+        }
+        Endpoint::Boundary(id) => {
+            let mut members = nodes.values().filter(|info| info.within(id)).peekable();
+            if members.peek().is_none() {
+                return Err(format!(
+                    "boundary `{id}` declares no node, so an arrow to or from it covers nothing"
+                ));
+            }
+            for info in members {
+                let mut chain = info.boundaries().skip_while(|b| *b != boundary).skip(1);
+                if let Some(child) = chain.next()
+                    && child != id
+                {
+                    return Err(inside(child));
+                }
+            }
+        }
+    }
+    Ok(())
 }

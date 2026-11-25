@@ -60,6 +60,31 @@ mod support {
         dir
     }
 
+    /// A repository of exactly these files, the contract among them.
+    pub fn tree(files: &[(&str, &str)]) -> TempDir {
+        let dir = TempDir::new().unwrap();
+        for (path, body) in files {
+            let full = dir.path().join(path);
+            fs::create_dir_all(full.parent().unwrap()).unwrap();
+            fs::write(full, body).unwrap();
+        }
+        dir
+    }
+
+    pub fn kinds(value: &serde_json::Value) -> Vec<(String, String)> {
+        value["violations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| {
+                (
+                    v["kind"].as_str().unwrap().to_owned(),
+                    v["at"]["file"].as_str().unwrap_or("").to_owned(),
+                )
+            })
+            .collect()
+    }
+
     pub fn run(root: &Path, args: &[&str]) -> Output {
         let mut command = Command::new(env!("CARGO_BIN_EXE_driftwall"));
         // why: a hook that runs the tests must not point git at the repository being committed.
@@ -84,7 +109,7 @@ mod support {
     }
 }
 
-use support::{CONTRACT, err, json, out, repo, run};
+use support::{CONTRACT, err, json, kinds, out, repo, run, tree};
 
 #[test]
 fn the_template_lints_clean_on_the_layout() {
@@ -240,4 +265,224 @@ fn a_new_part_in_a_mapped_feature_is_an_unknown_node() {
         .map(|v| v["kind"].as_str().unwrap())
         .collect();
     assert_eq!(kinds, ["unknown-node"]);
+}
+
+/// An open chain `app > features > ui` with two features of a view and a service each, a `shell`
+/// node written directly in `features`, and a `%% each` line, which is line 21.
+fn fixed_end_contract(each: &str) -> String {
+    format!(
+        "flowchart LR
+  subgraph app
+    app-main
+  end
+  subgraph features
+    subgraph billing
+      billing-controller
+      billing-view
+      billing-service
+    end
+    subgraph search
+      search-view
+      search-service
+    end
+    shell
+  end
+  subgraph ui
+    ui-kit
+  end
+  %% order open: app > features > ui
+  {each}
+  %% map app-main: src/app/
+  %% map billing-*: src/features/billing/
+  %% map search-*: src/features/search/
+  %% map shell: src/shell.ts
+  %% map ui-kit: src/ui/
+"
+    )
+}
+
+#[test]
+fn a_fixed_end_narrows_an_open_layer_to_the_role_that_may_use_it() {
+    let contract = fixed_end_contract("%% each features: view --> ui-kit");
+    let dir = tree(&[
+        ("architecture.mmd", &contract),
+        ("src/app/main.ts", "export const m = 1;\n"),
+        (
+            "src/features/billing/view.ts",
+            "import { k } from '../../ui/kit';\nexport const v = k;\n",
+        ),
+        (
+            "src/features/billing/service.ts",
+            "import { k } from '../../ui/kit';\nexport const s = k;\n",
+        ),
+        (
+            "src/features/billing/controller.ts",
+            "export const c = 1;\n",
+        ),
+        ("src/features/search/view.ts", "export const v = 1;\n"),
+        ("src/features/search/service.ts", "export const s = 1;\n"),
+        ("src/shell.ts", "export const sh = 1;\n"),
+        ("src/ui/kit.ts", "export const k = 1;\n"),
+    ]);
+    let output = run(dir.path(), &["lint", "--format", "json"]);
+    assert_eq!(output.status.code(), Some(1), "{}", out(&output));
+    let value = json(&output);
+    assert_eq!(
+        kinds(&value),
+        [(
+            "undeclared-edge".to_owned(),
+            "src/features/billing/service.ts".to_owned()
+        )]
+    );
+    let message = value["violations"][0]["message"].as_str().unwrap();
+    assert!(
+        message.contains("limits `features` to the edges it declares towards `ui`"),
+        "{message}"
+    );
+}
+
+#[test]
+fn a_fixed_boundary_end_narrows_the_same_way() {
+    let contract = fixed_end_contract("%% each features: view --> ui");
+    let dir = tree(&[
+        ("architecture.mmd", &contract),
+        ("src/app/main.ts", "export const m = 1;\n"),
+        (
+            "src/features/billing/view.ts",
+            "import { k } from '../../ui/kit';\nexport const v = k;\n",
+        ),
+        (
+            "src/features/search/service.ts",
+            "import { k } from '../../ui/kit';\nexport const s = k;\n",
+        ),
+        ("src/features/billing/service.ts", "export const s = 1;\n"),
+        (
+            "src/features/billing/controller.ts",
+            "export const c = 1;\n",
+        ),
+        ("src/features/search/view.ts", "export const v = 1;\n"),
+        ("src/shell.ts", "export const sh = 1;\n"),
+        ("src/ui/kit.ts", "export const k = 1;\n"),
+    ]);
+    let output = run(dir.path(), &["lint", "--format", "json"]);
+    assert_eq!(output.status.code(), Some(1), "{}", out(&output));
+    assert_eq!(
+        kinds(&json(&output)),
+        [(
+            "undeclared-edge".to_owned(),
+            "src/features/search/service.ts".to_owned()
+        )]
+    );
+    let brief = out(&run(dir.path(), &["brief"]));
+    assert!(
+        brief.contains("each features: view --> ui, line 21"),
+        "{brief}"
+    );
+}
+
+#[test]
+fn a_fixed_start_reverses_the_arrow_and_only_that_direction_is_allowed() {
+    let contract = fixed_end_contract("%% each features: shell --> controller");
+    let files = |shell: &'static str, controller: &'static str| {
+        tree(&[
+            ("architecture.mmd", &contract),
+            ("src/app/main.ts", "export const m = 1;\n"),
+            ("src/features/billing/view.ts", "export const v = 1;\n"),
+            ("src/features/billing/service.ts", "export const s = 1;\n"),
+            ("src/features/billing/controller.ts", controller),
+            ("src/features/search/view.ts", "export const v = 1;\n"),
+            ("src/features/search/service.ts", "export const s = 1;\n"),
+            ("src/shell.ts", shell),
+            ("src/ui/kit.ts", "export const k = 1;\n"),
+        ])
+    };
+    let forward = files(
+        "import { c } from './features/billing/controller';\nexport const sh = c;\n",
+        "export const c = 1;\n",
+    );
+    let output = run(forward.path(), &["lint", "--format", "json", "--strict"]);
+    assert_eq!(output.status.code(), Some(0), "{}", out(&output));
+    let backward = files(
+        "export const sh = 1;\n",
+        "import { sh } from '../../shell';\nexport const c = sh;\n",
+    );
+    let output = run(backward.path(), &["lint", "--format", "json"]);
+    assert_eq!(
+        kinds(&json(&output)),
+        [
+            (
+                "undeclared-edge".to_owned(),
+                "src/features/billing/controller.ts".to_owned()
+            ),
+            ("stale-edge".to_owned(), String::new()),
+        ]
+    );
+}
+
+#[test]
+fn an_arrow_that_a_fixed_end_leaves_unrealised_is_one_stale_warning_at_the_each_line() {
+    let contract = fixed_end_contract("%% each features: view --> ui-kit");
+    let dir = tree(&[
+        ("architecture.mmd", &contract),
+        ("src/app/main.ts", "export const m = 1;\n"),
+        ("src/features/billing/view.ts", "export const v = 1;\n"),
+        ("src/features/billing/service.ts", "export const s = 1;\n"),
+        (
+            "src/features/billing/controller.ts",
+            "export const c = 1;\n",
+        ),
+        ("src/features/search/view.ts", "export const v = 1;\n"),
+        ("src/features/search/service.ts", "export const s = 1;\n"),
+        ("src/shell.ts", "export const sh = 1;\n"),
+        ("src/ui/kit.ts", "export const k = 1;\n"),
+    ]);
+    let value = json(&run(dir.path(), &["lint", "--format", "json"]));
+    let stale: Vec<&str> = value["violations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|v| v["kind"] == "stale-edge")
+        .map(|v| v["message"].as_str().unwrap())
+        .collect();
+    assert_eq!(stale.len(), 1, "{value}");
+    assert!(
+        stale[0].contains("`%% each features` on line 21"),
+        "{}",
+        stale[0]
+    );
+}
+
+#[test]
+fn the_fixed_end_contract_errors_exit_2_with_the_each_line() {
+    for (each, extra, expect) in [
+        (
+            "%% each features: ui-kit --> app-main",
+            "",
+            "write it as an ordinary edge",
+        ),
+        (
+            "%% each features: view --> billing-service",
+            "",
+            "is inside `billing`",
+        ),
+        (
+            "%% each features: view --> features",
+            "",
+            "is the boundary of the template",
+        ),
+        (
+            "%% each features: view --> controller",
+            "  view\n",
+            "`view` is ambiguous",
+        ),
+    ] {
+        let contract =
+            fixed_end_contract(each).replacen("  %% map", &format!("{extra}  %% map"), 1);
+        let dir = tree(&[("architecture.mmd", &contract)]);
+        let output = run(dir.path(), &["lint"]);
+        assert_eq!(output.status.code(), Some(2), "{each}");
+        let message = err(&output);
+        assert!(message.contains("line 21"), "{each}: {message}");
+        assert!(message.contains(expect), "{each}: {message}");
+    }
 }

@@ -225,3 +225,123 @@ fn templates_render_back_and_expansions_do_not() {
     assert_eq!(again.rules.each[0].arrows, contract.rules.each[0].arrows);
     assert_eq!(render(&again), rendered);
 }
+
+fn ends(contract: &crate::model::Contract) -> Vec<(String, String, EdgeKind)> {
+    contract
+        .boundary_edges
+        .iter()
+        .map(|e| (e.from.to_string(), e.to.to_string(), e.kind))
+        .collect()
+}
+
+#[test]
+fn a_fixed_end_is_kept_for_every_child_that_has_the_role() {
+    let contract = parse(&with(
+        "  ui\n  %% each features: view --> ui, service -->|type| ui, ui -.-> controller\n",
+    ))
+    .unwrap();
+    assert_eq!(
+        ends(&contract),
+        [
+            ("billing-view".into(), "ui".into(), EdgeKind::Implemented),
+            ("billing-service".into(), "ui".into(), EdgeKind::Type),
+            ("search-service".into(), "ui".into(), EdgeKind::Type),
+            ("ui".into(), "billing-controller".into(), EdgeKind::Planned),
+            ("ui".into(), "search-controller".into(), EdgeKind::Planned),
+        ]
+    );
+    assert!(contract.boundary_edges.iter().all(|e| e.line == 17));
+}
+
+#[test]
+fn a_fixed_boundary_end_expands_to_a_boundary_edge() {
+    let contract = parse(&with(
+        "  subgraph shared\n    shared-ui\n  end\n  %% each features: view --> shared\n",
+    ))
+    .unwrap();
+    let [edge] = &contract.boundary_edges[..] else {
+        panic!("{:?}", contract.boundary_edges);
+    };
+    assert_eq!(edge.from.to_string(), "billing-view");
+    assert_eq!(edge.to, crate::model::Endpoint::Boundary("shared".into()));
+}
+
+#[test]
+fn a_node_written_directly_in_the_boundary_is_a_fixed_end() {
+    let contract = parse(&with("  %% each features: features-shell --> controller\n")).unwrap();
+    assert_eq!(contract.boundary_edges.len(), 2);
+}
+
+#[test]
+fn two_fixed_ends_are_an_error_that_says_to_write_an_ordinary_edge() {
+    let err = error("  ui\n  core\n  %% each features: ui --> core\n");
+    assert_eq!(err.line(), Some(18));
+    let message = reason(&err);
+    assert!(
+        message.contains("write it as an ordinary edge"),
+        "{message}"
+    );
+}
+
+#[test]
+fn a_fixed_end_cannot_be_the_boundary_or_lie_inside_a_child() {
+    for (extra, expect) in [
+        (
+            "  %% each features: features --> controller\n",
+            "is the boundary of the template",
+        ),
+        (
+            "  %% each features: billing-service --> controller\n",
+            "is inside `billing`",
+        ),
+        (
+            "  %% each features: search-service --> controller\n",
+            "is inside `search`",
+        ),
+        (
+            "  %% each features: search-core --> controller\n",
+            "is inside `search`",
+        ),
+    ] {
+        let err = error(extra);
+        assert_eq!(err.line(), Some(16), "{extra}");
+        let message = reason(&err);
+        assert!(message.contains(expect), "{extra}: {message}");
+    }
+}
+
+#[test]
+fn a_fixed_boundary_with_no_node_is_an_error() {
+    let message = reason(&error(
+        "  subgraph hollow\n  end\n  %% each features: view --> hollow\n",
+    ));
+    assert!(message.contains("declares no node"), "{message}");
+}
+
+#[test]
+fn a_name_that_is_declared_and_also_a_role_is_ambiguous_and_names_both_meanings() {
+    // why: `view` is the role of `billing-view`, and the declared node `view` is another meaning.
+    let err = error("  view\n  %% each features: view --> controller\n");
+    assert_eq!(err.line(), Some(17));
+    let message = reason(&err);
+    assert!(message.contains("`view` is ambiguous"), "{message}");
+    assert!(message.contains("declared node `view`"), "{message}");
+    assert!(message.contains("role `view`"), "{message}");
+}
+
+#[test]
+fn an_arrow_with_a_fixed_end_renders_back_as_the_template() {
+    let contract = parse(&with(
+        "  ui\n  %% each features: view --> ui, ui -->|type| controller\n",
+    ))
+    .unwrap();
+    let rendered = render(&contract);
+    assert!(
+        rendered.contains("  %% each features: view --> ui, ui -->|type| controller\n"),
+        "{rendered}"
+    );
+    assert!(!rendered.contains("billing-view -->"), "{rendered}");
+    let again = parse(&rendered).unwrap();
+    assert_eq!(ends(&again), ends(&contract));
+    assert_eq!(render(&again), rendered);
+}

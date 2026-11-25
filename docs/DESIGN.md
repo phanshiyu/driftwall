@@ -613,9 +613,10 @@ end
 %% each features: controller --> service, controller -.-> view, service -->|type, test| store
 ```
 
-An arrow is `<role> <arrow> <role>`, where the arrow is any form of an ordinary edge, parsed by the
+An arrow is `<end> <arrow> <end>`, where the arrow is any form of an ordinary edge, parsed by the
 same code: `-->`, `-.->`, `-->|test|`, `-->|type|`, `-->|type, test|` and the dotted forms (a comma
-inside the `|...|` label does not end the arrow). A role is a node id suffix, `[A-Za-z][A-Za-z0-9_-]*`.
+inside the `|...|` label does not end the arrow). An end is a role, a node id suffix,
+`[A-Za-z][A-Za-z0-9_-]*`, or a fixed end, see "Fixed ends".
 
 - Children. `<boundary>` must be a declared boundary that has child boundaries (a direct child
   boundary with a node at some depth, as in "Isolated boundaries"). The template applies to each
@@ -628,6 +629,23 @@ inside the `|...|` label does not end the arrow). A role is a node id suffix, `[
   with the kind of the arrow. If `C` has no `C-a` or no `C-b` the expansion is skipped without a
   word: a feature may have no view. An expansion is a node edge for every rule (see below), written
   nowhere: `render` writes the template back, never its expansions.
+- Fixed ends. An end is a fixed end when it is an id the contract declares, a node or a boundary;
+  any other end is a role. `%% each features: view --> ui, service -->|type| api-client, shell -->
+  controller` says that only the view of a feature may use `ui`, only the service `api-client`, and
+  that `shell` may use every controller, with no arrow per feature. For each child `C` that has the
+  role node, the expansion is the arrow with the role replaced by `C-role` and the fixed end kept,
+  with the arrow's kind; a child without the role is skipped. With a boundary as the fixed end the
+  expansion is a boundary edge for every rule (see "Boundary edges"), otherwise a node edge. Every
+  rule of this section and of "Contract rules" treats an expansion as it treats a written edge, so
+  `view --> ui` narrows an open chain's `features` to `ui` pair of layers to the view nodes (see
+  "Open order"), and an error or warning an expansion causes points at the `%% each` line. Contract
+  errors: an arrow with two fixed ends (write it as an ordinary edge; at least one end is a role); a
+  fixed end that is `<boundary>` itself, a boundary inside one of its child boundaries, or a node
+  inside one of them (a node or boundary written directly in `<boundary>` and outside every child
+  is allowed, and `%% isolated` and the other rules judge the result); a fixed boundary with no
+  node; and a name that is a declared id and also resolves as a role in some child (child `billing`
+  has a node `billing-ui` and `ui` is also declared), which names both meanings and is ambiguous.
+  A role that resolves in no child stays the error below. `render` writes the template back.
 - Contract errors, each with the line of the `%% each`, exit 2: `<boundary>` not a declared
   boundary (a node id, an undeclared id) or a boundary with no child boundary; a malformed list
   (empty, an empty arrow, an arrow that is not `<role> <arrow> <role>`, a role twice the same on
