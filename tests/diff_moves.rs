@@ -474,7 +474,8 @@ fn json_has_the_documented_shape_sorted_by_file() {
                 "from_node": "alpha",
                 "to_node": "beta",
                 "renamed_from": "alpha/widget.ts",
-                "mapping_changed": false
+                "mapping_changed": false,
+                "cause": "renamed"
             }
         ])
     );
@@ -495,7 +496,8 @@ fn json_marks_a_mapping_change_and_an_unowned_side_with_null() {
                 "file": "src/two.ts",
                 "from_node": "alpha",
                 "to_node": null,
-                "mapping_changed": true
+                "mapping_changed": true,
+                "cause": "mapping-changed"
             }
         ])
     );

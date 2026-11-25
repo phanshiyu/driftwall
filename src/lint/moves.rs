@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use crate::model::{Contract, MapRule, Moved, NodeId, Ownership};
+use crate::model::{Contract, MapRule, MoveCause, Moved, NodeId, Ownership};
 use crate::ownership::{self, MapContext};
 
 use super::{LintError, read_contract, scan_ownership};
@@ -85,8 +85,7 @@ pub fn moved(old: &Owners, new: &Owners, renames: &[(PathBuf, PathBuf)]) -> Vec<
                 file: path.clone(),
                 from_node: from_node.clone(),
                 to_node: to_node.clone(),
-                renamed_from: (from_path != path).then(|| from_path.clone()),
-                mapping_changed: from_path == path || old.rule_owner(path) != *to_node,
+                cause: MoveCause::of(from_path, path, old.rule_owner(path) != *to_node),
             })
         })
         .collect()

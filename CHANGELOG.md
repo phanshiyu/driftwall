@@ -44,6 +44,8 @@
   `PLANNED-REALIZED` or `TEST-ONLY` where `UNDECLARED` stood, so it tells the story of `lint`.
   Lines of `ok` edges are unchanged. `lint` output is unchanged. See "Edge status" in
   `docs/DESIGN.md`.
+- `diff --format json`: each `moved` entry gains `cause` (`mapping-changed`, `renamed` or
+  `renamed-and-mapping-changed`). `renamed_from` and `mapping_changed` are unchanged.
 
 ## 0.1.1 - 2026-11-25
 

@@ -7,7 +7,7 @@ use serde::Serialize;
 use std::fmt::Display;
 
 use crate::model::{
-    BoundaryMove, ContractDiff, DebtAdded, Edge, EdgeEnds, EdgeKind, Moved, NodeId,
+    BoundaryMove, ContractDiff, DebtAdded, Edge, EdgeEnds, EdgeKind, MoveCause, Moved, NodeId,
 };
 
 use super::ReportError;
@@ -134,10 +134,12 @@ fn push_moved(out: &mut String, moved: &[Moved]) {
             .map_or_else(|| "(none)".to_owned(), ToString::to_string)
     };
     for file in moved {
-        let cause = match (&file.renamed_from, file.mapping_changed) {
-            (Some(old), false) => format!("renamed from {}", old.display()),
-            (Some(old), true) => format!("renamed from {}, mapping changed", old.display()),
-            (None, _) => "mapping changed".to_owned(),
+        let cause = match &file.cause {
+            MoveCause::Renamed { from } => format!("renamed from {}", from.display()),
+            MoveCause::RenamedAndMappingChanged { from } => {
+                format!("renamed from {}, mapping changed", from.display())
+            }
+            MoveCause::MappingChanged => "mapping changed".to_owned(),
         };
         let _ = writeln!(
             out,

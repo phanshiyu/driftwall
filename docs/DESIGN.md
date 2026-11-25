@@ -2626,8 +2626,9 @@ directory, with the repository's own objects as an alternate, so `diff` writes n
 repository.
 
 Text and JSON are sorted by file. JSON: `moved`, a list of `{file, from_node, to_node,
-renamed_from, mapping_changed}`; `from_node` and `to_node` are `null` for no owner, `renamed_from`
-is absent unless renamed, and `mapping_changed` is a boolean.
+renamed_from, mapping_changed, cause}`; `from_node` and `to_node` are `null` for no owner,
+`renamed_from` is absent unless renamed, and `mapping_changed` is a boolean. `cause` names the
+combination of the two: `mapping-changed`, `renamed` or `renamed-and-mapping-changed`.
 
 **Exit code.** `--exit-code` already fails on any reported change; a rule change, a boundary move
 and a moved file are reported changes, so each fails it. There is no flag to allow a move: the

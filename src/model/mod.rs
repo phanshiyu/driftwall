@@ -25,7 +25,7 @@ pub use boundary::{
     BoundaryEdge, Cover, Declared, EdgeEnds, Endpoint, Template, child_of, children, children_apart,
 };
 pub use map::{GlobError, MapGlob, MapRule, MapSite, MapTarget, Specificity};
-pub use moved::{BoundaryMove, Moved};
+pub use moved::{BoundaryMove, MoveCause, Moved};
 pub use open_order::OpenAccess;
 pub use package_rule::{PackagePattern, PackageRule, PackageRuleKind};
 pub use rules::{
