@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.6.1 - 2026-11-26
 
 - A shell `case` pattern that joins several quoted strings and globs (`*"a"*"b"*)`) is valid shell that tree-sitter-bash reads as an error; it no longer makes the file `unparsed`, since a pattern cannot hide an import. Other errors in the file still do.
 
