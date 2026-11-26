@@ -38,8 +38,12 @@ pub fn parse(src: &str) -> Result<Contract, DiagramError> {
     let src = src.strip_prefix('\u{feff}').unwrap_or(src);
     let mut parser = Parser::default();
     let mut line: u32 = 0;
-    'lines: for raw in src.lines() {
+    // why: `split('\n')`, not `lines()`, which drops the `\r` that makes a `%%\r` line non-bare.
+    'lines: for raw in src.split('\n') {
         line = line.saturating_add(1);
+        if !parser.header_seen && raw.trim_start() == "%%" {
+            parser.bare_comments.push(line);
+        }
         let text = raw.trim();
         if let Some(directive) = directive(text, "exports") {
             parser.exports(directive, line)?;
@@ -93,6 +97,7 @@ struct PendingExports {
 #[derive(Default)]
 struct Parser {
     header_seen: bool,
+    bare_comments: Vec<u32>,
     nodes: BTreeMap<NodeId, NodeInfo>,
     node_lines: BTreeMap<NodeId, u32>,
     boundaries: BTreeMap<String, u32>,
@@ -536,6 +541,7 @@ impl Parser {
             maps: self.maps,
             rules,
             package_rules: self.package_rules,
+            bare_comments: self.bare_comments,
         };
         rules::check_denials_remove_something(&contract)?;
         Ok(contract)

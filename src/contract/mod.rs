@@ -302,6 +302,10 @@ pub struct Contract {
     /// The `%% packages` and `%% forbid-packages` lines in file order.
     #[serde(skip)]
     pub package_rules: Vec<PackageRule>,
+    /// The lines before the `flowchart` header that are exactly `%%`. Mermaid removes a comment
+    /// only when text follows `%%`, so it cannot draw a file with one of these.
+    #[serde(skip)]
+    pub bare_comments: Vec<u32>,
 }
 
 #[cfg(test)]

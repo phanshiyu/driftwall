@@ -30,7 +30,8 @@ pub(super) const fn severity(kind: ViolationKind) -> Severity {
         | ViolationKind::StaleIsolation
         | ViolationKind::StaleBaseline
         | ViolationKind::StaleFacade
-        | ViolationKind::FacadeWithoutExports => Severity::Warning,
+        | ViolationKind::FacadeWithoutExports
+        | ViolationKind::BareComment => Severity::Warning,
     }
 }
 
@@ -92,6 +93,9 @@ pub(super) const fn hint(kind: ViolationKind) -> &'static str {
         }
         ViolationKind::FacadeWithoutExports => {
             "list the names other nodes may use with `%% exports <node>: ...`, or ask the user to approve dropping the facade"
+        }
+        ViolationKind::BareComment => {
+            "replace the bare `%%` with a blank line or `%% <text>`, so Mermaid can draw the contract"
         }
         ViolationKind::StaleBaseline => {
             "run `driftwall lint --write-baseline <file>` to shrink the baseline"

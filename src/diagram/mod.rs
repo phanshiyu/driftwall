@@ -14,6 +14,8 @@ mod rules;
 mod sync;
 
 #[cfg(test)]
+mod bare_comment_tests;
+#[cfg(test)]
 mod boundary_tests;
 #[cfg(test)]
 mod built_tests;

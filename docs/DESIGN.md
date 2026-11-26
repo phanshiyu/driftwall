@@ -9,6 +9,12 @@ line an agent can act on.
 `architecture.mmd` is a strict subset of Mermaid `flowchart`. Anything outside the subset is a
 hard error with a line number. Silently ignoring syntax would let a typo become a missing edge.
 
+Mermaid removes a comment line only when text follows `%%` (its pattern needs one character after
+it), and a stray `%%` before the `flowchart` header then fails to parse, so GitHub and other
+renderers cannot draw the file. A line before the header that is exactly `%%`, with nothing after
+it (not even spaces or a `\r`), still parses but is a `bare-comment` warning, one per line, keyed by
+the line number. Use a blank line or `%% <text>`; after the header a bare `%%` draws fine.
+
 ```
 %% Comment lines start with %% and must be on their own line (no trailing comments).
 %% Direction is LR, RL, TB or BT and must be the first statement.
@@ -2387,6 +2393,7 @@ module and no symbol and adds nothing to `uses:`.
 | `test-only-edge` | warning | solid edge whose every import site is test-only, declare it `-->|test|`; also an unlabelled dotted edge whose every site is test-only, which the app does not use yet |
 | `stale-facade` | warning | a node named by `%% facade` owns no file that re-exports anything, see "Re-exports" |
 | `facade-without-exports` | warning | a node named by `%% facade` has no `%% exports` line, so every name it re-exports is public; no source location, see "Re-exports" |
+| `bare-comment` | warning | a line before the `flowchart` header is exactly `%%`, which Mermaid cannot draw; located at the contract line, see "Contract format" |
 | `unresolved-import` | warning | relative import resolves to nothing, whatever its extension; Python absolute import into a first-party package that holds no such module; shell `source` of a path that finds no file |
 | `private-symbol` | error | an import uses a symbol outside the target node's declared surface |
 | `over-budget` | warning | a node exceeds a `%% budget` limit (fan-out, files or lines), see "Budgets" |
@@ -2473,6 +2480,7 @@ test debt and production debt are separate entries. Paths use `/`.
 | `stale-package` | `<node> <entry>` | 1 |
 | `stale-facade` | `<node>` | 1 |
 | `facade-without-exports` | `<node>` | 1 |
+| `bare-comment` | `<line>` | 1 |
 | `isolation-breach` | `<boundary>: <from> --> <to>` | import sites |
 | `stale-isolation` | `<boundary>` | 1 |
 
@@ -3085,7 +3093,7 @@ agents and for code scanning, which needs a result per line.
   `production-imports-test` writes `` imports test file `t` in N places ``, and `forbidden-package`
   (which has no target) writes `` imports `pkg` in N places ``. A kind or message the generaliser
   does not recognise ends in ` (N places)` instead, so a group always reads as a group. Kinds that
-  are one per key (`stale-edge`, `unmapped-file`, `facade-without-exports`, ...) never have two members, so never group.
+  are one per key (`stale-edge`, `unmapped-file`, `facade-without-exports`, `bare-comment`, ...) never have two members, so never group.
 - **The baseline suffix** `; the baseline allows <N>, found <M>` appears once, at the end of the
   header, not on every site.
 - **Order:** a group is printed where its first site would have been, in the order findings have

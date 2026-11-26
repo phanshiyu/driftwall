@@ -49,6 +49,8 @@ pub enum ViolationKind {
     StaleFacade,
     /// A node named by `%% facade` has no `%% exports` line, so everything it re-exports is public.
     FacadeWithoutExports,
+    /// A line before the `flowchart` header is exactly `%%`, which Mermaid cannot draw.
+    BareComment,
     /// An import goes between two children of a `%% isolated` boundary.
     IsolationBreach,
     /// A `%% isolated` boundary has fewer than two children.

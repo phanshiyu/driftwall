@@ -5,6 +5,7 @@
 //! is its sibling that also hands back what it read, for the commands that present the architecture
 //! or compare contracts, which live in `views`.
 
+mod bare_comment;
 mod budget;
 mod facade;
 mod interface;
@@ -230,6 +231,9 @@ pub fn observe(root: &Path, options: &LintOptions) -> Result<Observation, LintEr
     report
         .violations
         .extend(facade::without_exports(&contract, &options.contract));
+    report
+        .violations
+        .extend(bare_comment::findings(&contract, &options.contract));
     report.violations.sort();
     report.violations.dedup();
     let symbols = observed_symbols(&contract, &edge_ownership, &imports);

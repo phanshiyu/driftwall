@@ -259,6 +259,7 @@ mod tests {
                 "stale-baseline",
                 "denied-edge",
                 "facade-without-exports",
+                "bare-comment",
             ]
         );
     }
