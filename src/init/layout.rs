@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
 use std::path::{Component, Path, PathBuf};
 
-use super::ids::{RESERVED, sanitize};
+use super::ids::{drawable_prefix, sanitize, undrawable};
 use crate::contract::{NodeId, Prefix};
 use crate::ownership::{folds, is_test_file, module_name, peers_in};
 
@@ -118,7 +118,9 @@ impl Draft {
         let mut found = self.derive(fork, files, &prefix);
         if prefix.as_str().is_empty()
             && let Some((derived, _)) = &found
-            && derived.values().any(|(id, _)| self.collides(id))
+            && derived
+                .values()
+                .any(|(id, _)| self.collides(id) || undrawable(id.as_str()))
             && let Some(parent) = parent_prefix(fork)
         {
             prefix = parent;
@@ -127,6 +129,10 @@ impl Draft {
         let Some((derived, peers)) = found else {
             return false;
         };
+        // why: a module id Mermaid cannot draw, even under the parent prefix, is not written.
+        if derived.values().any(|(id, _)| undrawable(id.as_str())) {
+            return false;
+        }
         let mut direct: BTreeSet<&NodeId> = BTreeSet::new();
         // why: a test file never makes a module of its own, so it does not count towards two.
         for (file, (id, _)) in &derived {
@@ -171,7 +177,7 @@ impl Draft {
             }
             let name = module_name(fork, file, &peers)?;
             let id = prefix.derive(&name).ok()?;
-            if RESERVED.contains(&id.as_str()) || self.fixed.contains(&id) {
+            if self.fixed.contains(&id) {
                 return None;
             }
             derived.insert((*file).to_path_buf(), (id, name));
@@ -282,5 +288,5 @@ pub(super) fn label_of(dir: &Path) -> String {
 /// the repository root, which has no name.
 fn parent_prefix(fork: &Path) -> Option<Prefix> {
     let name = fork.file_name()?.to_string_lossy();
-    Prefix::new(&format!("{}-", sanitize(&name))).ok()
+    Prefix::new(&format!("{}-", drawable_prefix(sanitize(&name)))).ok()
 }

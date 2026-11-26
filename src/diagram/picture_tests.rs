@@ -854,3 +854,28 @@ fn a_marker_takes_the_flags_in_any_order() {
         );
     }
 }
+
+#[test]
+fn markers_inside_a_fenced_code_block_are_documentation_not_blocks() {
+    for fence in ["```", "~~~", "````"] {
+        let doc = format!(
+            "{fence}markdown\n<!-- driftwall render --built -->\nold\n<!-- driftwall render end -->\n{fence}\n\ntext\n"
+        );
+        assert!(!wants_built(&doc), "{fence}");
+        // why: the only block is inside the fence, so there is none to sync.
+        assert!(
+            matches!(synced(&doc), Err(PictureError::NoBlock)),
+            "{fence}"
+        );
+        let both = format!("{doc}{BLOCK}");
+        let result = synced(&both).unwrap();
+        assert!(result.text.starts_with(&doc), "{fence}");
+        assert_eq!(result.stale.len(), 1);
+    }
+}
+
+#[test]
+fn a_block_after_a_closed_fence_is_still_synced() {
+    let doc = format!("```\ncode\n```\n{BLOCK}");
+    assert_eq!(synced(&doc).unwrap().stale, [6]);
+}

@@ -6,12 +6,50 @@ use std::path::{Component, Path, PathBuf};
 
 use crate::contract::NodeId;
 
-/// Words the contract format rejects as node ids.
-pub(super) const RESERVED: [&str; 3] = ["end", "flowchart", "subgraph"];
 /// Id of the node that owns files sitting directly in the repository root.
 const ROOT_ID: &str = "root";
 /// What a directory node is called when its plain id is taken by a fixed node.
 const DIRECTORY_SUFFIX: &str = "dir";
+
+/// Whether Mermaid cannot parse `text` as a node id.
+pub(super) fn undrawable(text: &str) -> bool {
+    NodeId::mermaid_rejects(text)
+}
+
+/// A spelling of `plain` that Mermaid can draw as an id, for a directory `dir`: `plain` itself, else
+/// the whole path joined (`src-class` for `src/class`), else `plain` with `_` for `-`, and `_dir`
+/// added when that is still a keyword (`class_dir`).
+pub(super) fn drawable(plain: String, dir: &Path) -> String {
+    if !undrawable(&plain) {
+        return plain;
+    }
+    let joined = sanitize(
+        &dir.components()
+            .map(|part| part.as_os_str().to_string_lossy().into_owned())
+            .collect::<Vec<_>>()
+            .join("-"),
+    );
+    if joined != plain && !undrawable(&joined) {
+        return joined;
+    }
+    // why: `_` is not a `-`, so `end_user` is no longer a keyword followed by a dash.
+    let flat = plain.replace('-', "_");
+    if undrawable(&flat) {
+        format!("{flat}_dir")
+    } else {
+        flat
+    }
+}
+
+/// `base` as the text before the `-` of a prefix, or `<base>_dir` when a module id under it, such
+/// as `end-main`, would be one Mermaid cannot draw.
+pub(super) fn drawable_prefix(base: String) -> String {
+    if undrawable(&format!("{base}-x")) {
+        format!("{base}_dir")
+    } else {
+        base
+    }
+}
 
 /// Assigns every directory a unique, valid id, in sorted directory order.
 ///
@@ -44,12 +82,13 @@ pub(super) fn assign(
             },
             |name| sanitize(name),
         );
+        let plain = drawable(plain, dir);
         let family = if fixed.contains(&plain) {
             format!("{plain}-{DIRECTORY_SUFFIX}")
         } else {
             plain
         };
-        let chosen = (1..=taken.len() + RESERVED.len() + 1)
+        let chosen = (1..=taken.len() + 2)
             .map(|attempt| {
                 if attempt == 1 {
                     family.clone()
@@ -57,9 +96,7 @@ pub(super) fn assign(
                     format!("{family}-{attempt}")
                 }
             })
-            .find(|candidate| {
-                !RESERVED.contains(&candidate.as_str()) && !taken.contains(candidate)
-            });
+            .find(|candidate| !undrawable(candidate) && !taken.contains(candidate));
         if let Some(chosen) = chosen
             && let Ok(id) = NodeId::new(&chosen)
         {
@@ -167,6 +204,19 @@ mod tests {
     #[test]
     fn the_root_node_yields_to_a_module_called_root() {
         assert_eq!(ids(&["", "lib"], &["root"]), ["root-dir", "lib"]);
+    }
+
+    #[test]
+    fn a_directory_mermaid_cannot_draw_gets_its_path_or_a_dir_suffix() {
+        assert_eq!(
+            ids(&["src/class", "src/style", "src/ui"], &[]),
+            ["src-class", "src-style", "ui"]
+        );
+        assert_eq!(
+            ids(&["class", "end-user", "x"], &[]),
+            ["class_dir", "end_user", "x"]
+        );
+        assert_eq!(ids(&["a", "end"], &[]), ["a", "end_dir"]);
     }
 
     #[test]

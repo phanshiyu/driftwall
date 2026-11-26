@@ -97,7 +97,11 @@ fn has_ancestor(node: Node<'_>, kind: &str) -> bool {
 fn flatten<'s>(node: Node<'_>, source: &'s str, out: &mut Vec<Segment<'s>>) -> Option<()> {
     match node.kind() {
         "scoped_identifier" | "scoped_type_identifier" => {
-            flatten(node.child_by_field_name("path")?, source, out)?;
+            // why: a leading `::` names an extern crate, never `crate::`, so it is dropped and the first name is the crate.
+            match node.child_by_field_name("path") {
+                Some(path) => flatten(path, source, out)?,
+                None => out.push(Segment::Extern),
+            }
             flatten(node.child_by_field_name("name")?, source, out)
         }
         "generic_type" | "generic_type_with_turbofish" => {
@@ -208,12 +212,27 @@ fn expand_use<'s>(
     }
 }
 
+/// Whether the `::` token `colons` opens a path (`f(::a::b())`) instead of continuing one: only
+/// punctuation that cannot end a path sits before it.
+fn is_leading(colons: Node<'_>) -> bool {
+    colons.prev_sibling().is_none_or(|before| {
+        !before.is_named() && !matches!(before.kind(), ">" | ")" | "]" | "}" | "::")
+    })
+}
+
 /// The `a::b::c` path that starts at token `node` inside a macro argument list, if any.
 fn token_path<'s>(node: Node<'_>, source: &'s str) -> Option<WrittenPath<'s>> {
-    if node.prev_sibling().is_some_and(|prev| prev.kind() == "::") {
+    if let Some(prev) = node.prev_sibling()
+        && prev.kind() == "::"
+        && !is_leading(prev)
+    {
         return None;
     }
-    let mut segments = vec![segment(node, source)?];
+    let mut segments = Vec::new();
+    if node.prev_sibling().is_some_and(|prev| prev.kind() == "::") {
+        segments.push(Segment::Extern);
+    }
+    segments.push(segment(node, source)?);
     let mut last = node;
     while let Some(separator) = last.next_sibling()
         && separator.kind() == "::"
@@ -223,5 +242,10 @@ fn token_path<'s>(node: Node<'_>, source: &'s str) -> Option<WrittenPath<'s>> {
         segments.push(found);
         last = next;
     }
-    (segments.len() > 1).then(|| WrittenPath::in_code(segments))
+    (segments
+        .iter()
+        .filter(|part| **part != Segment::Extern)
+        .count()
+        > 1)
+    .then(|| WrittenPath::in_code(segments))
 }

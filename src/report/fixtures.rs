@@ -64,7 +64,7 @@ pub fn mixed() -> LintReport {
 }
 
 /// Every kind, in declaration order, so the list can be checked against [`ordinal`].
-pub const ALL_KINDS: [ViolationKind; 23] = [
+pub const ALL_KINDS: [ViolationKind; 25] = [
     ViolationKind::UnmappedFile,
     ViolationKind::UnknownNode,
     ViolationKind::UndeclaredEdge,
@@ -88,6 +88,8 @@ pub const ALL_KINDS: [ViolationKind; 23] = [
     ViolationKind::DeniedEdge,
     ViolationKind::FacadeWithoutExports,
     ViolationKind::BareComment,
+    ViolationKind::UndrawableId,
+    ViolationKind::UndrawableLabel,
 ];
 
 /// Position of a kind in [`ALL_KINDS`]. Exhaustive, so a new variant fails to compile here and
@@ -117,6 +119,8 @@ pub const fn ordinal(kind: ViolationKind) -> usize {
         ViolationKind::DeniedEdge => 20,
         ViolationKind::FacadeWithoutExports => 21,
         ViolationKind::BareComment => 22,
+        ViolationKind::UndrawableId => 23,
+        ViolationKind::UndrawableLabel => 24,
     }
 }
 

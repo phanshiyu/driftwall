@@ -15,6 +15,26 @@ renderers cannot draw the file. A line before the header that is exactly `%%`, w
 it (not even spaces; a `\r\n` line end counts as nothing, since Mermaid turns it into `\n` first), still parses but is a `bare-comment` warning, one per line, keyed by
 the line number. Use a blank line or `%% <text>`; after the header a bare `%%` draws fine.
 
+Mermaid also rejects some things the grammar here accepts, checked against Mermaid 11. They parse
+and lint, and are warnings so that a contract GitHub cannot draw is not left unnoticed:
+
+- **`undrawable-id`**, one per node or boundary id Mermaid cannot parse, keyed by the id and located
+  at the line that declares it: the words `class`, `style`, `graph`, `click`, `call`, `href`,
+  `interpolate`, `linkStyle`, `classDef`, `end`, `subgraph` and `flowchart`; an id that starts with
+  `end-`, `graph-`, `style-`, `class-`, `subgraph-`, `flowchart-`, `interpolate-`, `linkStyle-` or
+  `classDef-` (but not `click-`, `call-` or `href-`); and an id with `--` in it. The check is case
+  sensitive: `End`, `endx`, `a-end`, `default`, `styles` and `end_user` are fine. A boundary also
+  cannot be `default` or `default-<x>`. (`end`, `flowchart` and `subgraph` are still contract errors as
+  node ids, at the line that declares them.) `init` never writes such an id.
+- **`undrawable-label`**, one per line, keyed by the line number and located at it: an edge label
+  that is empty (`a -->|| b`) or, outside a leading `"quoted text"`, has a `"`, a parenthesis, a
+  square bracket or a curly brace (`|uses (x)|`, `|x[1]|`, `|{x}|`, `|say "hi"|`); a node label or
+  `subgraph` label that is empty (`a[""]`); and a comment line that starts with `%%{`, which Mermaid
+  reads as a directive and fails on unless it is `%%{name ...}%%` closed on the same line. A
+  `%%{` line is flagged wherever it stands, although Mermaid only fails on some after the header.
+  `render` never writes any of these: an empty label is drawn as the id, and the edge labels it
+  writes are `type` and `test` only.
+
 ```
 %% Comment lines start with %% and must be on their own line (no trailing comments).
 %% Direction is LR, RL, TB or BT and must be the first statement.
@@ -971,8 +991,10 @@ A `.arch` file contains `node: <id>` and, optionally, `scope: here` (comments st
 directive at most once, `node:` is required). It tags its directory and all subdirectories, until a
 nested `.arch` overrides it. Source files are found by walking the repo with the `ignore` crate, so
 `.gitignore` is honored. `.driftwallignore` (gitignore syntax) adds exclusions. A directory below
-the root that holds a `.git` file or directory (a nested repository, a submodule, or a git worktree
-such as an agent's checkout under `.claude/worktrees/`) is not walked, as git does not walk it: its
+the root that is a real repository (a nested repository, a submodule, or a git worktree such as an
+agent's checkout under `.claude/worktrees/`) is not walked, as git does not walk it. It is one when
+its `.git` is a file whose content starts with `gitdir:`, or a directory that holds `HEAD`; an
+empty `.git` file or directory, or any other content, marks no repository and hides nothing: its
 files are another checkout, not part of this one, so they are neither linted nor counted. Only files with a
 supported extension count as source. One exception: an HTML file
 (`.html`, `.htm`) counts as source only when it holds a `<script` element, see "Svelte and HTML";
@@ -1222,8 +1244,25 @@ note: 50 files not read (swift 40, sh 10), 3 skipped references; see driftwall b
 
 Its parts, each present only when non-zero and in this order, are `N files not read (ext n, ..)`
 (extensions by file count, descending, then by name, at most 6 then `+N more`), `N files excluded
-(reason n, ..)`, `N files ignored by .driftwallignore`, `N skipped references` and `N unresolved
-imports`, joined by `, `, then `; see driftwall brief`. With nothing to say there is no note line.
+(reason n, ..)`, `N files ignored by .driftwallignore`, `N skipped references`, `N files with syntax
+errors (imports after the error may be missing)` and `N unresolved imports`, joined by `, `, then `;
+see driftwall brief`. With nothing to say there is no note line.
+
+#### Unparsed files
+
+A file whose syntax tree has an error or a missing node (a conflict marker, an unterminated string
+or template, a half-typed statement, or valid code the grammar does not cover, such as a one-line
+bash `case` with several patterns) may lose imports silently: the grammar recovers around the
+error, and an import after it can end up inside the error node. Import extraction therefore records
+one skipped reference of reason `unparsed` per such file, in every language, at the line of the
+first error, with the file as the specifier and the message `the parser could not read past line N:
+imports after it may be missing`. The imports that were recovered are kept. It counts as a blind
+spot of the node that owns the file: `brief` lists it under `skipped references`, and the `lint` note
+counts it apart from the other skipped references, as `N files not fully parsed`. It names what the parser did, not a verdict on the code, because a
+grammar can reject valid code. A script of a
+Svelte or HTML file counts for the file once however many scripts have errors. The `{ .. }`
+expressions that a Svelte file's markup is read for (see "Svelte and HTML") are fragments and never
+count. It is not a lint finding.
 
 ### Module nodes (`node: *`)
 
@@ -1497,8 +1536,36 @@ dependency. Resolution takes the subpath of the specifier, `.` for none and `./u
    probed in that order against the member directory, then the directory itself (its `index.*`).
 3. When the subpath is longer and `exports` found no file, the rest of the specifier (`util`) is
    probed against the member directory like a relative path.
-4. Otherwise the specifier is ignored: the package is a repository member whose entry is not a known
-   file (a build output), which is not an error.
+4. When a candidate is under the `outDir` of the member's tsconfig, it is also tried as the source
+   path it maps to: the same path below `rootDir`, with a declaration file turned into the file it
+   comes from (`dist/index.d.ts` is `src/index.ts` or `src/index.tsx`, `index.d.mts` is `index.mts`),
+   and an `.mjs` or `.cjs` output into its `.mts`, `.cts` or `.ts` source (a `.js` output is already
+   mapped to `.ts` and `.tsx` by probing). The tsconfig is the member's `tsconfig.json`, else its
+   `tsconfig.build.json`, whichever sets `outDir`, after `extends` as in "Governing config": `outDir`
+   and `rootDir` are relative to the config that sets them. With no `rootDir`, the directory of
+   the config that sets `outDir` and its `src` directory are the roots. The mapped paths come after
+   the declared ones, so a built `dist` that exists still wins.
+5. Otherwise the specifier is skipped as `workspace-entry-missing`, with a message that names the
+   package and its directory and says to map the build output with `outDir` and `rootDir`: the package
+   is a repository member whose entry no known file satisfies, so the import is a blind spot of the
+   importer's node, never silent. (Package `imports` keys are unchanged: one that finds no file
+   still ignores the specifier.)
+
+A dependency written as a link names a package by another key. In any of `dependencies`,
+`devDependencies`, `peerDependencies` and `optionalDependencies` of a `package.json` (the nearest
+one at or above the importer that lists the key wins, the first table that lists a key within it):
+
+- `"alias": "file:../a"`, `"link:../a"` and `"workspace:../a"` link the key to the directory, relative
+  to that `package.json`. The directory's own `package.json` (the entry, `exports` and tsconfig are
+  read from it as for a member, whether or not `workspaces` lists it) decides what `alias` and
+  `alias/sub` name. A tarball (`file:./a.tgz`) is an ordinary dependency.
+- `"alias": "workspace:@x/a@*"` and `"npm:@x/a@*"` link the key to the member named `@x/a`, with
+  the version range ignored. `"workspace:*"` and the other ranges are the key's own name, which
+  resolves as a member by name already.
+- A link whose directory has no `package.json` with source files, or a `workspace:` link naming no
+  member, is skipped as `workspace-entry-missing` for every import of the key, with a message saying
+  where it leads. An `npm:` link to a package that is no member (`"r": "npm:react@18"`) is an
+  ordinary package, declared under the key.
 
 #### Package `imports`
 
@@ -1531,6 +1598,12 @@ no symbol. Its location is the line of the `import` word, inside the comment. A 
 with `/*` but not `/**`, a `//` comment, a string and a `/**/` comment are not read. The comment
 is found by the grammar, so a `/**` inside a string literal is not one. It is test code by the file
 rules of "Import kind". A JSDoc `@import {T} from './x'` tag is not read.
+
+A triple-slash directive `/// <reference path="./x.d.ts" />` in a TypeScript or JavaScript file is a
+`type-only` import of that path, with no symbol, at the line of the comment. The path is relative to
+the file whether or not it starts with `./`, and resolves like a relative specifier (probing,
+`unresolved-import` when nothing is found). `/// <reference types="..." />`, `lib` and
+`no-default-lib` directives are not read.
 
 #### File references (`new URL`)
 
@@ -1723,13 +1796,28 @@ not an edge. A path that finds no module file falls back to the crate root file.
   the module path their file location suggests. A `#[path]` that names no known repository file
   is not followed, so a path through it falls back to the crate root file. A `#[path]` inside
   `#[cfg_attr(..)]` and a `#[path]` written in a file that a `#[path]` itself placed are not read.
+- **Leading `::`.** `use ::a_lib::A;` and `::a_lib::a()` (also inside macro arguments) name the
+  extern crate `a_lib`, exactly like `a_lib::A`. The `::` is dropped and the first name is looked up
+  only as a crate, never as a module of the file or as `crate::`: `::model::A` is not
+  `crate::model::A`, even when the file declares `mod model;`.
+- **Renamed dependencies.** `alpha = { path = "../a-lib", package = "a-lib" }` in the `[dependencies]`,
+  `[dev-dependencies]`, `[build-dependencies]` or a `[target.<cfg>.*]` table of a `Cargo.toml` makes
+  `alpha` the crate `a-lib` for the files that manifest governs (the nearest `Cargo.toml` at or
+  above the file, as for package uses) and for no other crate. A name the manifest does not rename
+  is the crate of that name. The renamed crate is found by its package name (`-` as `_`), so a
+  dependency on a library whose `[lib] name` differs from its package name is not followed, and
+  neither is a rename a member inherits (`alpha = { workspace = true }`).
+- **`self::` through a binding.** A path that starts `self::name` reads `name` in the file's own
+  module, so a name the file bound with `use` resolves like a leading name: `use crate::a as z;
+  pub use self::z::A;` and `pub type X = self::z::A;` are followed as `pub use z::A;` is.
 - **Crates outside the repository.** A path that starts with `std`, `core`, `alloc` or a dependency
   of the nearest `Cargo.toml` is a package use, not an edge, see "Package uses".
 - **Type aliases.** A top-level `type X = path::Y;` naming an item of another repository file is a
   re-export of that item, see "Type aliases" in "Re-exports".
-- **Not followed:** `extern crate` renames, names that only a glob of a non-module brings in
-  (`use crate::*; gitlab::x()`), local names from an inline `mod name { }`, and macro-generated
-  paths.
+- **Not followed:** `extern crate` renames and `extern crate self`, names that only a glob of a
+  non-module brings in (`use crate::*; gitlab::x()`), local names from an inline `mod name { }`,
+  paths in a generic argument of another path (`Option<crate::a::A>` records `Option` only), a
+  `#[cfg_attr(.., path = "..")]`, re-exports a macro generates, and macro-generated paths.
 
 ### Swift resolution
 
@@ -1840,7 +1928,7 @@ typed (`kind`, `test_only`), recorded (`symbols`) and skipped exactly like the i
 TypeScript or JavaScript file: aliases, workspace packages, package `imports`, assets, probing and
 the declared-package check all apply, governed by the config and `package.json` files above the
 Svelte or HTML file. Everything outside the script elements is ignored: markup, text, `<style>`, and
-text that merely looks like an import.
+text that merely looks like an import, except the `{ .. }` expressions of a Svelte file, below.
 
 **Svelte** (`.svelte`, always source). Every `<script ...>` element is read, whatever its
 attributes, so the instance script, `context="module"` and the Svelte 5 `module` attribute all
@@ -1848,6 +1936,15 @@ count. Its text, the characters between the end of the start tag and the end tag
 TypeScript when the `lang` attribute is `ts` or `typescript` (ASCII case-insensitive) and as
 JavaScript otherwise. Lines are lines of the `.svelte` file, not of the script: a statement on the
 third line of the file is reported at line 3. A `src` attribute on a Svelte script is not an import.
+
+A Svelte file's markup is also read for the `{ .. }` expressions that call `import(`: a block such
+as `{#await import('./Heavy.svelte')}`, a tag `{@const m = import('./x')}` and an attribute such as
+`on:click={() => import('./y.js')}`. The braces are matched with string and template literals
+skipped, in text and in attribute values, outside `<script>`, `<style>` and comments. The text of
+such an expression, without the block keyword (`#await`, `:then`, `@const`) and, for `#await`, without
+what follows `then`, is parsed as JavaScript and its `import(..)` calls are imports like those of a
+script, at the line they are written on (a computed argument is `dynamic-specifier`). An expression
+without `import(` is not read, and a syntax error in one is not a syntax error of the file.
 
 **HTML** (`.html`, `.htm`). A file is source when its markup holds a `<script` element, a start tag
 whose name is `script` (ASCII case-insensitive) outside comments, whatever its `type`, `src` or
@@ -1977,7 +2074,8 @@ language's section, then each name it uses is followed.
   re-export explains, stays on the module file.
 - **Never followed (nothing is invented).** A site that uses no symbol (a module binding: `use
   crate::ui;`, `import ui`, `from pkg import submodule`, a side-effect import) and a site that uses
-  `*` (a glob, `import * as ui`, `export *` as an import) stay on the module file. So does a
+  `*` (a glob, `import * as ui`, `export *` as an import) stay on the module file, except a Rust glob
+  of a module that re-exports other files, see "Rust" below. So does a
   re-export statement itself: the re-exporting module keeps its own edge to the file it names
   (`pub use tone::Tone;` is `ui/mod.rs` to `ui/tone.rs`), also when that file re-exports the name
   again. An import kind (`type-only`, `test_only`, `runtime`), the line and the other symbols of
@@ -1993,22 +2091,50 @@ language's section, then each name it uses is followed.
   names defines it, re-exports it by name or can export it through globs of its own (a cheap
   check by names, the same tables the walk uses; a macro-generated name is not known). When none
   or several glob sources can, the site stays on the module. A glob never carries `default`.
+  A Rust glob import (`use crate::c::*;`) is the exception, see "Rust" below.
 - **Rust.** The re-exports of a file are its top-level `pub use`, `pub(crate) use`, `pub(super) use`
   and `pub(in ..) use` declarations: `pub use x::Y;`, `pub use x::{Y, Z};`, `pub use x::Y as W;` (a
   caller of `W` is attributed to the file defining `Y`, under the name `Y`). A private `use` is not
-  a re-export. A path that resolves to a module file as a whole (`pub use crate::gitlab;`) re-exports
-  a module, not an item, and is not followed.
+  a re-export.
+  - **Modules.** A path that resolves to a module file as a whole (`pub use crate::a;`, `pub use
+    crate::a as inner;`) re-exports a module. A path through it (`crate::c::a::f()`, `use
+    crate::c::inner::A;`) continues inside that module: the import is attributed to the module's
+    file, using the module as a whole (`*`), because the item used inside it is not recorded. A
+    facade stops the walk as for any re-export. A module name that only a private `use` binds is
+    not a re-export.
+  - **Globs.** A glob import of a module that re-exports other repository files (`use crate::c::*;`
+    with `pub use crate::a::A;` in `c`) is attributed to those files, each used as a whole (`*`):
+    which of the re-exported names the importer uses is not recorded, so every file the module
+    re-exports from counts, each followed to its definer. The module keeps the glob too when it
+    defines items of its own (a `fn`, `struct`, `enum`, `type`, `const`, ..). A module that
+    re-exports nothing, a facade, and a glob in another language stay on the module.
+  - **Inline modules.** `pub mod r { pub use crate::a::A; }` in `c`, where the body holds nothing
+    but `pub use` declarations (comments and attributes aside), is read as a re-export: a path
+    through it (`use crate::c::r::A;`) is attributed to the files it re-exports from, used as a
+    whole. An inline module that defines anything of its own, or is private, is not read.
 - **TypeScript and JavaScript.** The re-exports of a file are its `export { X } from './x'`,
   `export { X as Y } from './x'`, `export { default } from`, `export { default as Y } from`,
   `export type { X } from`, `export { type X } from` and `export * from './x'`. `export * as ns from`
-  names a namespace, a module binding, and is not followed. `import { X } from './a'; export { X }`
-  is not read as a re-export. The specifier resolves as any other, so aliases and `index` files work.
+  and `export * as ns from './x'`, an `import { X } from './a'; export { X }` (also `export { X as
+  Y }`, `import { X as Z } from './a'; export { Z }`, and `import D from './a'; export default D`)
+  and `import * as ns from './a'; export { ns }` are re-exports too, forwarded like
+  `export { X } from './a'`: the importing statement keeps its own edge to `./a`, and a `%% facade`
+  stops the walk at the barrel exactly as for `export .. from`. A namespace (`export * as ns from`,
+  or an `import * as ns` that is exported) is the whole module: a caller's `import { ns } from
+  './barrel'` is attributed to `./a` and uses `*`, no name. Only a top-level import of a repository
+  file is forwarded; a name imported from a package, or declared in the file, stays defined there.
+  Not read, and so documented limits: `export const B = A` (a new binding, not a re-export),
+  `export type U = typeof A`, a re-export inside a function or a `declare module` block, and
+  `module.exports = require('./a')`. The specifier resolves as any other, so aliases and `index`
+  files work.
 - **Python.** The re-exports of an `__init__.py` are its `from .x import Y`, `from .x import Y as
   W` and `from .x import *` statements (relative or absolute). Only `__init__.py` is read: another
   module that imports a name is not a facade. When a star source defines `__all__` as a list or
   tuple of string literals, that list is the names it can export through a glob; otherwise they are
-  its public names (no leading underscore). A name that is a submodule is a module binding and is
-  not followed.
+  its public names (no leading underscore). A name that is a submodule is a module binding, not
+  an item: `from app.a import impl` in `app/c/__init__.py`, with `app/a/impl.py`, re-exports a
+  module, and `from app.c import impl` is attributed to `app/a/impl.py`, using the module as a
+  whole, like the Rust module re-export above.
 - **Type aliases.** An alias whose body is exactly a reference to a type another repository file
   defines is a re-export of that type, read into the same table and followed exactly like one:
   chains (alias of alias, alias of a `pub use`), `%% facade` (callers of a facade file depend on it),
@@ -2111,7 +2237,9 @@ callers can decide what a type-only or test import is worth.
   (`#[cfg(test)] mod tests { fn f() { use crate::a::B; } }`), including a `use` that is itself
   annotated, and inside a module whose body starts with the inner attribute `#![cfg(test)]`. Only
   the exact predicate `test` counts: `cfg(any(test, ..))`, `cfg(all(test, ..))` and `cfg(not(test))`
-  do not. An import in a file under a `tests/` directory or named `tests.rs`, `*_test.rs` or `*_tests.rs` is
+  do not. An item annotated with a test attribute is test code too, without `#[cfg(test)]`: any
+  attribute whose path ends in `test` (`#[test]`, `#[tokio::test]`, `#[tokio::test(flavor = ..)]`,
+  `#[async_std::test]`), for the item it annotates and everything inside it. An import in a file under a `tests/` directory or named `tests.rs`, `*_test.rs` or `*_tests.rs` is
   `test_only` whatever it is written in. So is an import in a file that a `#[cfg(test)]` module
   declaration pulls in: `#[cfg(test)] mod tests;`, `#[cfg(test)] mod fixtures;`, any name, in any
   file and at any depth (also inside an inline module, and a declaration annotated through its
@@ -2272,13 +2400,15 @@ a location, the specifier as written and a typed reason (kebab-case in serializa
 | Reason | When |
 | --- | --- |
 | `undeclared-package` | TypeScript or JavaScript specifier that is not relative, matches no `tsconfig` or `jsconfig` `paths` alias, is not a workspace package, is not a Node builtin and is not a declared dependency; a Python absolute import that misses below a namespace directory, a top-level directory with no `__init__.py` (see "Python resolution") |
-| `dynamic-specifier` | a shell `source` or `.` whose path has no value, see "Shell resolution"; `import(expr)` or `require(expr)`, or `new URL(expr, import.meta.url)`, whose argument is not a string literal or a template without substitutions; Python `importlib.import_module(..)` and `__import__(..)` whose first argument is not a plain string literal, or whose relative literal has no usable package, and a Python file loader whose path is not a literal naming a known file (see "Python resolution") |
+| `dynamic-specifier` | a shell `source` or `.` whose path has no value, see "Shell resolution"; `import(expr)` or `require(expr)`, or `new URL(expr, import.meta.url)`, whose argument is not a string literal or a template without substitutions, and the JavaScript forms driftwall does not follow, with a message saying which: `import.meta.glob(..)` and `globEager`, `require.resolve(..)`, `createRequire(..)(..)`, and a variable set to `require` or to `createRequire(..)` (calls through it are not followed; a `const require = createRequire(..)` is followed as `require`); Python `importlib.import_module(..)` and `__import__(..)` whose first argument is not a plain string literal, or whose relative literal has no usable package, and a Python file loader whose path is not a literal naming a known file (see "Python resolution") |
 | `embed-non-source` | a Rust embed whose target is neither a known source file nor an asset a tag covers |
 | `unreachable-module` | a Python absolute import that no import root resolves, whose top-level name matches a first-party module or package elsewhere in the repository (see "Python resolution") |
 | `alias-target-missing` | a TypeScript or JavaScript specifier that a Vite `resolve.alias` entry matches whose target path has no file in the repository (see "Vite aliases") |
 | `undeclared-owner` | an import of an asset or an excluded file whose owner is not a declared node, recorded by `lint` rather than by import extraction (see "Asset files" and "Excluded files") |
 | `unresolved-root-path` | a root-absolute `src`, `href` or import specifier of an HTML file that finds no file below its Vite root (see "Svelte and HTML") |
 | `file-reference-missing` | a `new URL('<literal>', import.meta.url)` whose target is a directory, missing or outside the repository (see "File references") |
+| `workspace-entry-missing` | a bare specifier that names a workspace package, or a dependency linked to a directory or workspace package (`file:`, `link:`, `workspace:`), and finds no source file (see "Workspace packages") |
+| `unparsed` | a source file whose syntax tree has an error or a missing node, one per file, at the first error (see "Unparsed files") |
 
 A Vite virtual module is ignored, not skipped: a specifier that starts with `virtual:` or with the
 character U+0000 (Rollup's prefix for modules a plugin generates, `virtual:pwa-register`) has no
@@ -2394,6 +2524,8 @@ module and no symbol and adds nothing to `uses:`.
 | `stale-facade` | warning | a node named by `%% facade` owns no file that re-exports anything, see "Re-exports" |
 | `facade-without-exports` | warning | a node named by `%% facade` has no `%% exports` line, so every name it re-exports is public; no source location, see "Re-exports" |
 | `bare-comment` | warning | a line before the `flowchart` header is exactly `%%`, which Mermaid cannot draw; located at the contract line, see "Contract format" |
+| `undrawable-id` | warning | a node or boundary id Mermaid cannot parse (`class`, `end-user`, `a--b`, ...); located at the line that declares it, see "Contract format" |
+| `undrawable-label` | warning | an edge, node or subgraph label, or a `%%{` comment, that Mermaid cannot parse; located at its line, see "Contract format" |
 | `unresolved-import` | warning | relative import resolves to nothing, whatever its extension; Python absolute import into a first-party package that holds no such module; shell `source` of a path that finds no file |
 | `private-symbol` | error | an import uses a symbol outside the target node's declared surface |
 | `over-budget` | warning | a node exceeds a `%% budget` limit (fan-out, files or lines), see "Budgets" |
@@ -2446,6 +2578,7 @@ unmapped-file 1 src/legacy/tool.rs
   the line. `count` is a positive integer. Blank lines and lines starting with `#` are ignored.
 - Entries are sorted by kind name, then by key (byte order), so writing is deterministic and
   idempotent: the same findings give byte-identical output. The header is fixed text.
+- A leading UTF-8 byte order mark is ignored, as in the contract.
 - A malformed line (an unknown kind, a count that is not a positive integer, a missing key, a
   duplicate `<kind> <key>`) is a tool error, exit `2`, naming the file and the line.
 - Writing prints `driftwall: wrote <FILE> (<n> entries, <m> findings)` and exits `0`, whatever the
@@ -2481,6 +2614,8 @@ test debt and production debt are separate entries. Paths use `/`.
 | `stale-facade` | `<node>` | 1 |
 | `facade-without-exports` | `<node>` | 1 |
 | `bare-comment` | `<line>` | 1 |
+| `undrawable-id` | `<id>` | 1 |
+| `undrawable-label` | `<line>` | 1 |
 | `isolation-breach` | `<boundary>: <from> --> <to>` | import sites |
 | `stale-isolation` | `<boundary>` | 1 |
 
@@ -2593,7 +2728,7 @@ directory is cut depends on the unit:
   subdirectories both count, by distinct derived name: `a.ts` and `a.test.ts` are one, and so are
   `a.rs` and `a/`; only files of that unit count), it is tagged `node: *`
   (see "Prefixes"), so every module and subdirectory of it is a node named by the module rule.
-  When a derived id is not valid, is reserved or is already taken (see "Ids"), the source
+  When a derived id is not valid, is undrawable or is already taken (see "Ids"), the source
   directory is not decomposed. A folded entry file (see "Module nodes") counts for no module and
   owns no node, so a package of an empty `__init__.py` and one module is one directory node, and a
   crate whose `lib.rs` only declares modules has no `lib` node. The primary JavaScript unit is also not decomposed when its source
@@ -2728,9 +2863,17 @@ same prefix, see "Ids".
   grouping); `init` itself never merges two units silently.
 - A directory node whose id is a fixed one (module, or existing tag) is named `<id>-dir`, then
   `<id>-dir-2`, `<id>-dir-3`, so a module `src/ui.rs` (node `ui`) and a directory `ui/` give `ui` and
-  `ui-dir`. Any other collision between directory nodes, and the reserved words `end`, `flowchart`
-  and `subgraph`, get `-2`, `-3`, ... in sorted directory order. This collision handling is a
-  backstop: prefixes keep the ids of different units apart in the ordinary case.
+  `ui-dir`. Any other collision between directory nodes gets `-2`, `-3`, ... in sorted directory
+  order. This collision handling is a backstop: prefixes keep the ids of different units apart in
+  the ordinary case.
+- **An id Mermaid can draw** (see `undrawable-id`). A directory whose id would be one Mermaid cannot
+  parse (`class`, `style`, `end`, `end-user`, ...) is named by its whole path instead
+  (`src-class` for `src/class`), and when that is the same text, by the name with `_` for `-` and
+  `_dir` added if that is still a keyword (`class_dir`, `end_user`). A `node: *` directory whose
+  module ids would be undrawable (a module `style.ts` in `src/`) is written with the prefix
+  `<directory>-` (`src-style`), as for a collision; when that is no better the directory is not
+  decomposed. A unit prefix that would make undrawable ids (`style-`) gets `_dir` before the
+  dash, and a boundary `init` names that way gets `_group` (`graph_group`).
 - A `node: *` region (rule 2 or 3) whose derived ids are not valid, or collide with a fixed id or
   with an earlier region's ids, is not created; its files get directory nodes instead.
 - **Labels name paths that exist.** A directory node is labelled with its directory (`.` for the
@@ -3044,6 +3187,10 @@ whatever order they declare things in.
 Keeping a copy in Markdown. A block is a line `<!-- driftwall render [--depth N | --focus B]
 [--short-labels] [--built] -->`, the flags in any order and each at most once, any lines, then `<!-- driftwall render end -->`, each alone on its line.
 
+- A marker inside a fenced code block of `FILE.md` (a fence of three or more backticks or tildes,
+  closed by one of the same character at least as long) is documentation of the syntax and is not a
+  block: it is neither rewritten nor checked. The inside of a real block is not scanned for fences,
+  since it holds the picture's own.
 - `driftwall render --update FILE.md` replaces the inside of each block with a `` ```mermaid ``
   fence holding the picture made with that block's own arguments, and leaves every other byte of the
   file as it was (the line ending of a block's start marker is used for its fence). `FILE.md` is
@@ -3099,7 +3246,7 @@ agents and for code scanning, which needs a result per line.
   `production-imports-test` writes `` imports test file `t` in N places ``, and `forbidden-package`
   (which has no target) writes `` imports `pkg` in N places ``. A kind or message the generaliser
   does not recognise ends in ` (N places)` instead, so a group always reads as a group. Kinds that
-  are one per key (`stale-edge`, `unmapped-file`, `facade-without-exports`, `bare-comment`, ...) never have two members, so never group.
+  are one per key (`stale-edge`, `unmapped-file`, `facade-without-exports`, `bare-comment`, `undrawable-id`, ...) never have two members, so never group.
 - **The baseline suffix** `; the baseline allows <N>, found <M>` appears once, at the end of the
   header, not on every site.
 - **Order:** a group is printed where its first site would have been, in the order findings have
@@ -3126,6 +3273,7 @@ it, and scans the repository only for the package uses of a source file (below).
 | unread code file (see "Blind spots") | `not read (<key>) in node <node> (via <arch file>)`, or `not read (<key>), unmapped` | `0` |
 | excluded source file | `excluded (<reason>), owned by <node> (via <arch file>)`, or `excluded (<reason>)` when no tag covers it | `0` |
 | source file `.driftwallignore` hides | `ignored by .driftwallignore, owned by <node> (via <arch file>)`, or `ignored by .driftwallignore` when no tag covers it | `0` |
+| a path inside a nested repository (see "Ownership") | `not read (inside a nested repository)` | `0` |
 | an `.arch` file | `tag file` | `0` |
 | the contract (`--contract`, default `architecture.mmd`) | `contract` | `0` |
 
@@ -3134,7 +3282,7 @@ An excluded or ignored file is owned by the tag rules of source files, as `brief
 the contract are driftwall's own input: they are never assets, and the answer names no node. A directory
 is answered like a source file, by the tag that covers it. The JSON has `file`, `node`,
 `arch_file` and `kind` (`source`, `folded`, `asset`, `unread`, `excluded`, `ignored`, `tag-file`,
-`contract` or `directory`), plus `detail` for the unread key and the exclusion reason (absent
+`contract`, `directory` or `nested-repository`), plus `detail` for the unread key and the exclusion reason (absent
 otherwise). `node` and `arch_file` are `null` for anything no tag covers, a tag file and the contract,
 and carry the owner of an excluded or ignored file that a tag covers. `owned_by` says which
 mechanism gave the owner: `tag` (an `.arch` file) or `map` (a `%% map` glob). It is absent when

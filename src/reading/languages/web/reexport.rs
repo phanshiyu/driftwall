@@ -37,7 +37,13 @@ pub fn table(tree: &Tree, source: &str, file: &Path, files: &Files<'_>, env: &En
         } else if statement.kind() == "export_statement" {
             match statement.child_by_field_name("source") {
                 Some(from) => reexport(statement, from, source, file, (files, env), &mut table),
-                None => local(statement, source, &mut table),
+                None => local(
+                    statement,
+                    source,
+                    (file, &imports),
+                    (files, env),
+                    &mut table,
+                ),
             }
         }
     }
@@ -47,6 +53,9 @@ pub fn table(tree: &Tree, source: &str, file: &Path, files: &Files<'_>, env: &En
     }
     table
 }
+
+/// What [`ImportedNames`] holds for the name an `import * as ns` binds: the whole module.
+const NAMESPACE: &str = "*";
 
 /// The names the top-level `import` statements of a file bind, to the specifier node and the name
 /// they have in that module (`default` for a default import). A namespace import binds none.
@@ -71,6 +80,18 @@ impl<'t> ImportedNames<'t> {
                 match part.kind() {
                     "identifier" => {
                         names.extend(text(part).map(|name| (name, (from, "default".to_owned()))));
+                    }
+                    // why: `import * as ns` binds the whole module, which the table spells `*`.
+                    "namespace_import" => {
+                        let mut ids = part.walk();
+                        let bound = part
+                            .named_children(&mut ids)
+                            .find(|child| child.kind() == "identifier");
+                        names.extend(
+                            bound
+                                .and_then(text)
+                                .map(|name| (name, (from, NAMESPACE.to_owned()))),
+                        );
                     }
                     "named_imports" => {
                         let mut specs = part.walk();
@@ -124,21 +145,30 @@ fn alias(
         }
         _ => return None,
     };
-    let specifier = literal_text(from, source)?;
+    let target = resolved(from, source, file, (files, env))?;
+    Some((name, (target, original)))
+}
+
+/// The repository file the specifier node `from` names, other than `file` itself.
+fn resolved(
+    from: Node<'_>,
+    source: &str,
+    file: &Path,
+    (files, env): (&Files<'_>, &Env<'_>),
+) -> Option<PathBuf> {
     let reference = Reference {
-        specifier,
+        specifier: literal_text(from, source)?,
         names: &[],
         node: from,
         source,
     };
-    let target = ecmascript(&reference, file, files, env)
+    ecmascript(&reference, file, files, env)
         .into_iter()
         .find_map(|resolution| match resolution {
             Resolution::Resolved { target, .. } => Some(target),
             _ => None,
         })
-        .filter(|target| target != file)?;
-    Some((name, (target, original)))
+        .filter(|target| target != file)
 }
 
 /// Files the names of `export { .. } from` and `export * from` in `table`.
@@ -175,6 +205,16 @@ fn reexport(
     for child in statement.children(&mut cursor) {
         match child.kind() {
             "*" => table.stars.push(target.clone()),
+            "namespace_export" => {
+                let mut ids = child.walk();
+                let bound = child
+                    .named_children(&mut ids)
+                    .find(|node| node.kind() == "identifier")
+                    .and_then(|node| node.utf8_text(source.as_bytes()).ok());
+                if let Some(name) = bound {
+                    table.modules.insert(name.to_owned(), target.clone());
+                }
+            }
             "export_clause" => {
                 for (original, exported) in specifiers(child, source) {
                     table.names.insert(exported, (target.clone(), original));
@@ -185,12 +225,44 @@ fn reexport(
     }
 }
 
-/// Records the names `statement`, an `export` with no source, defines.
-fn local(statement: Node<'_>, source: &str, table: &mut Table) {
+/// Records the names `statement`, an `export` with no source, defines or forwards.
+///
+/// A name the file imported from another repository file (`import { A } from './a'; export { A }`,
+/// `export default D`) is forwarded like `export { A } from './a'`; any other name is defined here.
+fn local(
+    statement: Node<'_>,
+    source: &str,
+    (file, imports): (&Path, &ImportedNames<'_>),
+    (files, env): (&Files<'_>, &Env<'_>),
+    table: &mut Table,
+) {
+    let line = |node: Node<'_>| u32::try_from(node.start_position().row + 1).unwrap_or(u32::MAX);
+    // why: the import statement of a forwarded name keeps its own edge, as a re-export does.
+    let forward = |exported: String, bound: &str, table: &mut Table| -> bool {
+        let Some((from, original)) = imports.0.get(bound) else {
+            return false;
+        };
+        let Some(target) = resolved(*from, source, file, (files, env)) else {
+            return false;
+        };
+        table.lines.insert(line(statement));
+        table.lines.extend(from.parent().map(line));
+        if original == NAMESPACE {
+            table.modules.insert(exported, target);
+        } else {
+            table.names.insert(exported, (target, original.clone()));
+        }
+        true
+    };
     if let Some(declaration) = statement.child_by_field_name("declaration") {
         declared(declaration, source, &mut table.local);
     }
-    if statement.child_by_field_name("value").is_some() || has_default(statement) {
+    let value = statement.child_by_field_name("value");
+    let forwarded = value
+        .filter(|node| node.kind() == "identifier")
+        .and_then(|node| node.utf8_text(source.as_bytes()).ok())
+        .is_some_and(|bound| forward("default".to_owned(), bound, table));
+    if !forwarded && (value.is_some() || has_default(statement)) {
         table.local.insert("default".to_owned());
     }
     let mut cursor = statement.walk();
@@ -198,9 +270,11 @@ fn local(statement: Node<'_>, source: &str, table: &mut Table) {
         .children(&mut cursor)
         .filter(|child| child.kind() == "export_clause")
     {
-        table
-            .local
-            .extend(specifiers(clause, source).into_iter().map(|(_, name)| name));
+        for (original, exported) in specifiers(clause, source) {
+            if !forward(exported.clone(), &original, table) {
+                table.local.insert(exported);
+            }
+        }
     }
 }
 

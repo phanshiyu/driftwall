@@ -1,7 +1,8 @@
 //! The re-export table of a Rust file: its top-level `pub use` declarations and the items it
 //! defines, see "Re-exports" in `docs/DESIGN.md`.
 
-use std::path::Path;
+use std::collections::BTreeSet;
+use std::path::{Path, PathBuf};
 
 use tree_sitter::{Node, Tree};
 
@@ -50,38 +51,131 @@ pub fn table(tree: &Tree, source: &str, file: &Path, files: &Files<'_>, env: &En
                 .and_then(|name| name.utf8_text(source.as_bytes()).ok());
             table.local.extend(name.map(str::to_owned));
         } else if item.kind() == "use_declaration" && is_public(item) {
-            let Some(argument) = item.child_by_field_name("argument") else {
-                continue;
-            };
-            table
-                .lines
-                .insert(u32::try_from(item.start_position().row + 1).unwrap_or(u32::MAX));
-            for leaf in use_leaves(argument, source) {
-                let path = through_bindings(&leaf.path, &bindings, &[], site.as_ref(), files, env);
-                let path = through_mod(path, site.as_ref(), files, env);
-                let Some((target, symbol)) = path.target(site.as_ref(), files, env) else {
-                    continue;
-                };
-                if target == file {
-                    continue;
-                }
-                match symbol {
-                    Symbol::All if path.is_glob() => table.stars.push(target),
-                    // why: a module re-exported as a whole is no item, so it is not followed.
-                    Symbol::All => {}
-                    Symbol::Name(original) => {
-                        // why: only a path of module then item names the item; deeper ones name an inline module's item.
-                        if path.last_name() == Some(original.as_str())
-                            && let Some(exported) = leaf.binding
-                        {
-                            table.names.insert(exported.to_owned(), (target, original));
-                        }
+            table.lines.insert(line_of(item));
+            for exported in exports(item, source, &[], file, (&bindings, files, env)) {
+                match exported {
+                    Exported::Star(target) => table.stars.push(target),
+                    Exported::Module(name, target) => {
+                        table.modules.insert(name, target);
                     }
+                    Exported::Item(name, origin) => {
+                        table.names.insert(name, origin);
+                    }
+                }
+            }
+        } else if item.kind() == "mod_item" && is_public(item) {
+            inline_module(item, source, file, (&bindings, files, env), &mut table);
+        }
+    }
+    table
+}
+
+/// What one `pub use` leaf exports.
+enum Exported {
+    /// `pub use x::*;`: every name of the file.
+    Star(PathBuf),
+    /// `pub use x;` or `pub use x as y;` of a module file: the name and the file.
+    Module(String, PathBuf),
+    /// `pub use x::Y as W;`: the name `W` and the (file, name) it has there.
+    Item(String, (PathBuf, String)),
+}
+
+fn line_of(node: Node<'_>) -> u32 {
+    u32::try_from(node.start_position().row + 1).unwrap_or(u32::MAX)
+}
+
+/// What the `use` declaration `item`, written in the inline modules `inline` of `file`, exports
+/// from other repository files.
+fn exports(
+    item: Node<'_>,
+    source: &str,
+    inline: &[&str],
+    file: &Path,
+    (bindings, files, env): (&Bindings<'_>, &Files<'_>, &Env<'_>),
+) -> Vec<Exported> {
+    let Some(argument) = item.child_by_field_name("argument") else {
+        return Vec::new();
+    };
+    let site = Site::of(file, inline, files.known, env.paths);
+    let mut found = Vec::new();
+    for leaf in use_leaves(argument, source) {
+        let path = through_bindings(
+            &leaf.path,
+            bindings,
+            inline,
+            (file, site.as_ref()),
+            files,
+            env,
+        );
+        let path = if inline.is_empty() {
+            through_mod(path, site.as_ref(), files, env)
+        } else {
+            path
+        };
+        let Some((target, symbol)) = path.target(file, site.as_ref(), files, env) else {
+            continue;
+        };
+        if target == file {
+            continue;
+        }
+        match symbol {
+            Symbol::All if path.is_glob() => found.push(Exported::Star(target)),
+            // why: a module re-exported as a whole is no item, so a path through it continues in the module.
+            Symbol::All => {
+                found.extend(
+                    leaf.binding
+                        .map(|name| Exported::Module(name.to_owned(), target)),
+                );
+            }
+            Symbol::Name(original) => {
+                // why: only a path of module then item names the item; deeper ones name an inline module's item.
+                if path.last_name() == Some(original.as_str())
+                    && let Some(name) = leaf.binding
+                {
+                    found.push(Exported::Item(name.to_owned(), (target, original)));
                 }
             }
         }
     }
-    table
+    found
+}
+
+/// Records a `pub mod r { pub use ..; }` whose body holds nothing but `pub use` declarations: a
+/// path through `r` leads to the files those declarations re-export. A module that defines
+/// anything of its own is not recorded, its paths stay on the file.
+fn inline_module(
+    item: Node<'_>,
+    source: &str,
+    file: &Path,
+    env: (&Bindings<'_>, &Files<'_>, &Env<'_>),
+    table: &mut Table,
+) {
+    let (Some(body), Some(name)) = (
+        item.child_by_field_name("body"),
+        item.child_by_field_name("name")
+            .and_then(|name| name.utf8_text(source.as_bytes()).ok()),
+    ) else {
+        return;
+    };
+    let mut cursor = body.walk();
+    let mut files = BTreeSet::new();
+    for child in body.named_children(&mut cursor) {
+        match child.kind() {
+            "line_comment" | "block_comment" | "attribute_item" => {}
+            "use_declaration" if is_public(child) => {
+                for exported in exports(child, source, &[name], file, env) {
+                    let (Exported::Star(target)
+                    | Exported::Module(_, target)
+                    | Exported::Item(_, (target, _))) = exported;
+                    files.insert(target);
+                }
+            }
+            _ => return,
+        }
+    }
+    if !files.is_empty() {
+        table.inline.insert(name.to_owned(), files);
+    }
 }
 
 /// The (alias name, defining file and name) of a top-level `type X = P;` whose body is exactly a
@@ -109,11 +203,11 @@ fn alias(
         &imported.unwrap_or(written),
         bindings,
         &[],
-        site,
+        (file, site),
         files,
         env,
     );
-    let (target, symbol) = path.target(site, files, env)?;
+    let (target, symbol) = path.target(file, site, files, env)?;
     let Symbol::Name(original) = symbol else {
         return None;
     };

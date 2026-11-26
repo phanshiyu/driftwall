@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Component, Path, PathBuf};
 
-use super::ids::sanitize;
+use super::ids::{drawable_prefix, sanitize};
 use super::layout::{Counted, Draft, Owner};
 use super::units::{CRATE_SOURCE, Unit, UnitKind};
 use crate::contract::Prefix;
@@ -207,7 +207,7 @@ fn prefix_of(dir: &Path) -> Option<Prefix> {
         .map(|part| part.as_os_str().to_string_lossy().into_owned())
         .collect::<Vec<_>>()
         .join("-");
-    Prefix::new(&format!("{}-", sanitize(&joined))).ok()
+    Prefix::new(&format!("{}-", drawable_prefix(sanitize(&joined)))).ok()
 }
 
 /// The directory whose modules are the unit's nodes: a crate's `src/`, a JavaScript unit's `src/`

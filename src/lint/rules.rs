@@ -31,7 +31,9 @@ pub(super) const fn severity(kind: ViolationKind) -> Severity {
         | ViolationKind::StaleBaseline
         | ViolationKind::StaleFacade
         | ViolationKind::FacadeWithoutExports
-        | ViolationKind::BareComment => Severity::Warning,
+        | ViolationKind::BareComment
+        | ViolationKind::UndrawableId
+        | ViolationKind::UndrawableLabel => Severity::Warning,
     }
 }
 
@@ -96,6 +98,12 @@ pub(super) const fn hint(kind: ViolationKind) -> &'static str {
         }
         ViolationKind::BareComment => {
             "replace the bare `%%` with a blank line or `%% <text>`, so Mermaid can draw the contract"
+        }
+        ViolationKind::UndrawableId => {
+            "rename the node or boundary in the contract and in every `%% map`, `%% exports` and other directive that names it; `driftwall init` never writes such an id"
+        }
+        ViolationKind::UndrawableLabel => {
+            "fix the label (no brackets, braces, parentheses or stray quotes in an edge label; no empty label) or the `%%{` comment, so Mermaid can draw the contract"
         }
         ViolationKind::StaleBaseline => {
             "run `driftwall lint --write-baseline <file>` to shrink the baseline"

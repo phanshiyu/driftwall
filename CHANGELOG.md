@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- Rust: a leading `::` (`use ::a_lib::A;`, `::a_lib::a()`, also in macro arguments) is read as an extern-crate path like `a_lib::A`, and never as `crate::` or a module of the file.
+- Rust: a renamed Cargo dependency (`alpha = { path = "../a-lib", package = "a-lib" }`, also in `[dev-dependencies]`, `[build-dependencies]` and target tables) is the member crate it renames, for the files of that manifest only.
+- Rust: `self::name` resolves through the file's own `use` bindings, so `use crate::a as z; pub use self::z::A;` and `pub type X = self::z::A;` are followed like `pub use z::A;`.
+- Re-exports: a module re-exported as a whole (`pub use crate::a;`, `pub use crate::a as inner;`, and Python `from app.a import impl` in an `__init__.py`) is followed, so a path through it lands on the module's file. Facades stop it like any re-export.
+- Rust: a glob of a module that re-exports other files (`use crate::c::*;`) is attributed to those files, each as a whole, and `pub mod r { pub use ..; }` inline re-exports are followed.
+- Rust: an item annotated `#[test]`, `#[tokio::test]` or any attribute whose path ends in `test` is test code, without `#[cfg(test)]`.
+- A directory is skipped as a nested repository only when its `.git` is a real one (a file starting with `gitdir:`, or a directory holding `HEAD`); an empty `.git` file or directory no longer hides its files.
+- `where` says `not read (inside a nested repository)` (JSON kind `nested-repository`) for a path in a skipped nested repository, instead of naming an owner.
+- A workspace package whose entry is a build output (`"main": "dist/index.js"`, `types`, `exports`) no longer loses its imports silently. The entry is mapped through the member's tsconfig `outDir` and `rootDir` (after `extends`, also `tsconfig.build.json`) to its sources, `.d.ts` to `.ts` included; when nothing is found the import is a skipped reference `workspace-entry-missing` with a message, so it shows in `brief` blind spots. Dependencies written `file:../a`, `link:../a`, `workspace:@x/a@*`, `workspace:../a` and `npm:@x/a@*` (under any key) resolve to the package they point at, or are skipped with a reason.
+- TypeScript `import { A } from '../a'; export { A }` (also `export { A as B }`, `import D from '../a'; export default D`, `import * as ns from '../a'; export { ns }` and `export * as ns from '../a'`) is followed like `export { A } from '../a'`, including `%% facade`. `export const B = A` and `export type U = typeof A` stay unread.
+- References that were dropped without a trace are now blind spots: `import.meta.glob(..)`, `require.resolve(..)`, `createRequire(..)(..)`, and a variable set to `require` or to `createRequire(..)` (as `dynamic-specifier` with a message). `/// <reference path="..." />` is followed as a type-only import. Svelte markup is read for `import(` in `{ .. }` expressions (`{#await import('./a')}`, `on:click={() => import('./b.js')}`). Python `import_module` under another name and `runpy.run_module(..)` are not covered yet.
+- A source file the parser cannot fully read (a conflict marker, an unterminated template, or valid code the grammar does not cover) is a blind spot, `unparsed`, one per file in every language: the `lint` note says `N files not fully parsed (imports after where the parser stopped may be missing)` and `brief` lists the first error of each. The imports that were recovered are kept.
+- New warning `undrawable-id`: a node or boundary id Mermaid cannot parse (`class`, `style`, `graph`, `click`, `call`, `href`, `interpolate`, `linkStyle`, `classDef`, `end-user`, `graph-x`, `a--b`, ...), one per id. `init` never writes such an id (`src-class` for `src/class`).
+- New warning `undrawable-label`: an edge label Mermaid cannot parse (empty, or with `(`, `)`, `[`, `]`, `{`, `}` or a stray `"`), an empty node or subgraph label, or a `%%{` comment that is not a closed directive. `render` never writes one: an empty label is drawn as the id.
+- `render --update` and `--check` skip `<!-- driftwall render -->` markers inside a fenced code block (` ``` ` or `~~~`), so a README that documents the syntax is not rewritten.
+- A baseline file that starts with a UTF-8 byte order mark is read, as the contract already is.
 - `bare-comment` also flags a bare `%%` on a CRLF line: Mermaid turns `\r\n` into `\n` before it strips comments, so such a line breaks the diagram too.
 - `init` folds a declarations-only entry file (`mod.rs`, `__init__.py`) in a directory it splits into layers (modules or directory nodes), instead of giving it a node.
 

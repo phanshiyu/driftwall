@@ -25,6 +25,9 @@ pub struct Region {
     /// The part of the file the grammar parses, or `None` for the whole file. Positions of nodes
     /// are positions in the file either way.
     pub range: Option<tree_sitter::Range>,
+    /// Whether the region is a fragment cut out of a template (a Svelte `{ .. }` expression), so
+    /// that a syntax error in it says nothing about the file.
+    pub fragment: bool,
 }
 
 /// What [`LanguageSpec::scan`] finds in one file.
@@ -72,6 +75,9 @@ pub struct DocImport<'s> {
     pub member: Option<&'s str>,
     /// The line of the `import` word.
     pub line: u32,
+    /// Whether the specifier is a path relative to the file even without a leading `./`, as in
+    /// `/// <reference path="x.d.ts" />`.
+    pub relative: bool,
 }
 
 /// Everything needed to extract the imports of one language. How a match resolves is the language's
@@ -101,6 +107,7 @@ pub fn whole_file(grammar: &'static Grammar) -> Scan {
         regions: vec![Region {
             grammar,
             range: None,
+            fragment: false,
         }],
         loads: Vec::new(),
     }

@@ -22,7 +22,8 @@ pub fn anchor(specifier: Node<'_>) -> Node<'_> {
 /// The flags of the Rust `anchor` (see [`anchor`]) written in `file`.
 ///
 /// Rust has no type-only import. Test code: a file for which [`test_file`] holds, or anything
-/// written inside an item or module annotated `#[cfg(test)]`, or in a module whose body starts with
+/// written inside an item or module annotated `#[cfg(test)]` or with a test attribute (`#[test]`,
+/// `#[tokio::test]`: an attribute path whose last segment is `test`), or in a module whose body starts with
 /// `#![cfg(test)]`, at any depth. A file that a test module declaration pulls in is test code too,
 /// which this function cannot see: see `test_modules`.
 pub fn flags(anchor: Node<'_>, source: &str, file: &Path) -> Flags {
@@ -51,18 +52,34 @@ pub fn in_cfg_test(node: Node<'_>, source: &str) -> bool {
     false
 }
 
-/// Whether the attributes directly above `node` include `#[cfg(test)]`.
+/// Whether the attributes directly above `node` include `#[cfg(test)]` or a test attribute.
 fn annotated(node: Node<'_>, source: &str) -> bool {
     let mut previous = node.prev_sibling();
     while let Some(sibling) = previous {
         match sibling.kind() {
-            "attribute_item" if is_cfg_test(sibling, source) => return true,
+            "attribute_item"
+                if is_cfg_test(sibling, source) || is_test_attribute(sibling, source) =>
+            {
+                return true;
+            }
             "attribute_item" | "line_comment" | "block_comment" => {}
             _ => return false,
         }
         previous = sibling.prev_sibling();
     }
     false
+}
+
+/// Whether the attribute item is a test marker: its path ends in `test`, as in `#[test]`,
+/// `#[tokio::test]` and `#[tokio::test(flavor = "multi_thread")]`.
+fn is_test_attribute(attribute: Node<'_>, source: &str) -> bool {
+    attribute.utf8_text(source.as_bytes()).is_ok_and(|text| {
+        let compact: String = text.chars().filter(|c| !c.is_whitespace()).collect();
+        let path = compact
+            .strip_prefix("#[")
+            .and_then(|rest| rest.split(['(', '=', ']']).next());
+        path.is_some_and(|path| path.rsplit("::").next() == Some("test"))
+    })
 }
 
 /// Whether the inner attributes at the start of `node`, a file or a module body, include

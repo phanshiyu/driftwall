@@ -45,6 +45,7 @@ fn render_text(file: &str, located: &Located) -> String {
             format!("ignored by .driftwallignore, owned by {owner}")
         }
         (FileKind::Ignored, None) => "ignored by .driftwallignore".to_owned(),
+        (FileKind::NestedRepository, _) => "not read (inside a nested repository)".to_owned(),
         (FileKind::TagFile, _) => "tag file".to_owned(),
         (FileKind::Contract, _) => "contract".to_owned(),
         (FileKind::Folded, _) => match &located.owner {
@@ -136,6 +137,7 @@ fn render_json_with(
         FileKind::Excluded(reason) => ("excluded", Some(reason.as_str().to_owned())),
         FileKind::Ignored => ("ignored", None),
         FileKind::Directory => ("directory", None),
+        FileKind::NestedRepository => ("nested-repository", None),
         FileKind::Folded => ("folded", None),
         FileKind::TagFile => ("tag-file", None),
         FileKind::Contract => ("contract", None),

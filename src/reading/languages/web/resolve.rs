@@ -9,6 +9,7 @@ use super::env::Env;
 use super::package::{is_builtin, package_name};
 use super::project::Project;
 use super::symbols;
+use super::workspace;
 use crate::code::{PackageKind, SkipReason};
 use crate::reading::syntax::literal::literal_text;
 use crate::reading::syntax::paths::join_normalised;
@@ -43,6 +44,9 @@ pub fn ecmascript(
     files: &Files<'_>,
     env: &Env<'_>,
 ) -> Vec<Resolution> {
+    if let Some(skipped) = unfollowed(reference.node, reference.source) {
+        return vec![skipped];
+    }
     let Some(literal) = literal_text(reference.node, reference.source) else {
         return vec![Resolution::Skipped(SkipReason::DynamicSpecifier)];
     };
@@ -51,6 +55,48 @@ pub fn ecmascript(
     }
     let resolution = specifier(reference.specifier, importer, files, env);
     vec![resolution.using(symbols::used(reference.node, reference.source))]
+}
+
+/// The skip for a captured `node` that is a way to load code driftwall does not follow, or `None`
+/// for an ordinary import: `import.meta.glob(..)`, `require.resolve(..)`, `createRequire(..)(..)`
+/// and a variable that is set to `require` or to `createRequire(..)`.
+fn unfollowed(node: tree_sitter::Node<'_>, source: &str) -> Option<Resolution> {
+    let text = |node: tree_sitter::Node<'_>| node.utf8_text(source.as_bytes()).ok();
+    let parent = node.parent()?;
+    let message = match parent.kind() {
+        "arguments" => {
+            let function = parent.parent()?.child_by_field_name("function")?;
+            match function.kind() {
+                "member_expression" if function.child_by_field_name("object")?.kind() == "meta_property" => {
+                    "`import.meta.glob` loads every file its pattern matches, and the pattern is not expanded".to_owned()
+                }
+                "member_expression" => {
+                    "`require.resolve` names a file without loading it, and is not followed".to_owned()
+                }
+                "call_expression" => {
+                    "`createRequire(..)(..)` is a `require` that is not followed".to_owned()
+                }
+                _ => return None,
+            }
+        }
+        "variable_declarator" => {
+            let alias = text(parent.child_by_field_name("name")?)?;
+            if node.kind() == "identifier" {
+                format!(
+                    "`require` is also called `{alias}`, and calls through `{alias}` are not followed"
+                )
+            } else {
+                format!(
+                    "`{alias}` is made by `createRequire(..)`, and calls through `{alias}` are not followed"
+                )
+            }
+        }
+        _ => return None,
+    };
+    Some(Resolution::SkippedWith {
+        reason: SkipReason::DynamicSpecifier,
+        message,
+    })
 }
 
 /// Whether `node`, a captured specifier, is the first argument of a `new` expression: the only
@@ -199,6 +245,28 @@ fn locate(base: &Path, directory_only: bool, files: &Files<'_>) -> Option<Found>
     probe(base, directory_only, files.known).map(Found::Source)
 }
 
+/// The resolution of `specifier`, which names a workspace package or a linked dependency: the first
+/// file of its entry, else a skipped reference that says why nothing was found, so the import is
+/// never silently lost.
+fn workspace_entry(specifier: &str, entry: workspace::Entry, files: &Files<'_>) -> Resolution {
+    match entry {
+        workspace::Entry::Paths { candidates, what } => first_found(&candidates, files)
+            .map_or_else(
+                || Resolution::SkippedWith {
+                    reason: SkipReason::WorkspaceEntryMissing,
+                    message: format!(
+                        "{what} has no source file for `{specifier}`: its entry is not in the repository (a build output?); `outDir` and `rootDir` in its tsconfig.json map the output to the sources"
+                    ),
+                },
+                Found::resolution,
+            ),
+        workspace::Entry::Missing(message) => Resolution::SkippedWith {
+            reason: SkipReason::WorkspaceEntryMissing,
+            message,
+        },
+    }
+}
+
 /// Resolves a non-relative `specifier` written in `importer`.
 ///
 /// Through the alias configuration that governs `importer`, each candidate path is probed like a
@@ -218,13 +286,12 @@ fn resolve_bare(specifier: &str, importer: &Path, files: &Files<'_>, env: &Env<'
     if let Some(resolution) = vite_alias(specifier, importer, files, env) {
         return resolution;
     }
-    let linked = if specifier.starts_with('#') {
-        env.workspaces.imports_candidates(specifier, importer)
-    } else {
-        env.workspaces.candidates(specifier)
-    };
-    if let Some(candidates) = linked {
-        return first_found(&candidates, files).map_or(Resolution::Ignored, Found::resolution);
+    if specifier.starts_with('#') {
+        if let Some(candidates) = env.workspaces.imports_candidates(specifier, importer) {
+            return first_found(&candidates, files).map_or(Resolution::Ignored, Found::resolution);
+        }
+    } else if let Some(entry) = env.workspaces.entry(specifier, importer) {
+        return workspace_entry(specifier, entry, files);
     }
     if config.is_some_and(|config| config.matches(specifier)) {
         return Resolution::Ignored;

@@ -6,6 +6,7 @@ use crate::reading::imports::scenarios::fixtures;
 use crate::reading::imports::*;
 
 mod rust;
+mod rust_crates;
 mod rust_dogfood;
 mod rust_path;
 mod rust_symbols;

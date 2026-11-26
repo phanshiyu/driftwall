@@ -260,6 +260,8 @@ mod tests {
                 "denied-edge",
                 "facade-without-exports",
                 "bare-comment",
+                "undrawable-id",
+                "undrawable-label",
             ]
         );
     }

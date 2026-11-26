@@ -14,7 +14,7 @@ use crate::code::Location;
 use super::{LintReport, Severity, Violation, ViolationKind};
 
 /// Every kind a baseline can hold, in no particular order.
-const BASELINABLE: [ViolationKind; 22] = [
+const BASELINABLE: [ViolationKind; 24] = [
     ViolationKind::UnmappedFile,
     ViolationKind::UnknownNode,
     ViolationKind::UndeclaredEdge,
@@ -35,6 +35,8 @@ const BASELINABLE: [ViolationKind; 22] = [
     ViolationKind::StaleFacade,
     ViolationKind::FacadeWithoutExports,
     ViolationKind::BareComment,
+    ViolationKind::UndrawableId,
+    ViolationKind::UndrawableLabel,
     ViolationKind::IsolationBreach,
     ViolationKind::StaleIsolation,
 ];
@@ -73,6 +75,8 @@ impl ViolationKind {
             Self::StaleFacade => "stale-facade",
             Self::FacadeWithoutExports => "facade-without-exports",
             Self::BareComment => "bare-comment",
+            Self::UndrawableId => "undrawable-id",
+            Self::UndrawableLabel => "undrawable-label",
             Self::IsolationBreach => "isolation-breach",
             Self::StaleIsolation => "stale-isolation",
             Self::StaleBaseline => "stale-baseline",
@@ -195,6 +199,8 @@ impl Baseline {
     /// The first malformed line: an unknown kind, a count that is not a positive integer, a
     /// missing key, or a kind and key listed twice.
     pub fn parse(text: &str) -> Result<Self, BaselineError> {
+        // why: editors on Windows save a UTF-8 BOM, which would make the first line an unknown kind.
+        let text = text.strip_prefix('\u{feff}').unwrap_or(text);
         let mut entries = BTreeMap::new();
         for (index, raw) in text.lines().enumerate() {
             let line = u32::try_from(index + 1).unwrap_or(u32::MAX);
@@ -381,6 +387,13 @@ fn stale_entry(slot: &(String, String), entry: Entry, seen: usize, file: &Path) 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_leading_utf8_bom_is_ignored() {
+        let plain = Baseline::parse("stale-edge 1 a -> b\n").unwrap();
+        let bom = Baseline::parse("\u{feff}stale-edge 1 a -> b\n").unwrap();
+        assert_eq!(bom, plain);
+    }
 
     fn found(kind: ViolationKind, key: &str) -> Violation {
         Violation {

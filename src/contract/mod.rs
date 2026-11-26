@@ -11,6 +11,7 @@ use serde::Serialize;
 use thiserror::Error;
 
 mod boundary;
+mod drawable;
 mod map;
 mod open_order;
 mod package_rule;
@@ -306,6 +307,13 @@ pub struct Contract {
     /// only when text follows `%%`, so it cannot draw a file with one of these.
     #[serde(skip)]
     pub bare_comments: Vec<u32>,
+    /// The node and boundary ids Mermaid cannot parse, each with its line, in file order.
+    #[serde(skip)]
+    pub undrawable_ids: Vec<(String, u32)>,
+    /// The labels and comments Mermaid cannot parse, each with its line and what is wrong, in file
+    /// order.
+    #[serde(skip)]
+    pub undrawable_labels: Vec<(u32, String)>,
 }
 
 #[cfg(test)]

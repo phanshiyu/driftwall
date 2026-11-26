@@ -111,14 +111,16 @@ pub fn complete(
     }
 }
 
-/// The file that defines `name` of `file` and the name it has there, or `None` when the name stays
-/// on `file`: it is defined there, nothing re-exports it, it cannot be decided or the walk cycles.
+/// The file that defines `name` of `file` and the symbol it has there, or `None` when the name
+/// stays on `file`: it is defined there, nothing re-exports it, it cannot be decided or the walk
+/// cycles. A name that re-exports a module as a whole leads to that module's file and
+/// [`Symbol::All`], because the item used inside the module is not recorded.
 fn follow(
     tables: &Tables,
     file: &Path,
     name: &str,
     stops: &dyn Fn(&Path) -> bool,
-) -> Option<(PathBuf, String)> {
+) -> Option<(PathBuf, Symbol)> {
     let start = (file.to_path_buf(), name.to_owned());
     let mut current = start.clone();
     let mut seen = BTreeSet::new();
@@ -138,13 +140,15 @@ fn follow(
         }
         if let Some(next) = table.names.get(&current.1) {
             current = next.clone();
+        } else if let Some(module) = table.modules.get(&current.1) {
+            return Some((module.clone(), Symbol::All));
         } else if let Some(source) = single_source(tables, table, &current.1) {
             current.0 = source;
         } else {
             break;
         }
     }
-    (current != start).then_some(current)
+    (current != start).then_some((current.0, Symbol::Name(current.1)))
 }
 
 /// The one glob source of `table` that can export `name`, when exactly one can and the others
@@ -193,7 +197,11 @@ fn can_export(
     {
         return Can::No;
     }
-    if table.local.contains(name) || table.names.contains_key(name) {
+    if table.local.contains(name)
+        || table.names.contains_key(name)
+        || table.modules.contains_key(name)
+        || table.inline.contains_key(name)
+    {
         return Can::Yes;
     }
     if name == DEFAULT {
@@ -210,17 +218,22 @@ fn can_export(
     result
 }
 
+/// Whether `table` re-exports no name, namespace or glob.
+fn forwards_nothing(table: &Table) -> bool {
+    table.names.is_empty()
+        && table.stars.is_empty()
+        && table.modules.is_empty()
+        && table.inline.is_empty()
+}
+
 /// Attributes every named symbol of every import in `imports` to the file that defines it.
 pub fn apply(imports: &mut BTreeMap<PathBuf, FileImports>, tables: &Tables, facades: &Facades) {
     for (file, found) in imports.iter_mut() {
         found.reexports = tables
             .get(file)
-            .is_some_and(|table| !table.names.is_empty() || !table.stars.is_empty());
+            .is_some_and(|table| !forwards_nothing(table));
     }
-    if tables
-        .values()
-        .all(|table| table.names.is_empty() && table.stars.is_empty())
-    {
+    if tables.values().all(forwards_nothing) {
         return;
     }
     for (file, found) in imports.iter_mut() {
@@ -274,6 +287,25 @@ fn regroup(
     let mut groups: BTreeMap<PathBuf, BTreeSet<Symbol>> = BTreeMap::new();
     let mut moved = false;
     for symbol in &import.symbols {
+        if *symbol == Symbol::All
+            && let Some((files, keeps)) = through_glob(&import.target, tables, stops)
+        {
+            moved = true;
+            let own = keeps.then(|| import.target.clone());
+            for file in files.into_iter().chain(own).filter(|file| file != importer) {
+                groups.entry(file).or_default().insert(Symbol::All);
+            }
+            continue;
+        }
+        if let Symbol::Name(name) = symbol
+            && let Some(files) = through_inline(&import.target, name, tables, stops)
+        {
+            moved = true;
+            for file in files.iter().filter(|file| file.as_path() != importer) {
+                groups.entry(file.clone()).or_default().insert(Symbol::All);
+            }
+            continue;
+        }
         let followed = match symbol {
             Symbol::Name(name) => follow(tables, &import.target, name, stops),
             Symbol::All => None,
@@ -281,9 +313,9 @@ fn regroup(
         match followed {
             // why: a name that leads back to the importer is the importer's own item, not an import.
             Some((target, _)) if target == importer => moved = true,
-            Some((target, name)) => {
+            Some((target, symbol)) => {
                 moved = true;
-                groups.entry(target).or_default().insert(Symbol::Name(name));
+                groups.entry(target).or_default().insert(symbol);
             }
             None => {
                 groups
@@ -294,4 +326,45 @@ fn regroup(
         }
     }
     moved.then_some(groups)
+}
+
+/// Where a Rust glob import of `file` (`use crate::c::*;`) reaches, when `file` re-exports other
+/// repository files: the files its re-exports lead to, each followed to its definer, and whether
+/// `file` stays too because it defines items of its own. Which of the names the importer uses is
+/// not recorded, so each re-exported file is used as a whole. `None` for another language (a
+/// glob stays on the module there), a facade, and a file that re-exports nothing.
+fn through_glob(
+    file: &Path,
+    tables: &Tables,
+    stops: &dyn Fn(&Path) -> bool,
+) -> Option<(BTreeSet<PathBuf>, bool)> {
+    if file.extension().is_none_or(|ext| ext != "rs") || stops(file) {
+        return None;
+    }
+    let table = tables.get(file)?;
+    let mut files: BTreeSet<PathBuf> = table.modules.values().cloned().collect();
+    files.extend(table.stars.iter().cloned());
+    files.extend(table.inline.values().flatten().cloned());
+    for (name, (source, _)) in &table.names {
+        let followed =
+            follow(tables, file, name, stops).map_or_else(|| source.clone(), |(at, _)| at);
+        files.insert(followed);
+    }
+    files.remove(file);
+    (!files.is_empty()).then_some((files, !table.local.is_empty()))
+}
+
+/// The files the inline module `name` of `file` re-exports from (`pub mod r { pub use ..; }`),
+/// each used as a whole because the item used inside the module is not recorded. `None` when
+/// `file` has no such module, or is a facade.
+fn through_inline<'t>(
+    file: &Path,
+    name: &str,
+    tables: &'t Tables,
+    stops: &dyn Fn(&Path) -> bool,
+) -> Option<&'t BTreeSet<PathBuf>> {
+    if stops(file) {
+        return None;
+    }
+    tables.get(file)?.inline.get(name)
 }

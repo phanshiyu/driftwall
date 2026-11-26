@@ -21,6 +21,9 @@ pub enum FileKind {
     Ignored,
     /// A directory.
     Directory,
+    /// A path inside a nested repository (a submodule, a clone or a git worktree), which the walk
+    /// never enters, so no node owns it.
+    NestedRepository,
     /// An entry file that declares nothing and makes no node of its own under `node: *`.
     Folded,
     /// An `.arch` tag file: driftwall's own input, never an asset, and owned by no node.

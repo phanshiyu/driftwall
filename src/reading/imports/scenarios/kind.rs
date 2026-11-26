@@ -439,12 +439,30 @@ fn only_the_exact_cfg_test_predicate_counts() {
         "#[cfg(not(test))]",
         "#[cfg(any(test, debug_assertions))]",
         "#[cfg(feature = \"test\")]",
-        "#[test]",
         "#[cfg(testing)]",
+        "#[testing]",
+        "#[test::helper]",
     ] {
         let source = format!("{attribute}\nmod m {{\n    use crate::model::A;\n}}\n");
         assert_eq!(rs(&source), [(3, Runtime, false)], "{attribute}");
     }
+}
+
+#[test]
+fn a_test_attribute_makes_its_item_test_code_without_cfg_test() {
+    for attribute in [
+        "#[test]",
+        "#[tokio::test]",
+        "#[tokio::test(flavor = \"multi_thread\")]",
+        "#[ test ]",
+        "#[async_std::test]",
+    ] {
+        let source = format!("{attribute}\nfn f() {{\n    crate::model::g();\n}}\n");
+        assert_eq!(rs(&source), [(3, Runtime, true)], "{attribute}");
+    }
+    // why: the attribute only covers its own item, the next function is production code.
+    let source = "#[test]\nfn t() {}\nfn real() {\n    crate::model::g();\n}\n";
+    assert_eq!(rs(source), [(4, Runtime, false)]);
 }
 
 #[test]

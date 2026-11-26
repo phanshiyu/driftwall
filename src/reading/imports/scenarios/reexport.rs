@@ -86,7 +86,7 @@ fn rust_reexporting_module_keeps_its_own_edge() {
 }
 
 #[test]
-fn rust_module_binding_and_unknown_names_stay_on_the_module() {
+fn rust_module_binding_and_unknown_names_stay_on_the_module_and_a_glob_follows_its_reexports() {
     let got = sites(
         &with_app("use crate::ui;\nuse crate::ui::Missing;\nuse crate::ui::*;\n"),
         "src/app.rs",
@@ -96,7 +96,9 @@ fn rust_module_binding_and_unknown_names_stay_on_the_module() {
         [
             site(1, "src/ui/mod.rs", ""),
             site(2, "src/ui/mod.rs", "Missing"),
-            site(3, "src/ui/mod.rs", "*"),
+            // why: a glob of a module that only re-exports reaches the files it re-exports.
+            site(3, "src/ui/other.rs", "*"),
+            site(3, "src/ui/tone.rs", "*"),
         ]
     );
 }

@@ -5,7 +5,10 @@
 
 /// Forms shared by TypeScript and JavaScript: `import ... from`, `import 'a'`, every
 /// `export ... from`, dynamic `import(...)`, `require(...)` and `new URL(..., import.meta.url)`. The argument of a call is captured
-/// whatever it is, so the resolver can tell a literal from a computed specifier.
+/// whatever it is, so the resolver can tell a literal from a computed specifier. The forms it
+/// cannot follow are captured too, so they are recorded and never dropped: `import.meta.glob(..)`,
+/// `require.resolve(..)`, `createRequire(..)(..)`, and a variable set to `require` or to
+/// `createRequire(..)`.
 macro_rules! ecmascript_imports {
     () => {
         r#"
@@ -18,6 +21,35 @@ macro_rules! ecmascript_imports {
   function: (identifier) @callee
   arguments: (arguments . (_) @specifier .)
   (#eq? @callee "require"))
+(call_expression
+  function: (member_expression
+    object: (meta_property)
+    property: (property_identifier) @glob)
+  arguments: (arguments . (_) @specifier)
+  (#any-of? @glob "glob" "globEager"))
+(call_expression
+  function: (member_expression
+    object: (identifier) @owner
+    property: (property_identifier) @method)
+  arguments: (arguments . (_) @specifier)
+  (#eq? @owner "require")
+  (#eq? @method "resolve"))
+(call_expression
+  function: (call_expression
+    function: (identifier) @maker)
+  arguments: (arguments . (_) @specifier)
+  (#eq? @maker "createRequire"))
+(variable_declarator
+  name: (identifier) @alias
+  value: (identifier) @specifier
+  (#eq? @specifier "require")
+  (#not-eq? @alias "require"))
+(variable_declarator
+  name: (identifier) @alias
+  value: (call_expression
+    function: (identifier) @maker) @specifier
+  (#eq? @maker "createRequire")
+  (#not-eq? @alias "require"))
 (new_expression
   constructor: (identifier) @constructor
   arguments: (arguments . (_) @specifier . (_) @base .)

@@ -15,6 +15,7 @@ pub fn read<'s>(root: Node<'_>, source: &'s str) -> Vec<DocImport<'s>> {
             if let Some(text) = source.get(node.byte_range()) {
                 let first = u32::try_from(node.start_position().row).unwrap_or(u32::MAX);
                 imports_in(text, first.saturating_add(1), &mut found);
+                reference_path(text, first.saturating_add(1), &mut found);
             }
         } else if cursor.goto_first_child() {
             continue;
@@ -49,6 +50,41 @@ fn imports_in<'s>(text: &'s str, first_line: u32, found: &mut Vec<DocImport<'s>>
             specifier,
             member,
             line: first_line.saturating_add(u32::try_from(newlines).unwrap_or(u32::MAX)),
+            relative: false,
+        });
+    }
+}
+
+/// Adds the path of the triple-slash directive `/// <reference path="x" />` that `text` is, if it
+/// is one. `types` and `lib` directives name packages and are not read.
+fn reference_path<'s>(text: &'s str, line: u32, found: &mut Vec<DocImport<'s>>) {
+    let Some(rest) = text
+        .strip_prefix("///")
+        .map(str::trim_start)
+        .and_then(|rest| rest.strip_prefix("<reference"))
+    else {
+        return;
+    };
+    let Some((_, after)) = rest.split_once("path") else {
+        return;
+    };
+    let Some(value) = after.trim_start().strip_prefix('=').map(str::trim_start) else {
+        return;
+    };
+    let Some(quote) = value.chars().next().filter(|c| matches!(c, '\'' | '"')) else {
+        return;
+    };
+    let Some(body) = value.get(1..) else {
+        return;
+    };
+    if let Some(end) = body.find(quote)
+        && let Some(specifier) = body.get(..end).filter(|path| !path.is_empty())
+    {
+        found.push(DocImport {
+            specifier,
+            member: None,
+            line,
+            relative: true,
         });
     }
 }

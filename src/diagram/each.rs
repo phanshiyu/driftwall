@@ -199,7 +199,7 @@ fn arrow(piece: &str, line: u32) -> Result<EachArrow, DiagramError> {
             statement: piece.to_owned(),
         });
     }
-    let (kind, raw_to) = edge_tail(rest.trim_start(), piece, line)?;
+    let (kind, raw_to, _) = edge_tail(rest.trim_start(), piece, line)?;
     Ok(EachArrow {
         from: valid_id(raw_from, line)?.to_string(),
         to: valid_id(raw_to, line)?.to_string(),

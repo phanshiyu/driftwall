@@ -255,13 +255,15 @@ mod tests {
                 "stale-package",
                 "test-only-edge",
                 "undeclared-edge",
+                "undrawable-id",
+                "undrawable-label",
                 "unknown-node",
                 "unmapped-file",
                 "unresolved-import",
                 "upward-edge",
             ]
         );
-        assert_eq!(value["runs"][0]["results"].as_array().unwrap().len(), 23);
+        assert_eq!(value["runs"][0]["results"].as_array().unwrap().len(), 25);
     }
 
     #[test]

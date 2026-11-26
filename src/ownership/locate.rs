@@ -7,8 +7,8 @@ use std::path::Path;
 
 use super::mapping::explain_mapped;
 use super::{
-    ARCH_FILE, Discovered, MapContext, OwnershipError, discover, explain, language_of,
-    relative_to_root,
+    ARCH_FILE, Discovered, MapContext, OwnershipError, discover, explain, is_repository,
+    language_of, relative_to_root,
 };
 use crate::code::{FileKind, Located, Owner};
 
@@ -53,6 +53,20 @@ fn locate_with(
         }
         Err(source) => return Err(OwnershipError::Io { path: full, source }),
     };
+    // why: the walk never enters a nested repository, so nothing there is read or owned.
+    if relative
+        .ancestors()
+        .filter(|ancestor| !ancestor.as_os_str().is_empty())
+        .any(|ancestor| {
+            let full = root.join(ancestor);
+            (ancestor != relative || metadata.is_dir()) && is_repository(&full)
+        })
+    {
+        return Ok(Located {
+            kind: FileKind::NestedRepository,
+            owner: Owner::Unowned,
+        });
+    }
     let kind = if metadata.is_dir() {
         FileKind::Directory
     } else if relative.file_name() == Some(OsStr::new(ARCH_FILE)) {
@@ -207,6 +221,45 @@ mod tests {
         assert_eq!(named("loose.ts"), (FileKind::Source, None));
         assert_eq!(named("loose.json"), (FileKind::Asset, None));
         assert_eq!(named("loose.go"), (FileKind::Unread("go".to_owned()), None));
+    }
+
+    #[test]
+    fn a_path_inside_a_nested_repository_is_not_read_and_owned_by_nobody() {
+        let dir = tree(&[
+            ("a/.arch", "node: a\n"),
+            ("a/vendored/.git", "gitdir: ../../.git/modules/v\n"),
+            ("a/vendored/x.ts", ""),
+            ("a/vendored/deep/y.ts", ""),
+            ("a/clone/.git/HEAD", "ref: refs/heads/main\n"),
+            ("a/clone/z.ts", ""),
+        ]);
+        for file in [
+            "a/vendored/x.ts",
+            "a/vendored/deep/y.ts",
+            "a/vendored/deep",
+            "a/vendored",
+            "a/clone/z.ts",
+        ] {
+            assert_eq!(
+                answer(&dir, file),
+                (FileKind::NestedRepository, None),
+                "{file}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_empty_git_entry_hides_nothing_from_where() {
+        let dir = tree(&[
+            ("a/.arch", "node: a\n"),
+            ("a/sub/.git", ""),
+            ("a/sub/x.ts", ""),
+            ("a/hollow/.git/config", ""),
+            ("a/hollow/y.ts", ""),
+        ]);
+        let source = (FileKind::Source, Some("a".to_owned()));
+        assert_eq!(answer(&dir, "a/sub/x.ts"), source);
+        assert_eq!(answer(&dir, "a/hollow/y.ts"), source);
     }
 
     #[test]

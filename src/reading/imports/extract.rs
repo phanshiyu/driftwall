@@ -97,6 +97,20 @@ pub fn extract_in(
     for region in &scan.regions {
         found_in(region, spec, source, file, env, &mut found)?;
     }
+    if let Some(line) = found.syntax_error {
+        let at = Location {
+            file: file.to_path_buf(),
+            line,
+        };
+        let message =
+            format!("the parser could not read past line {line}: imports after it may be missing");
+        let flags = Flags {
+            kind: ImportKind::Runtime,
+            test_only: env.test_files.contains(file),
+        };
+        let name = file.to_string_lossy();
+        found.skip(&at, &name, SkipReason::Unparsed, Some(message), None, flags);
+    }
     if let Some(loads) = &spec.loads {
         for load in &scan.loads {
             let at = Location {
@@ -112,6 +126,7 @@ pub fn extract_in(
         unresolved,
         skipped,
         packages,
+        syntax_error: _,
     } = found;
     let mut resolved: Vec<ResolvedImport> = resolved
         .into_iter()
@@ -163,6 +178,9 @@ fn found_in(
         return Ok(());
     };
 
+    if let Some(line) = first_error_line(tree.root_node()).filter(|_| !region.fragment) {
+        found.syntax_error = Some(found.syntax_error.map_or(line, |first| first.min(line)));
+    }
     let name_capture = query.capture_index_for_name(NAME_CAPTURE);
     let scope = language::scope(spec.language, tree.root_node(), source);
 
@@ -210,7 +228,13 @@ fn found_in(
                 line: doc.line,
             };
             let symbols = doc.member.map(|name| Symbol::Name(name.to_owned()));
-            let resolution = language::resolve_doc(spec.language, doc.specifier, file, env)
+            // why: a `reference path` is relative to the file whether or not it starts with `./`.
+            let written = if doc.relative && !doc.specifier.starts_with(['.', '/']) {
+                format!("./{}", doc.specifier)
+            } else {
+                doc.specifier.to_owned()
+            };
+            let resolution = language::resolve_doc(spec.language, &written, file, env)
                 .using(symbols.into_iter().collect());
             found.record(resolution, &at, doc.specifier, (docs.flags)(file));
         }
@@ -226,6 +250,8 @@ struct Found {
     unresolved: BTreeSet<UnresolvedImport>,
     skipped: BTreeSet<Skipped>,
     packages: BTreeSet<PackageUse>,
+    /// The line of the first error or missing node of the file's syntax tree, if any.
+    syntax_error: Option<u32>,
 }
 
 impl Found {
@@ -317,6 +343,28 @@ impl Found {
 /// node, such as a Python module path or the computed argument of `require(..)`.
 fn specifier_text<'s>(node: Node<'_>, source: &'s str) -> Option<&'s str> {
     literal_text(node, source).or_else(|| node.utf8_text(source.as_bytes()).ok())
+}
+
+/// The line of the first error or missing node under `root`, `None` for a clean tree.
+fn first_error_line(root: Node<'_>) -> Option<u32> {
+    if !root.has_error() {
+        return None;
+    }
+    let mut cursor = root.walk();
+    let mut stack = vec![root];
+    let mut first: Option<Node<'_>> = None;
+    while let Some(node) = stack.pop() {
+        if node.is_error() || node.is_missing() {
+            if first.is_none_or(|best| node.start_byte() < best.start_byte()) {
+                first = Some(node);
+            }
+            continue;
+        }
+        if node.has_error() {
+            stack.extend(node.children(&mut cursor));
+        }
+    }
+    first.map(line_of).or_else(|| Some(line_of(root)))
 }
 
 fn line_of(node: Node<'_>) -> u32 {

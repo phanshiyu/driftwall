@@ -615,11 +615,13 @@ fn pathological_input_does_not_panic() {
 }
 
 #[test]
-fn leading_double_colon_paths_are_not_followed() {
+fn leading_double_colon_paths_resolve_as_extern_crate_paths() {
     assert_targets(
         "use ::driftwall::model::Edge;\nfn f() { ::driftwall::lint::run(); }",
-        &[],
+        &["src/model/mod.rs", "src/lint/mod.rs"],
     );
+    // why: `::model` is a crate named `model`, never `crate::model`.
+    assert_targets("use ::model::Edge;\nfn f() { ::lint::run(); }", &[]);
 }
 
 #[test]

@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use super::each;
 use super::error::DiagramError;
-use super::label;
+use super::label::{self, undrawable_boundary, undrawable_comment, undrawable_edge_label};
 use super::rules::{self, RuleParser};
 use crate::contract::{
     BoundaryEdge, Contract, Edge, EdgeKind, Endpoint, MapGlob, MapRule, MapTarget, NodeId,
@@ -44,6 +44,14 @@ pub fn parse(src: &str) -> Result<Contract, DiagramError> {
             parser.bare_comments.push(line);
         }
         let text = raw.trim();
+        if undrawable_comment(text) {
+            parser.undrawable_labels.push((
+                line,
+                format!(
+                    "the comment `{text}` is a Mermaid directive that is not closed with `}}%%`"
+                ),
+            ));
+        }
         if let Some(directive) = directive(text, "exports") {
             parser.exports(directive, line)?;
             continue;
@@ -97,6 +105,7 @@ struct PendingExports {
 struct Parser {
     header_seen: bool,
     bare_comments: Vec<u32>,
+    undrawable_labels: Vec<(u32, String)>,
     nodes: BTreeMap<NodeId, NodeInfo>,
     node_lines: BTreeMap<NodeId, u32>,
     boundaries: BTreeMap<String, u32>,
@@ -162,6 +171,10 @@ impl Parser {
                 first_is_boundary: false,
             });
         }
+        if label == Some("") {
+            self.undrawable_labels
+                .push((line, format!("the label of subgraph `{id}` is empty")));
+        }
         if let Some(label) = label.filter(|label| *label != id.as_str()) {
             self.boundary_labels
                 .insert(id.to_string(), label.to_owned());
@@ -186,7 +199,16 @@ impl Parser {
         if rest.is_empty() {
             return self.declare(raw_id, None, line);
         }
-        let (kind, raw_to) = edge_tail(rest, text, line)?;
+        let (kind, raw_to, label) = edge_tail(rest, text, line)?;
+        if let Some(why) = label.and_then(undrawable_edge_label) {
+            self.undrawable_labels.push((
+                line,
+                format!(
+                    "the edge label `{}` cannot be drawn: {why}",
+                    label.unwrap_or_default()
+                ),
+            ));
+        }
         let from = valid_id(raw_id, line)?;
         let to = valid_id(raw_to, line)?;
         self.edges.push(PendingEdge {
@@ -334,6 +356,10 @@ impl Parser {
         line: u32,
     ) -> Result<(), DiagramError> {
         let id = valid_id(raw_id, line)?;
+        if label == Some("") {
+            self.undrawable_labels
+                .push((line, format!("the label of node `{id}` is empty")));
+        }
         if RESERVED.contains(&id.as_str()) {
             return Err(DiagramError::ReservedWord {
                 line,
@@ -531,6 +557,9 @@ impl Parser {
                 });
             }
         }
+        let undrawable_ids = undrawable_ids(&self.node_lines, &self.boundaries);
+        let mut undrawable_labels = self.undrawable_labels;
+        undrawable_labels.sort();
         let contract = Contract {
             nodes: self.nodes,
             boundary_labels: self.boundary_labels,
@@ -541,10 +570,38 @@ impl Parser {
             rules,
             package_rules: self.package_rules,
             bare_comments: self.bare_comments,
+            undrawable_ids,
+            undrawable_labels,
         };
         rules::check_denials_remove_something(&contract)?;
         Ok(contract)
     }
+}
+
+/// The node and boundary ids Mermaid cannot parse with their lines, in file order.
+fn undrawable_ids(
+    node_lines: &BTreeMap<NodeId, u32>,
+    boundaries: &BTreeMap<String, u32>,
+) -> Vec<(String, u32)> {
+    let nodes = node_lines
+        .iter()
+        .map(|(id, line)| (id.to_string(), *line, false));
+    let drawn = boundaries
+        .iter()
+        .map(|(id, line)| (id.clone(), *line, true));
+    let mut found: Vec<(String, u32)> = nodes
+        .chain(drawn)
+        .filter(|(id, _, boundary)| {
+            if *boundary {
+                undrawable_boundary(id)
+            } else {
+                NodeId::mermaid_rejects(id)
+            }
+        })
+        .map(|(id, line, _)| (id, line))
+        .collect();
+    found.sort_by_key(|(id, line)| (*line, id.clone()));
+    found
 }
 
 /// Records that `node` lists `name` in a `kind` rule on `line`, or says why it cannot: the name is
@@ -617,7 +674,7 @@ pub(super) fn edge_tail<'a>(
     rest: &'a str,
     text: &str,
     line: u32,
-) -> Result<(EdgeKind, &'a str), DiagramError> {
+) -> Result<(EdgeKind, &'a str, Option<&'a str>), DiagramError> {
     let (planned, after_arrow) = if let Some(after) = rest.strip_prefix(DOTTED) {
         (true, after)
     } else if let Some(after) = rest.strip_prefix(SOLID) {
@@ -627,12 +684,14 @@ pub(super) fn edge_tail<'a>(
     };
     let mut after_arrow = after_arrow.trim_start();
     let mut words = (false, false);
+    let mut shown = None;
     if let Some(labelled) = after_arrow.strip_prefix('|') {
         let (label, after_label) = labelled
             .split_once('|')
             .ok_or_else(|| unsupported(text, line))?;
         // why: `type` and `test` are the label words with a meaning; any other label stays display only.
         words = label::restrictions(label, line)?;
+        shown = Some(label);
         after_arrow = after_label.trim_start();
     }
     let kind = EdgeKind::from_parts(planned, words.0, words.1);
@@ -640,7 +699,7 @@ pub(super) fn edge_tail<'a>(
     if raw_to.is_empty() || !tail.is_empty() {
         return Err(unsupported(text, line));
     }
-    Ok((kind, raw_to))
+    Ok((kind, raw_to, shown))
 }
 
 /// Splits a leading identifier token off `s`. The token ends at whitespace, `[`, `|` or the start

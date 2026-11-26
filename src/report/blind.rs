@@ -50,9 +50,20 @@ pub fn render_blind_note(summary: &BlindSummary) -> Option<String> {
             plural(summary.ignored, "file")
         ));
     }
-    let skipped: usize = summary.skipped.values().sum();
+    let broken = summary
+        .skipped
+        .get(&SkipReason::Unparsed)
+        .copied()
+        .unwrap_or(0);
+    let skipped: usize = summary.skipped.values().sum::<usize>() - broken;
     if skipped > 0 {
         parts.push(plural(skipped, "skipped reference"));
+    }
+    if broken > 0 {
+        parts.push(format!(
+            "{} not fully parsed (imports after where the parser stopped may be missing)",
+            plural(broken, "file")
+        ));
     }
     if summary.unresolved > 0 {
         parts.push(plural(summary.unresolved, "unresolved import"));
@@ -321,6 +332,20 @@ mod tests {
             render_blind_note(&found).as_deref(),
             Some(
                 "note: 1 file not read (swift 1), 1 file excluded (generated 1), 1 file ignored by .driftwallignore, 1 skipped reference, 1 unresolved import; see driftwall brief"
+            )
+        );
+    }
+
+    #[test]
+    fn unparsed_files_are_counted_apart_from_skipped_references() {
+        let found = BlindSummary {
+            skipped: [(SkipReason::Unparsed, 2), (SkipReason::DynamicSpecifier, 1)].into(),
+            ..BlindSummary::default()
+        };
+        assert_eq!(
+            render_blind_note(&found).as_deref(),
+            Some(
+                "note: 1 skipped reference, 2 files not fully parsed (imports after where the parser stopped may be missing); see driftwall brief"
             )
         );
     }

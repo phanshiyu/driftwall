@@ -69,16 +69,47 @@ fn marker(text: &str, line: u32) -> Option<Result<Marker, PictureError>> {
     }))
 }
 
+/// The marker on each line of `markdown`, or `None` for a line that has none. A marker inside a
+/// fenced code block (three or more backticks or tildes) documents the syntax and is not a block, so it reads as none;
+/// the inside of a real block is not scanned for fences, since it holds the picture's own fence.
+fn markers(markdown: &str) -> Vec<Option<Result<Marker, PictureError>>> {
+    let mut fence: Option<(char, usize)> = None;
+    let mut in_block = false;
+    let mut found = Vec::new();
+    for (raw, line) in markdown.split_inclusive('\n').zip(1_u32..) {
+        let text = raw.trim();
+        if in_block {
+            let read = marker(raw, line);
+            in_block = !matches!(read, Some(Ok(Marker::End)));
+            found.push(read);
+            continue;
+        }
+        let ch = text.chars().next().filter(|c| matches!(c, '`' | '~'));
+        let run = ch.map_or(0, |ch| text.chars().take_while(|&c| c == ch).count());
+        if let Some((open_ch, open_len)) = fence {
+            if ch == Some(open_ch) && run >= open_len && text.chars().all(|c| c == open_ch) {
+                fence = None;
+            }
+            found.push(None);
+        } else if let (Some(ch), true) = (ch, run >= 3) {
+            fence = Some((ch, run));
+            found.push(None);
+        } else {
+            let read = marker(raw, line);
+            in_block = matches!(read, Some(Ok(Marker::Start { .. })));
+            found.push(read);
+        }
+    }
+    found
+}
+
 /// Whether some block of `markdown` has `--built` in its marker, so drawing it needs the
 /// repository's ownership. A marker that is malformed does not count: [`sync`] reports it.
 #[must_use]
 pub fn wants_built(markdown: &str) -> bool {
-    markdown.lines().zip(1_u32..).any(|(raw, line)| {
-        matches!(
-            marker(raw, line),
-            Some(Ok(Marker::Start { built: true, .. }))
-        )
-    })
+    markers(markdown)
+        .iter()
+        .any(|read| matches!(read, Some(Ok(Marker::Start { built: true, .. }))))
 }
 
 /// A block that has started: its line, its view and its line ending.
@@ -110,9 +141,10 @@ pub fn sync(
     let mut open: Option<Open> = None;
     let mut inside = String::new();
     let mut blocks = 0_usize;
-    for (index, raw) in markdown.split_inclusive('\n').enumerate() {
+    let reads = markers(markdown);
+    for ((index, raw), read) in markdown.split_inclusive('\n').enumerate().zip(reads) {
         let line = u32::try_from(index + 1).unwrap_or(u32::MAX);
-        let found = marker(raw, line).transpose()?;
+        let found = read.transpose()?;
         match (found, open.take()) {
             (Some(Marker::Start { .. }), Some(block)) => {
                 return Err(PictureError::Nested {

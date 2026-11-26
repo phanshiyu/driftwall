@@ -150,13 +150,16 @@ fn reexport(
         return;
     }
     for ((original, exported), resolution) in written.iter().zip(resolutions) {
-        // why: a name that is a submodule resolves with no symbol and is a module binding.
-        if let Resolution::Resolved { target, symbols } = resolution
-            && symbols.contains(&Symbol::Name((*original).to_owned()))
-        {
+        let Resolution::Resolved { target, symbols } = resolution else {
+            continue;
+        };
+        if symbols.contains(&Symbol::Name((*original).to_owned())) {
             table
                 .names
                 .insert((*exported).to_owned(), (target, (*original).to_owned()));
+        } else {
+            // why: a name that is a submodule resolves with no symbol and is a module binding, which a path through it continues in.
+            table.modules.insert((*exported).to_owned(), target);
         }
     }
 }

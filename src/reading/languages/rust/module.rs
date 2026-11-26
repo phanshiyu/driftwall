@@ -21,6 +21,9 @@ pub enum Segment<'s> {
     SelfModule,
     /// The keyword `super`.
     Super,
+    /// A leading `::`, which makes the name after it an extern crate and never a module of the
+    /// current one.
+    Extern,
     /// A module, item or crate name.
     Name(&'s str),
 }
@@ -134,7 +137,15 @@ impl<'s> WrittenPath<'s> {
     pub fn last_name(&self) -> Option<&'s str> {
         match self.segments.last()? {
             Segment::Name(name) => Some(name),
-            Segment::Crate | Segment::SelfModule | Segment::Super => None,
+            Segment::Extern | Segment::Crate | Segment::SelfModule | Segment::Super => None,
+        }
+    }
+
+    /// The name of the crate the path starts with: its first name, also after a leading `::`.
+    pub fn crate_name(&self) -> Option<&'s str> {
+        match self.segments.as_slice() {
+            [Segment::Extern, Segment::Name(name), ..] => Some(name),
+            _ => self.first_name(),
         }
     }
 
@@ -142,14 +153,28 @@ impl<'s> WrittenPath<'s> {
     pub fn first_name(&self) -> Option<&'s str> {
         match self.segments.first()? {
             Segment::Name(name) => Some(name),
-            Segment::Crate | Segment::SelfModule | Segment::Super => None,
+            Segment::Extern | Segment::Crate | Segment::SelfModule | Segment::Super => None,
+        }
+    }
+
+    /// The name `n` when the path starts `self::n` and goes on, as `self::z::A` does.
+    pub const fn self_name(&self) -> Option<&'s str> {
+        match self.segments.as_slice() {
+            [Segment::SelfModule, Segment::Name(name), _, ..] => Some(name),
+            _ => None,
         }
     }
 
     /// This path with its first segment replaced by all of `prefix`: `gl::Client` with `gl` bound
     /// to `crate::gitlab` is `crate::gitlab::Client`.
     pub fn with_first_replaced(&self, prefix: &Self) -> Self {
-        let tail = self.segments.iter().skip(1).copied();
+        self.with_leading_replaced(1, prefix)
+    }
+
+    /// This path with its first `count` segments replaced by all of `prefix`: `self::z::A` with
+    /// `z` bound to `crate::a` is `crate::a::A`.
+    pub fn with_leading_replaced(&self, count: usize, prefix: &Self) -> Self {
+        let tail = self.segments.iter().skip(count).copied();
         Self {
             segments: prefix.segments.iter().copied().chain(tail).collect(),
             names_module: self.names_module,
@@ -157,7 +182,7 @@ impl<'s> WrittenPath<'s> {
         }
     }
 
-    /// The repository file this path points into, written at `site`, and the symbol it uses from
+    /// The repository file this path points into, written in `importer` at `site`, and the symbol it uses from
     /// that file. `None` means the path is not a repository reference: it starts with a third
     /// party or standard library name, climbs above the crate root, or uses `crate`, `self` or
     /// `super` outside any known crate.
@@ -170,12 +195,22 @@ impl<'s> WrittenPath<'s> {
     /// the first segment after `crate` is the symbol.
     pub fn target(
         &self,
+        importer: &Path,
         site: Option<&Site>,
         files: &Files<'_>,
         env: &Env<'_>,
     ) -> Option<(PathBuf, Symbol)> {
         let (first, tail) = self.segments.split_first()?;
+        // why: a leading `::` can only name an extern crate, so `::name` skips every module of the file.
+        let (first, tail) = match first {
+            Segment::Extern => match tail.split_first()? {
+                (name @ Segment::Name(_), tail) => (name, tail),
+                _ => return None,
+            },
+            _ => (first, tail),
+        };
         let (root, mut module, mut rest) = match first {
+            Segment::Extern => return None,
             Segment::Crate => (site?.root.clone(), ModulePath::default(), tail),
             Segment::SelfModule | Segment::Super => {
                 let site = site?;
@@ -186,7 +221,7 @@ impl<'s> WrittenPath<'s> {
                 )
             }
             Segment::Name(name) => {
-                let dir = env.crates.get(*name)?;
+                let dir = env.crate_dir(name, importer)?;
                 (CrateRoot::library(dir), ModulePath::default(), tail)
             }
         };
@@ -194,13 +229,13 @@ impl<'s> WrittenPath<'s> {
             match segment {
                 Segment::SelfModule => {}
                 Segment::Super => module = module.parent()?,
-                Segment::Crate | Segment::Name(_) => break,
+                Segment::Extern | Segment::Crate | Segment::Name(_) => break,
             }
             rest = after;
         }
         let items = rest.iter().map_while(|segment| match segment {
             Segment::Name(name) => Some(*name),
-            Segment::Crate | Segment::SelfModule | Segment::Super => None,
+            Segment::Extern | Segment::Crate | Segment::SelfModule | Segment::Super => None,
         });
         let module_len = module.names.len();
         let written: Vec<&str> = module

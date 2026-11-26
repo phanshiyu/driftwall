@@ -147,7 +147,12 @@ impl<'a> Tree<'a> {
         lines: &mut Vec<String>,
     ) {
         let pad = "  ".repeat(depth);
-        let label = labels.get(boundary).map_or(boundary, String::as_str);
+        // why: Mermaid cannot draw an empty label, so the id stands in.
+        let label = labels
+            .get(boundary)
+            .map(String::as_str)
+            .filter(|label| !label.is_empty())
+            .unwrap_or(boundary);
         lines.push(format!("{pad}subgraph {boundary}[\"{}\"]", sanitize(label)));
         for (name, inner) in &self.inner {
             inner.write(name, depth + 1, labels, lines);
@@ -163,10 +168,13 @@ impl<'a> Tree<'a> {
 }
 
 fn node_line(id: &NodeId, info: &NodeInfo, indent: &str) -> String {
-    info.label.as_ref().map_or_else(
-        || format!("{indent}{id}"),
-        |label| format!("{indent}{id}[\"{}\"]", sanitize(label)),
-    )
+    info.label
+        .as_ref()
+        .filter(|label| !label.is_empty())
+        .map_or_else(
+            || format!("{indent}{id}"),
+            |label| format!("{indent}{id}[\"{}\"]", sanitize(label)),
+        )
 }
 
 fn sanitize(label: &str) -> String {
@@ -258,7 +266,7 @@ mod tests {
         assert_round_trips(&contract(
             &[
                 ("a", node(Some("cli: args, exit codes"), None)),
-                ("b", node(Some(""), None)),
+                ("b", node(Some("b"), None)),
                 ("c", node(Some("  padded  "), None)),
                 (
                     "d",
@@ -293,12 +301,60 @@ mod tests {
         assert_round_trips(&contract(
             &[
                 ("endpoint", node(None, Some("subgraphs"))),
-                ("class", node(None, None)),
-                ("style", node(None, None)),
-                ("graph", node(None, None)),
+                ("styles", node(None, None)),
+                ("End", node(None, None)),
+                ("end_user", node(None, None)),
+                ("click-x", node(None, None)),
             ],
-            &[("endpoint", "class", EdgeKind::Planned)],
+            &[("endpoint", "styles", EdgeKind::Planned)],
         ));
+    }
+
+    #[test]
+    fn an_empty_label_is_drawn_as_the_id_never_as_an_empty_string() {
+        let mut c = contract(
+            &[
+                ("a", node(Some(""), Some("s"))),
+                ("b", node(Some("\"\""), None)),
+            ],
+            &[],
+        );
+        c.boundary_labels.insert("s".to_owned(), String::new());
+        let text = render(&c);
+        assert!(!text.contains("[\"\"]"), "{text}");
+        assert!(text.contains("subgraph s[\"s\"]"), "{text}");
+        assert_eq!(parse(&text).unwrap().undrawable_labels, Vec::new());
+    }
+
+    #[test]
+    fn rendered_edge_labels_are_always_drawable() {
+        let mut c = contract(
+            &[("a", node(None, None)), ("b", node(None, None))],
+            &[("a", "b", EdgeKind::Implemented)],
+        );
+        for kind in [
+            EdgeKind::Implemented,
+            EdgeKind::Planned,
+            EdgeKind::from_parts(false, true, false),
+            EdgeKind::from_parts(true, true, true),
+            EdgeKind::from_parts(false, false, true),
+        ] {
+            c.edges.insert(
+                Edge {
+                    from: id("a"),
+                    to: id("b"),
+                },
+                kind,
+            );
+            let text = render(&c);
+            for label in text.lines().filter_map(|l| l.split('|').nth(1)) {
+                assert_eq!(
+                    super::super::label::undrawable_edge_label(label),
+                    None,
+                    "{text}"
+                );
+            }
+        }
     }
 
     #[test]

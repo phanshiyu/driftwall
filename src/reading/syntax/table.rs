@@ -9,6 +9,13 @@ pub struct Table {
     /// Name this file exports to the file and name it has there: `pub use x::Y as W;` is
     /// `W` to (`x`'s file, `Y`).
     pub names: BTreeMap<String, (PathBuf, String)>,
+    /// Name this file exports that is a module, not an item, to the module's file: `pub use
+    /// crate::a;` is `a` to `a`'s file, and `from app.a import impl` in an `__init__.py` is
+    /// `impl` to `impl.py`. A path through it continues inside that module.
+    pub modules: BTreeMap<String, PathBuf>,
+    /// Rust: an inline `pub mod r { pub use ..; }` that holds only re-exports, to the files it
+    /// re-exports from. A path through `r` uses those files.
+    pub inline: BTreeMap<String, BTreeSet<PathBuf>>,
     /// The files whose every name this file re-exports with a glob.
     pub stars: Vec<PathBuf>,
     /// The names the file defines itself.

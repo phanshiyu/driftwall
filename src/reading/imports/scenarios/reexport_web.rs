@@ -60,7 +60,7 @@ fn ts_type_only_kind_survives_the_move() {
 }
 
 #[test]
-fn ts_namespace_import_and_namespace_reexport_stay_on_the_barrel() {
+fn ts_namespace_import_stays_on_the_barrel_and_a_namespace_reexport_is_the_whole_module() {
     let got = sites(
         &with_app("import * as ui from './ui';\nimport { shapes } from './ui';\nimport './ui';\n"),
         "src/app.ts",
@@ -69,7 +69,7 @@ fn ts_namespace_import_and_namespace_reexport_stay_on_the_barrel() {
         got,
         [
             site(1, "src/ui/index.ts", "*"),
-            site(2, "src/ui/index.ts", "shapes"),
+            site(2, "src/ui/shape.ts", "*"),
             site(3, "src/ui/index.ts", ""),
         ]
     );
@@ -308,4 +308,25 @@ fn python_other_modules_are_not_facades() {
         ("main.py", "from pkg.mod import Tone\n"),
     ];
     assert_eq!(sites(&files, "main.py"), [site(1, "pkg/mod.py", "Tone")]);
+}
+
+#[test]
+fn python_a_submodule_reexported_by_init_is_followed_into_the_module() {
+    let files = [
+        ("app/__init__.py", ""),
+        ("app/a/__init__.py", ""),
+        ("app/a/impl.py", "class A: pass\n"),
+        ("app/c/__init__.py", "from app.a import impl\n"),
+        (
+            "app/b/x.py",
+            "from app.c import impl\nfrom app.c import other\n",
+        ),
+    ];
+    assert_eq!(
+        sites(&files, "app/b/x.py"),
+        [
+            site(1, "app/a/impl.py", "*"),
+            site(2, "app/c/__init__.py", "other")
+        ]
+    );
 }

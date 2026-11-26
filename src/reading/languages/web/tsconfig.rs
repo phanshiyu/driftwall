@@ -122,6 +122,8 @@ pub(super) struct Layer {
     pub(super) dir: PathBuf,
     base_url: Option<String>,
     paths: Option<Paths>,
+    out_dir: Option<String>,
+    root_dir: Option<String>,
     /// The `files`, `include` and `exclude` lists the file sets, each relative to `dir`.
     pub(super) files: Option<Vec<String>>,
     pub(super) include: Option<Vec<String>>,
@@ -146,6 +148,8 @@ pub(super) fn layers(path: PathBuf, leaf: RawConfig, read: Reader<'_>) -> Vec<La
             dir,
             base_url: options.base_url,
             paths: options.paths,
+            out_dir: options.out_dir,
+            root_dir: options.root_dir,
             files,
             include,
             exclude,
@@ -159,6 +163,41 @@ pub(super) fn layers(path: PathBuf, leaf: RawConfig, read: Reader<'_>) -> Vec<La
             });
     }
     layers
+}
+
+/// Where the compiler of a project writes its output and where the sources it reads are.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct Output {
+    /// The `outDir`, repository-relative.
+    pub(super) out: PathBuf,
+    /// The directories the sources may lie in: the `rootDir` when the config sets one, else the
+    /// directory of the config that sets `outDir` and its `src` directory.
+    pub(super) roots: Vec<PathBuf>,
+}
+
+/// The build output mapping of the project whose configs lie in `dir`: the first of
+/// `tsconfig.json` and `tsconfig.build.json` that sets `outDir`, after `extends`. `None` when
+/// neither does, or the `outDir` leaves the repository.
+pub(super) fn output_of(dir: &Path, read: Reader<'_>) -> Option<Output> {
+    ["tsconfig.json", "tsconfig.build.json"]
+        .iter()
+        .find_map(|name| {
+            let path = dir.join(name);
+            let leaf = parse(&read(&path)?)?;
+            let chain = layers(path, leaf, read);
+            let (owner, out) = chain
+                .iter()
+                .find_map(|layer| layer.out_dir.as_deref().map(|text| (layer, text)))?;
+            let out = join_normalised(Some(&owner.dir), out)?;
+            let roots = match chain
+                .iter()
+                .find_map(|layer| layer.root_dir.as_deref().map(|text| (layer, text)))
+            {
+                Some((layer, text)) => vec![join_normalised(Some(&layer.dir), text)?],
+                None => vec![owner.dir.clone(), owner.dir.join("src")],
+            };
+            Some(Output { out, roots })
+        })
 }
 
 /// The file a config extends, when it is written as a relative path inside the repository.
@@ -234,6 +273,8 @@ pub(super) struct RawConfig {
 struct RawOptions {
     base_url: Option<String>,
     paths: Option<Paths>,
+    out_dir: Option<String>,
+    root_dir: Option<String>,
 }
 
 /// The strings of a JSON array. `None` when the value is absent or not an array.

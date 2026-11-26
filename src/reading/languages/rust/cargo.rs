@@ -19,6 +19,16 @@ const MANIFEST_FILE: &str = "Cargo.toml";
 /// The tables of a manifest, and of each `[target.<cfg>]` table, that list dependencies.
 const TABLES: [&str; 3] = ["dependencies", "dev-dependencies", "build-dependencies"];
 
+/// The dependencies one manifest lists.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Dependencies {
+    /// The crate names as code imports them (`-` written `_`), renamed ones under their new name.
+    pub names: BTreeSet<String>,
+    /// Renamed dependency (`alpha = { package = "a-lib" }`): the name code imports to the package
+    /// name, both written with `_` for `-`.
+    pub renames: BTreeMap<String, String>,
+}
+
 /// Maps each directory that holds a readable `Cargo.toml` to its dependency crates, reading from
 /// under `root`.
 ///
@@ -29,7 +39,7 @@ const TABLES: [&str; 3] = ["dependencies", "dev-dependencies", "build-dependenci
 pub fn cargo_dependencies(
     root: &Path,
     files: &BTreeMap<PathBuf, Language>,
-) -> BTreeMap<PathBuf, BTreeSet<String>> {
+) -> BTreeMap<PathBuf, Dependencies> {
     let sources = files
         .iter()
         .filter(|(_, language)| **language == Language::Rust)
@@ -44,20 +54,31 @@ pub fn cargo_dependencies(
         .collect()
 }
 
-/// The crate names `manifest` lists, as code imports them.
-fn listed(manifest: &Table) -> BTreeSet<String> {
+/// The dependencies `manifest` lists.
+fn listed(manifest: &Table) -> Dependencies {
     let targets = manifest
         .get("target")
         .and_then(toml::Value::as_table)
         .into_iter()
         .flat_map(|targets| targets.values().filter_map(toml::Value::as_table));
-    std::iter::once(manifest)
+    let mut found = Dependencies::default();
+    let entries = std::iter::once(manifest)
         .chain(targets)
         .flat_map(|table| TABLES.iter().filter_map(|name| table.get(*name)))
         .filter_map(toml::Value::as_table)
-        .flat_map(Table::keys)
-        .map(|name| name.replace('-', "_"))
-        .collect()
+        .flat_map(|table| table.iter());
+    for (key, value) in entries {
+        let name = key.replace('-', "_");
+        let package = value
+            .get("package")
+            .and_then(toml::Value::as_str)
+            .map(|package| package.replace('-', "_"));
+        if let Some(package) = package.filter(|package| *package != name) {
+            found.renames.insert(name.clone(), package);
+        }
+        found.names.insert(name);
+    }
+    found
 }
 
 #[cfg(test)]
@@ -66,7 +87,7 @@ mod tests {
 
     fn names(text: &str) -> Vec<String> {
         let manifest: Table = toml::from_str(text).unwrap();
-        listed(&manifest).into_iter().collect()
+        listed(&manifest).names.into_iter().collect()
     }
 
     #[test]
@@ -86,5 +107,26 @@ mod tests {
     #[test]
     fn a_manifest_without_dependencies_lists_none() {
         assert_eq!(names("[package]\nname = \"x\"\n"), Vec::<String>::new());
+    }
+
+    #[test]
+    fn a_renamed_dependency_maps_its_name_to_the_package() {
+        let text = "[dependencies]\n\
+                    alpha = { path = \"../a-lib\", package = \"a-lib\" }\n\
+                    plain = \"1\"\n\
+                    [dev-dependencies.beta-x]\npackage = \"b-lib\"\nversion = \"1\"\n\
+                    [target.'cfg(unix)'.build-dependencies]\ngamma = { package = \"c\" }\n";
+        let manifest: Table = toml::from_str(text).unwrap();
+        let found = listed(&manifest);
+        let renames: Vec<_> = found.renames.into_iter().collect();
+        assert_eq!(
+            renames,
+            [
+                ("alpha".to_owned(), "a_lib".to_owned()),
+                ("beta_x".to_owned(), "b_lib".to_owned()),
+                ("gamma".to_owned(), "c".to_owned()),
+            ]
+        );
+        assert!(found.names.contains("alpha") && found.names.contains("plain"));
     }
 }

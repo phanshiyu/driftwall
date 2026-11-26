@@ -213,7 +213,7 @@ fn an_explicit_depth_never_makes_module_nodes() {
 
 #[test]
 fn a_name_the_contract_cannot_hold_falls_back_to_directory_nodes() {
-    for bad in ["src/_.py", "src/.eslintrc.js", "src/end.rs", "src/9a.ts"] {
+    for bad in ["src/_.py", "src/.eslintrc.js", "src/9a.ts"] {
         let p = plan_of(&["src/a.ts", "src/b.ts", bad], None);
         assert_eq!(tags(&p), pairs(&[("src", "src")]), "{bad}");
     }
@@ -222,6 +222,12 @@ fn a_name_the_contract_cannot_hold_falls_back_to_directory_nodes() {
         tags(&bad_directory),
         pairs(&[("src", "src"), ("src/.hidden", "hidden")])
     );
+}
+
+#[test]
+fn a_module_called_like_a_keyword_gets_the_parent_prefix() {
+    let p = plan_of(&["src/a.ts", "src/b.ts", "src/end.rs"], None);
+    assert_eq!(tags(&p), pairs(&[("src", "src-*")]));
 }
 
 #[test]
@@ -268,7 +274,7 @@ fn ids_are_sanitised_and_never_reserved_or_colliding() {
         Some(2),
     );
     let ids: Vec<String> = tags(&p).into_iter().map(|(_, id)| id).collect();
-    assert_eq!(ids, ["n", "n-9lives", "end-2", "my-pkg", "my-pkg-2"]);
+    assert_eq!(ids, ["n", "n-9lives", "x-end", "my-pkg", "my-pkg-2"]);
     for id in &ids {
         assert!(NodeId::new(id).is_ok(), "{id}");
     }
@@ -475,4 +481,35 @@ fn map_output_writes_map_lines_and_no_arch_files() {
     assert_eq!(summary.tag_files, 0);
     assert!(summary.map_lines > 0);
     assert!(!dir.path().join("src/a/.arch").exists());
+}
+
+#[test]
+fn directory_ids_are_never_ones_mermaid_cannot_parse() {
+    let found = plan_of(
+        &[
+            "src/class/a.ts",
+            "src/style/a.ts",
+            "src/end-user/a.ts",
+            "src/ui/a.ts",
+        ],
+        None,
+    );
+    let ids: Vec<String> = tags(&found).into_iter().map(|(_, id)| id).collect();
+    assert!(
+        ids.iter()
+            .all(|id| !NodeId::mermaid_rejects(id.trim_end_matches('*'))),
+        "{ids:?}"
+    );
+    assert!(ids.contains(&"src-class".to_owned()), "{ids:?}");
+}
+
+#[test]
+fn module_ids_are_never_ones_mermaid_cannot_parse() {
+    let found = plan_of(&["src/style.ts", "src/end.ts", "src/app.ts"], None);
+    let ids: Vec<String> = tags(&found).into_iter().map(|(_, id)| id).collect();
+    assert!(
+        ids.iter()
+            .all(|id| !id.starts_with("style") && !id.starts_with("end")),
+        "{ids:?}"
+    );
 }

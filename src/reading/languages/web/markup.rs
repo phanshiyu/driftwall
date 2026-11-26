@@ -35,10 +35,11 @@ const ASSET_RELS: &[&str] = &[
 /// The scan of a `.svelte` file: every `<script>` element, parsed as TypeScript when its `lang` is
 /// `ts` or `typescript` and as JavaScript otherwise.
 pub fn svelte(source: &str, _file: &Path) -> Scan {
-    let regions = markup::scan(source, true, &["script"])
+    let mut regions: Vec<Region> = markup::scan(source, true, &["script"])
         .iter()
         .filter_map(|tag| region(tag, language_of(tag)))
         .collect();
+    regions.extend(expression_regions(source));
     Scan {
         regions,
         loads: Vec::new(),
@@ -114,6 +115,146 @@ fn region(tag: &Tag, grammar: &'static Grammar) -> Option<Region> {
             start_point: Point::new(text.start.row, text.start.column),
             end_point: Point::new(text.end.row, text.end.column),
         }),
+        fragment: false,
+    })
+}
+
+/// The range of the bytes `start..end` of `source`, with the points tree-sitter needs.
+fn range_in(source: &str, start: usize, end: usize) -> Range {
+    let point = |byte: usize| {
+        let before = source.as_bytes().get(..byte).unwrap_or_default();
+        let row = before.split(|&b| b == b'\n').count() - 1;
+        let line_start = before
+            .iter()
+            .rposition(|&b| b == b'\n')
+            .map_or(0, |at| at + 1);
+        Point::new(row, before.len() - line_start)
+    };
+    Range {
+        start_byte: start,
+        end_byte: end,
+        start_point: point(start),
+        end_point: point(end),
+    }
+}
+
+/// The `{ .. }` expressions of the markup of a Svelte file (text and attribute values, outside
+/// `<script>`, `<style>` and comments) that hold a call of `import(`, each as a JavaScript region,
+/// so `{#await import('./a')}` and `on:click={() => import('./b')}` are read like a script import.
+fn expression_regions(source: &str) -> Vec<Region> {
+    let bytes = source.as_bytes();
+    let mut regions = Vec::new();
+    let mut at = 0;
+    while let Some(&byte) = bytes.get(at) {
+        match byte {
+            b'<' if bytes
+                .get(at..)
+                .is_some_and(|rest| rest.starts_with(b"<!--")) =>
+            {
+                at = find_after(bytes, at, b"-->");
+            }
+            b'<' => match raw_element(bytes, at) {
+                Some(end) => at = end,
+                None => at += 1,
+            },
+            b'{' => match closing_brace(bytes, at) {
+                Some(close) => {
+                    regions.extend(expression(source, at + 1, close));
+                    at = close + 1;
+                }
+                None => at += 1,
+            },
+            _ => at += 1,
+        }
+    }
+    regions
+}
+
+/// The offset after the end tag of the `<script>` or `<style>` element that starts at `at`, or
+/// `None` when `at` starts no such element.
+fn raw_element(bytes: &[u8], at: usize) -> Option<usize> {
+    let rest = bytes.get(at + 1..)?;
+    let name = ["script", "style"].into_iter().find(|name| {
+        rest.get(..name.len())
+            .is_some_and(|head| head.eq_ignore_ascii_case(name.as_bytes()))
+            && rest
+                .get(name.len())
+                .is_some_and(|next| !next.is_ascii_alphanumeric())
+    })?;
+    let lower = bytes.to_ascii_lowercase();
+    let close = format!("</{name}");
+    let end = find_after(&lower, at, close.as_bytes());
+    Some(find_after(bytes, end, b">"))
+}
+
+/// The offset just after the first `needle` at or after `from`, or the end of `bytes`.
+fn find_after(bytes: &[u8], from: usize, needle: &[u8]) -> usize {
+    bytes
+        .get(from..)
+        .and_then(|rest| {
+            rest.windows(needle.len())
+                .position(|window| window == needle)
+        })
+        .map_or(bytes.len(), |found| from + found + needle.len())
+}
+
+/// The offset of the `}` that closes the `{` at `open`, skipping string and template literals, or
+/// `None` when it never closes.
+fn closing_brace(bytes: &[u8], open: usize) -> Option<usize> {
+    let mut depth = 0_usize;
+    let mut at = open;
+    while let Some(&byte) = bytes.get(at) {
+        match byte {
+            b'{' => depth += 1,
+            b'}' => {
+                depth = depth.checked_sub(1)?;
+                if depth == 0 {
+                    return Some(at);
+                }
+            }
+            b'\'' | b'"' | b'`' => {
+                at += 1;
+                while let Some(&inner) = bytes.get(at) {
+                    if inner == b'\\' {
+                        at += 1;
+                    } else if inner == byte {
+                        break;
+                    }
+                    at += 1;
+                }
+            }
+            _ => {}
+        }
+        at += 1;
+    }
+    None
+}
+
+/// The region of the expression between `start` and `end` of `source` when it calls `import(`,
+/// without the Svelte block keyword in front (`#await`, `@const`, ..) and what follows an `#await`
+/// expression (`then x`).
+fn expression(source: &str, start: usize, end: usize) -> Option<Region> {
+    let text = source.get(start..end)?;
+    if !text.contains("import(") {
+        return None;
+    }
+    let lead = text.len() - text.trim_start().len();
+    let mut from = start + lead;
+    let body = text.trim_start();
+    let mut stop = end;
+    if let Some(rest) = body.strip_prefix(['#', ':', '@']) {
+        let word = rest.split_whitespace().next().unwrap_or_default();
+        from += 1 + word.len();
+        if word == "await"
+            && let Some(then) = source.get(from..end).and_then(|tail| tail.find(" then "))
+        {
+            stop = from + then;
+        }
+    }
+    Some(Region {
+        grammar: &JAVASCRIPT_GRAMMAR,
+        range: Some(range_in(source, from, stop)),
+        fragment: true,
     })
 }
 

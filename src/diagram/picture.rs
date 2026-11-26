@@ -177,7 +177,8 @@ impl<'a> Scene<'a> {
     /// trimmed, and the id when nothing is left.
     fn text(&self, label: &str, id: &str) -> String {
         if !self.short_labels {
-            return sanitize(label);
+            // why: Mermaid cannot draw an empty label, so the id stands in.
+            return sanitize(if label.is_empty() { id } else { label });
         }
         let short = label.split_once(':').map_or(label, |(head, _)| head).trim();
         sanitize(if short.is_empty() { id } else { short })

@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use super::ids::{RESERVED, sanitize};
+use super::ids::{sanitize, undrawable};
 use super::units::Unit;
 use crate::code::{DirTag, Scope, Tag};
 use crate::contract::{Contract, NodeId};
@@ -87,12 +87,7 @@ pub(super) fn assign(
     }
 
     let total = contract.nodes.len();
-    let mut taken: BTreeSet<String> = contract
-        .nodes
-        .keys()
-        .map(ToString::to_string)
-        .chain(RESERVED.iter().map(|word| (*word).to_owned()))
-        .collect();
+    let mut taken: BTreeSet<String> = contract.nodes.keys().map(ToString::to_string).collect();
     for (key, members) in groups {
         // why: a boundary around one node, or around every node, says nothing.
         if members.len() < 2 || members.len() >= total {
@@ -108,12 +103,22 @@ pub(super) fn assign(
     }
 }
 
+/// Whether Mermaid cannot parse `name` as a `subgraph` id: also `default` and `default-<x>`.
+fn undrawable_boundary(name: &str) -> bool {
+    undrawable(name) || name == "default" || name.starts_with("default-")
+}
+
 /// `base`, or `base-group`, `base-group-2`, ... when that is taken.
 fn free_name(base: &str, taken: &BTreeSet<String>) -> String {
-    if !taken.contains(base) {
+    if !taken.contains(base) && !undrawable_boundary(base) {
         return base.to_owned();
     }
-    let plain = format!("{base}-group");
+    // why: `end-group` would still start with a word Mermaid reads as syntax, so `_` joins it.
+    let plain = if undrawable_boundary(&format!("{base}-group")) {
+        format!("{}_group", base.replace('-', "_"))
+    } else {
+        format!("{base}-group")
+    };
     if !taken.contains(&plain) {
         return plain;
     }
@@ -323,5 +328,14 @@ mod tests {
             .filter(|(_, b)| *b == some("app-src-core"))
             .count();
         assert_eq!((web, core), (5, 5));
+    }
+
+    #[test]
+    fn a_boundary_name_mermaid_cannot_draw_gets_a_group_spelling() {
+        let taken = BTreeSet::new();
+        assert_eq!(free_name("graph", &taken), "graph_group");
+        assert_eq!(free_name("end", &taken), "end_group");
+        assert_eq!(free_name("end-user", &taken), "end_user_group");
+        assert_eq!(free_name("ui", &taken), "ui");
     }
 }

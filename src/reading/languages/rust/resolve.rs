@@ -65,8 +65,15 @@ pub fn resolve(
     let site = Site::of(importer, &inline, files.known, env.paths);
     let mut resolutions = Vec::new();
     for path in &paths {
-        let path = through_bindings(path, bindings, &inline, site.as_ref(), files, env);
-        let Some((target, symbol)) = path.target(site.as_ref(), files, env) else {
+        let path = through_bindings(
+            path,
+            bindings,
+            &inline,
+            (importer, site.as_ref()),
+            files,
+            env,
+        );
+        let Some((target, symbol)) = path.target(importer, site.as_ref(), files, env) else {
             resolutions.extend(package(&path, importer, env));
             continue;
         };
@@ -88,14 +95,13 @@ pub fn resolve(
 /// `Cargo.toml` above `importer` lists. A path that starts with `crate`, `self` or `super` has no
 /// first name, and a library crate of the repository never gets here: it resolves to a file.
 fn package(path: &WrittenPath<'_>, importer: &Path, env: &Env<'_>) -> Option<Resolution> {
-    let name = path.first_name()?;
+    let name = path.crate_name()?;
     let kind = if STDLIB_CRATES.contains(&name) {
         PackageKind::Stdlib
-    } else if importer.parent().is_some_and(|dir| {
-        dir.ancestors()
-            .find_map(|ancestor| env.dependencies.get(ancestor))
-            .is_some_and(|names| names.contains(name))
-    }) {
+    } else if env
+        .manifest_of(importer)
+        .is_some_and(|found| found.names.contains(name))
+    {
         PackageKind::ThirdParty
     } else {
         return None;
@@ -129,20 +135,23 @@ pub(super) fn through_bindings<'s>(
     path: &WrittenPath<'s>,
     bindings: &Bindings<'s>,
     inline: &[&'s str],
-    site: Option<&Site>,
+    (importer, site): (&Path, Option<&Site>),
     files: &Files<'_>,
     env: &Env<'_>,
 ) -> WrittenPath<'s> {
-    let bound = path
-        .first_name()
-        .and_then(|name| bindings.get(inline, name));
-    match bound {
+    // why: `self::z::A` reads `z` in the file's own module, so a name the file bound is looked up like a leading one.
+    let (skipped, name) = match (path.first_name(), path.self_name()) {
+        (Some(name), _) => (1, name),
+        (None, Some(name)) => (2, name),
+        (None, None) => return path.clone(),
+    };
+    match bindings.get(inline, name) {
         Some(prefix)
             if prefix
-                .target(site, files, env)
+                .target(importer, site, files, env)
                 .is_some_and(|(_, used)| used == Symbol::All) =>
         {
-            path.with_first_replaced(&prefix)
+            path.with_leading_replaced(skipped, &prefix)
         }
         _ => path.clone(),
     }

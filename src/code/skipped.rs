@@ -13,7 +13,10 @@ pub enum SkipReason {
     /// A TypeScript or JavaScript package that no alias maps and `package.json` does not declare.
     UndeclaredPackage,
     /// A module reference computed at run time, so it names no file: `import(expr)`,
-    /// `require(expr)`, Python `importlib.import_module(..)` and `__import__(..)`.
+    /// `require(expr)`, Python `importlib.import_module(..)` and `__import__(..)`. Also the
+    /// JavaScript forms that load code in a way driftwall does not follow, with a message saying
+    /// which: `import.meta.glob(..)`, `require.resolve(..)`, `createRequire(..)(..)` and a
+    /// variable set to `require` or `createRequire(..)`.
     DynamicSpecifier,
     /// A Rust `include_str!` or `include_bytes!` of a file that is not a known source file.
     EmbedNonSource,
@@ -32,6 +35,15 @@ pub enum SkipReason {
     /// A `new URL('<literal>', import.meta.url)` whose target is a directory, missing or outside
     /// the repository.
     FileReferenceMissing,
+    /// A bare specifier that names a workspace package, or a dependency linked to a directory or
+    /// to a workspace package (`file:`, `link:`, `workspace:`), and finds no source file: its entry
+    /// is a build output the package's tsconfig does not map to sources, or the link leads to no
+    /// package of the repository.
+    WorkspaceEntryMissing,
+    /// A source file whose syntax tree has an error or a missing node, such as a conflict marker or
+    /// an unterminated string: the imports after the error may be missing. One per file, at the
+    /// first error. Recorded by import extraction.
+    Unparsed,
 }
 
 /// A reference driftwall saw and could not follow, kept so it is never silently dropped.

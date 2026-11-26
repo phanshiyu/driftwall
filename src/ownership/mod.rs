@@ -21,7 +21,7 @@ mod census_tests;
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsStr;
 use std::fs;
-use std::io::{self, BufRead};
+use std::io::{self, BufRead, Read};
 use std::path::{Component, Path, PathBuf};
 
 use ignore::WalkBuilder;
@@ -45,6 +45,8 @@ use crate::contract::{ModelError, NodeId};
 const ARCH_FILE: &str = ".arch";
 /// Extra gitignore-syntax exclusions, honored in addition to `.gitignore`.
 const IGNORE_FILE: &str = ".driftwallignore";
+/// What the content of a `.git` file starts with when it points at a repository elsewhere.
+const GITDIR_PREFIX: &str = "gitdir:";
 
 /// One `.arch` file's decision about its directory.
 struct Decision {
@@ -471,12 +473,31 @@ fn read_head(path: &Path) -> String {
     String::from_utf8_lossy(&head).into_owned()
 }
 
-/// Whether `entry` is a directory below the root that holds its own `.git` (a nested repository or
-/// a git worktree, which git itself does not walk into either).
+/// Whether `entry` is a directory below the root that is a nested repository or a git worktree,
+/// which git itself does not walk into either.
 fn nested_repository(entry: &ignore::DirEntry) -> bool {
     entry.depth() > 0
         && entry.file_type().is_some_and(|kind| kind.is_dir())
-        && entry.path().join(".git").exists()
+        && is_repository(entry.path())
+}
+
+/// Whether `dir` is the top of a real git repository: its `.git` is a directory holding `HEAD`, or
+/// a file that starts with `gitdir:` (a worktree or a submodule). An empty `.git` file or
+/// directory is no repository, and git itself tracks the files around it.
+pub(crate) fn is_repository(dir: &Path) -> bool {
+    let git = dir.join(".git");
+    let Ok(metadata) = fs::metadata(&git) else {
+        return false;
+    };
+    if metadata.is_dir() {
+        return git.join("HEAD").is_file();
+    }
+    let mut start = [0_u8; GITDIR_PREFIX.len()];
+    metadata.is_file()
+        && fs::File::open(&git)
+            .and_then(|mut file| file.read_exact(&mut start))
+            .is_ok()
+        && start == *GITDIR_PREFIX.as_bytes()
 }
 
 /// The walker over `root`. With `driftwallignore` off it still honors `.gitignore`, so the files it
@@ -1038,6 +1059,44 @@ mod tests {
             .map(PathBuf::as_path)
             .collect();
         assert_eq!(walked, [Path::new("src/a.ts")]);
+    }
+
+    #[test]
+    fn an_empty_or_bogus_git_entry_does_not_hide_a_subtree() {
+        let dir = tree(&[
+            ("a/.git", ""),
+            ("a/x.ts", ""),
+            ("b/.git/placeholder", ""),
+            ("b/y.ts", ""),
+            ("c/.git", "not a pointer\n"),
+            ("c/z.ts", ""),
+            ("d/.git", "gitdir"),
+            ("d/w.ts", ""),
+        ]);
+        let found = scan(dir.path()).unwrap();
+        let walked: Vec<&Path> = found.unmapped.iter().map(PathBuf::as_path).collect();
+        assert_eq!(
+            walked,
+            [
+                Path::new("a/x.ts"),
+                Path::new("b/y.ts"),
+                Path::new("c/z.ts"),
+                Path::new("d/w.ts"),
+            ]
+        );
+    }
+
+    #[test]
+    fn only_a_gitdir_file_or_a_directory_with_head_is_a_repository() {
+        let dir = tree(&[
+            ("file/.git", "gitdir: ../elsewhere\n"),
+            ("dir/.git/HEAD", "ref: refs/heads/main\n"),
+            ("empty/.git", ""),
+            ("hollow/.git/config", ""),
+        ]);
+        let is = |name: &str| is_repository(&dir.path().join(name));
+        assert!(is("file") && is("dir"));
+        assert!(!is("empty") && !is("hollow") && !is("missing"));
     }
 
     #[test]

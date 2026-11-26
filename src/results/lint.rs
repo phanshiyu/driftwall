@@ -51,6 +51,10 @@ pub enum ViolationKind {
     FacadeWithoutExports,
     /// A line before the `flowchart` header is exactly `%%`, which Mermaid cannot draw.
     BareComment,
+    /// A node or boundary id that Mermaid cannot parse, such as `class` or `end-user`.
+    UndrawableId,
+    /// An edge label, node label, subgraph label or comment that Mermaid cannot parse.
+    UndrawableLabel,
     /// An import goes between two children of a `%% isolated` boundary.
     IsolationBreach,
     /// A `%% isolated` boundary has fewer than two children.

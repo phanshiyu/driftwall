@@ -30,6 +30,8 @@ pub(super) const fn skip_reason_str(reason: SkipReason) -> &'static str {
         SkipReason::UndeclaredOwner => "undeclared-owner",
         SkipReason::AliasTargetMissing => "alias-target-missing",
         SkipReason::FileReferenceMissing => "file-reference-missing",
+        SkipReason::Unparsed => "unparsed",
+        SkipReason::WorkspaceEntryMissing => "workspace-entry-missing",
     }
 }
 
@@ -133,6 +135,8 @@ mod tests {
             SkipReason::UndeclaredOwner,
             SkipReason::AliasTargetMissing,
             SkipReason::FileReferenceMissing,
+            SkipReason::Unparsed,
+            SkipReason::WorkspaceEntryMissing,
         ] {
             let serde_name = serde_json::to_string(&reason).unwrap();
             assert_eq!(serde_name, format!("\"{}\"", skip_reason_str(reason)));

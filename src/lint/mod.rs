@@ -16,6 +16,7 @@ mod packages;
 mod reconcile;
 mod rules;
 mod siblings;
+mod undrawable;
 
 #[cfg(test)]
 mod alias_tests;
@@ -234,6 +235,9 @@ pub fn observe(root: &Path, options: &LintOptions) -> Result<Observation, LintEr
     report
         .violations
         .extend(bare_comment::findings(&contract, &options.contract));
+    report
+        .violations
+        .extend(undrawable::findings(&contract, &options.contract));
     report.violations.sort();
     report.violations.dedup();
     let symbols = observed_symbols(&contract, &edge_ownership, &imports);
