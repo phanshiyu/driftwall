@@ -2677,7 +2677,8 @@ becomes a layer, or is an entry file directly in the directory that declares not
 `__init__.py`, see "Module nodes"), the directory is instead tagged `node: <id>-*`: the layers are
 the modules `<id>-<child>`, and the entry file folds like `src/lib.rs` instead of keeping a node of
 its own (unless a module that declares something has the name it would derive). A directory node
-that is split keeps its entry file. When the node has a name (`ui-components`, a Swift target) the
+whose every file is in a layer or is such an entry file is split the same way: the entry file gets
+no owner and the node is not kept, the layers keep the ids below. When the node has a name (`ui-components`, a Swift target) the
 children are `<name>-<child>`; otherwise their ids come from the path like any directory node.
 
 A node with more than 4 qualifying children is not split: that is a flat collection of features

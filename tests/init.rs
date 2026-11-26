@@ -777,6 +777,56 @@ fn a_split_directory_folds_its_declarations_only_entry_file() {
     );
 }
 
+fn glued_package(init_py: &str) -> TempDir {
+    let mut files: Vec<(String, String)> = vec![
+        ("app/app/__init__.py".into(), String::new()),
+        ("app/app/m.py".into(), "def x(): pass\n".into()),
+        ("tools/pk/__init__.py".into(), init_py.into()),
+    ];
+    for n in 0..36 {
+        files.push((format!("tools/pk/a/f{n}.py"), "def f(): pass\n".into()));
+    }
+    let borrowed: Vec<(&str, &str)> = files
+        .iter()
+        .map(|(p, c)| (p.as_str(), c.as_str()))
+        .collect();
+    repo(&borrowed)
+}
+
+#[test]
+fn a_split_directory_node_folds_its_declarations_only_init_file() {
+    let dir = glued_package("\"\"\"Glue.\"\"\"\n");
+    let output = init(&dir, &[]);
+    assert_eq!(code(&output), 0, "{}", stderr(&output));
+    // why: `tools/pk` would own only glue that declares nothing, so it has no node and no tag.
+    assert_eq!(node_ids(&dir), ["app-app", "tools-pk-a"]);
+    assert_eq!(read(&dir, "tools/pk/a/.arch"), "node: tools-pk-a\n");
+    assert!(!dir.path().join("tools/pk/.arch").exists());
+    let found = Command::new(env!("CARGO_BIN_EXE_driftwall"))
+        .args(["where", "tools/pk/__init__.py", "--root"])
+        .arg(dir.path())
+        .output()
+        .unwrap();
+    assert!(!stdout(&found).contains("tools-pk:"), "{}", stdout(&found));
+    let lint = run_on("lint", dir.path(), &["--strict"]);
+    assert_eq!(
+        (code(&lint), findings(&lint)),
+        (0, "driftwall: clean\n".to_owned()),
+        "{}",
+        read(&dir, "architecture.mmd")
+    );
+}
+
+#[test]
+fn a_split_directory_node_keeps_an_init_file_that_declares_something() {
+    let dir = glued_package("def setup(): pass\n");
+    let output = init(&dir, &[]);
+    assert_eq!(code(&output), 0, "{}", stderr(&output));
+    assert_eq!(node_ids(&dir), ["app-app", "tools-pk-a", "tools-pk-pk"]);
+    let lint = run_on("lint", dir.path(), &["--strict"]);
+    assert_eq!(code(&lint), 0, "{}", findings(&lint));
+}
+
 #[test]
 fn this_repository_baselines_clean_without_its_contract() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));

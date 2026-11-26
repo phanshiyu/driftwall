@@ -83,6 +83,16 @@ impl Draft {
         {
             return;
         }
+        // why: a directory node left owning only folded glue must not exist, so the glue folds instead.
+        let folded_glue: BTreeSet<&PathBuf> = match owner {
+            Owner::Directory(_) => self
+                .folded_glue(dir, files, layers)
+                .map(|(glue, _)| glue)
+                .unwrap_or_default()
+                .into_iter()
+                .collect(),
+            Owner::Module(_) => BTreeSet::new(),
+        };
         let whole = self.whole_paths.contains(dir) || matches!(owner, Owner::Module(_));
         if let Owner::Module(id) = owner {
             // why: the module id moves to the directory node of the loose files, so it is no longer a derived module.
@@ -95,6 +105,10 @@ impl Draft {
             }
         }
         for file in files {
+            if folded_glue.contains(file) {
+                self.owners.remove(file);
+                continue;
+            }
             let target = child_of(dir, file)
                 .filter(|child| layers.contains(child))
                 .map_or_else(|| dir.to_path_buf(), |child| dir.join(child.0.as_os_str()));
@@ -113,6 +127,10 @@ impl Draft {
             }
             self.owners.insert(file.clone(), Owner::Directory(target));
         }
+        if !folded_glue.is_empty() {
+            self.directories.remove(dir);
+            self.groups.remove(dir);
+        }
     }
 }
 
@@ -128,22 +146,9 @@ impl Draft {
         files: &[PathBuf],
         layers: &BTreeSet<OsStringKey>,
     ) -> bool {
-        let peers = peers_in(
-            dir,
-            self.all_files
-                .iter()
-                .filter(|file| !self.trivial.contains(*file))
-                .map(PathBuf::as_path),
-        );
-        let (glue, layered): (Vec<&PathBuf>, Vec<&PathBuf>) =
-            files.iter().partition(|file| child_of(dir, file).is_none());
-        let folded = |file: &&PathBuf| self.trivial.contains(*file) && folds(dir, file, &peers);
-        let all_layered = layered
-            .iter()
-            .all(|file| child_of(dir, file).is_some_and(|child| layers.contains(&child)));
-        if glue.is_empty() || !glue.iter().all(folded) || !all_layered {
+        let Some((glue, layered)) = self.folded_glue(dir, files, layers) else {
             return false;
-        }
+        };
         let Ok(prefix) = Prefix::new(&format!("{id}-")) else {
             return false;
         };
@@ -164,6 +169,31 @@ impl Draft {
             self.fixed.insert(id.clone());
         }
         false
+    }
+
+    /// The loose files of `files` (directly in `dir`) and the files in a layer, when every file is
+    /// one or the other and every loose file is an entry file that declares nothing and folds;
+    /// `None` when there is no loose file or any file is neither.
+    fn folded_glue<'a>(
+        &self,
+        dir: &Path,
+        files: &'a [PathBuf],
+        layers: &BTreeSet<OsStringKey>,
+    ) -> Option<(Vec<&'a PathBuf>, Vec<&'a PathBuf>)> {
+        let peers = peers_in(
+            dir,
+            self.all_files
+                .iter()
+                .filter(|file| !self.trivial.contains(*file))
+                .map(PathBuf::as_path),
+        );
+        let (glue, layered): (Vec<&PathBuf>, Vec<&PathBuf>) =
+            files.iter().partition(|file| child_of(dir, file).is_none());
+        let folded = |file: &&PathBuf| self.trivial.contains(*file) && folds(dir, file, &peers);
+        let all_layered = layered
+            .iter()
+            .all(|file| child_of(dir, file).is_some_and(|child| layers.contains(&child)));
+        (!glue.is_empty() && glue.iter().all(folded) && all_layered).then_some((glue, layered))
     }
 }
 

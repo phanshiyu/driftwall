@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- `init` folds a declarations-only entry file (`mod.rs`, `__init__.py`) in a directory it splits into modules, instead of giving it a node.
+- `init` folds a declarations-only entry file (`mod.rs`, `__init__.py`) in a directory it splits into layers (modules or directory nodes), instead of giving it a node.
 
 ## 0.5.1 - 2026-11-26
 
