@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.1 - 2026-11-26
 
 - New warning `bare-comment`: a line before the `flowchart` header that is exactly `%%`. Mermaid
   removes a comment only when text follows `%%`, so GitHub and other renderers cannot draw such a

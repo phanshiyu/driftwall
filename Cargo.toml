@@ -1,6 +1,6 @@
 [package]
 name = "driftwall"
-version = "0.5.0"
+version = "0.5.1"
 edition = "2024"
 rust-version = "1.90"
 description = "Architecture drift linter: a Mermaid diagram is the contract, your code must obey it."
