@@ -10,8 +10,8 @@ use super::layout::{Draft, Owner, label_of};
 use super::units::{Unit, python_units};
 use crate::code::{DirTag, Language, Scope, Tag};
 use crate::contract::{Contract, Edge, EdgeKind, NodeId, NodeInfo};
-use crate::imports::FileImports;
 use crate::ownership::owner_in;
+use crate::reading::imports::FileImports;
 
 /// Settings for [`plan`].
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]

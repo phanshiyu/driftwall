@@ -2672,7 +2672,12 @@ that no nearer tag takes, and the node keeps the rest (its loose files and the s
 directories) as a directory node of the directory, with the same id it had and scope `subtree`
 (small children are not covered by a tag of their own, so they must stay under the parent). A
 module node that is split is no longer derived by `node: *`: its id is now declared by the tag at its
-directory, and the nearer tags win. When the node has a name (`ui-components`, a Swift target) the
+directory, and the nearer tags win. When every file of the split module is in a child directory that
+becomes a layer, or is an entry file directly in the directory that declares nothing (`mod.rs`,
+`__init__.py`, see "Module nodes"), the directory is instead tagged `node: <id>-*`: the layers are
+the modules `<id>-<child>`, and the entry file folds like `src/lib.rs` instead of keeping a node of
+its own (unless a module that declares something has the name it would derive). A directory node
+that is split keeps its entry file. When the node has a name (`ui-components`, a Swift target) the
 children are `<name>-<child>`; otherwise their ids come from the path like any directory node.
 
 A node with more than 4 qualifying children is not split: that is a flat collection of features
@@ -3281,9 +3286,9 @@ locates and assigns owners through it. `markup` scans HTML and Svelte for script
 source file from an asset) and by `web`. `imports` is a facade: `%% exports imports` lists the six
 names other nodes may use, and the rest of `imports` is compiled for tests only or private.
 
-`src/imports/` holds one directory per layer of reading code:
+`src/reading/` holds one directory per layer of reading code (`mod.rs` only declares them):
 
-- `src/imports/` itself is `imports`: `mod.rs` is the public API and only re-exports. `extract.rs`
+- `src/reading/imports/` is `imports`: `mod.rs` is the public API and only re-exports. `extract.rs`
   parses a file and records what its language resolves, `language.rs` is the one place that
   dispatches on the language, `collect.rs` reads a whole repository, builds the `Environment`
   (`environment.rs`) and follows re-exports (`reexport.rs`). `file_imports.rs` and `error.rs` are
@@ -3291,11 +3296,11 @@ names other nodes may use, and the rest of `imports` is compiled for tests only 
   whole pipeline across languages are in `scenarios/`, with the shared fixtures. A language's own
   pipeline tests sit in its `scenarios/`, which the test edge `languages -->|test| imports` allows:
   test code of a language may drive `imports`, production code may not.
-- `src/imports/syntax/` is `syntax`: what no language owns. The shape of a language entry
+- `src/reading/syntax/` is `syntax`: what no language owns. The shape of a language entry
   (`spec.rs`), the types a resolver receives and answers with (`resolution.rs`), the re-export
   `Table`, the statement flags every language shares, the import queries, globs, string literals
   and repository paths.
-- `src/imports/web/`, `python/`, `rust/`, `swift/` and `shell/` are one language each, with
+- `src/reading/languages/web/`, `python/`, `rust/`, `swift/` and `shell/` are one language each, with
   its resolver, its statement rules, its grammar, what it reads from the repository (`tsconfig`,
   `package.json` and Vite for `web`, import roots for Python, `Cargo.toml` and `#[path]` for
   Rust, SwiftPM targets for Swift) and its re-export table. `web/markup.rs` is the part

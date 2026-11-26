@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use super::*;
 use crate::code::{Location, ResolvedImport, Scope};
-use crate::imports::FileImports;
+use crate::reading::imports::FileImports;
 
 fn files(paths: &[&str]) -> BTreeMap<PathBuf, Language> {
     paths

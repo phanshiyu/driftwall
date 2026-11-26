@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- `init` folds a declarations-only entry file (`mod.rs`, `__init__.py`) in a directory it splits into modules, instead of giving it a node.
+
 ## 0.5.1 - 2026-11-26
 
 - New warning `bare-comment`: a line before the `flowchart` header that is exactly `%%`. Mermaid

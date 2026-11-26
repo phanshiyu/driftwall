@@ -7,8 +7,8 @@ use std::path::{Path, PathBuf};
 use super::*;
 use crate::code::{ImportKind, ResolvedImport};
 use crate::diagram;
-use crate::imports::FileImports;
 use crate::lint::fixtures::{at, node};
+use crate::reading::imports::FileImports;
 use crate::results::{Severity, Violation, ViolationKind};
 
 /// `features` holds `billing` (with `invoices` inside it, three levels deep) and `search`; `shared`

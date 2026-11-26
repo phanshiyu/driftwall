@@ -54,8 +54,8 @@ use thiserror::Error;
 use crate::code::{Language, Ownership, PackageUse, Symbol};
 use crate::contract::{Contract, DEFAULT_CONTRACT, Edge, NodeId};
 use crate::diagram::{self, DiagramError};
-use crate::imports::{self, ImportsError};
 use crate::ownership::{self, OwnershipError};
+use crate::reading::imports::{self, ImportsError};
 use crate::results::{BlindSpots, InterfaceEntry, LintReport, NodeBudget, PackageSummary, Site};
 
 pub use observe::{observed_edges, observed_symbols};

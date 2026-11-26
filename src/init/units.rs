@@ -10,7 +10,7 @@ use serde::Deserialize;
 use serde::de::IgnoredAny;
 
 use crate::code::Language;
-use crate::imports;
+use crate::reading::imports;
 
 const CARGO_MANIFEST: &str = "Cargo.toml";
 /// File names that make a directory a JavaScript unit.

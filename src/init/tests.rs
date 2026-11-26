@@ -9,7 +9,7 @@ use super::*;
 use crate::code::Tag;
 use crate::code::{Location, ResolvedImport};
 use crate::contract::{Edge, EdgeKind, NodeId};
-use crate::imports::FileImports;
+use crate::reading::imports::FileImports;
 
 fn files(paths: &[&str]) -> BTreeMap<PathBuf, Language> {
     paths

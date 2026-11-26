@@ -8,7 +8,7 @@ use crate::contract::{
     BoundaryEdge, Contract, Cover, Declared, Denial, Edge, EdgeKind, MapTarget, Narrowing,
     OpenAccess,
 };
-use crate::imports::FileImports;
+use crate::reading::imports::FileImports;
 use crate::results::{
     Declaration, EdgeStatus, LintReport, Seen, Violation, ViolationKind, edge_status, path_key,
 };

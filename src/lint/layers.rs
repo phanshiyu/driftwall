@@ -70,8 +70,8 @@ mod tests {
     use super::*;
     use crate::code::Ownership;
     use crate::contract::{LayerOrder, NodeInfo};
-    use crate::imports::FileImports;
     use crate::lint::fixtures::{at, edge, node};
+    use crate::reading::imports::FileImports;
     use crate::results::Severity;
     use std::collections::BTreeMap;
     use std::path::{Path, PathBuf};

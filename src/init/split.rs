@@ -4,7 +4,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Component, Path, PathBuf};
 
-use super::layout::{Draft, Owner};
+use super::layout::{Counted, Draft, Owner};
+use crate::contract::{NodeId, Prefix};
+use crate::ownership::{folds, peers_in};
 
 /// Source files a node needs before it is split.
 pub(super) const MIN_NODE_FILES: usize = 35;
@@ -76,6 +78,11 @@ impl Draft {
             Owner::Module(id) => Some(id.to_string()),
             Owner::Directory(found) => self.names.get(found).cloned(),
         };
+        if let Owner::Module(id) = owner
+            && self.split_into_modules(id, dir, files, layers)
+        {
+            return;
+        }
         let whole = self.whole_paths.contains(dir) || matches!(owner, Owner::Module(_));
         if let Owner::Module(id) = owner {
             // why: the module id moves to the directory node of the loose files, so it is no longer a derived module.
@@ -106,6 +113,57 @@ impl Draft {
             }
             self.owners.insert(file.clone(), Owner::Directory(target));
         }
+    }
+}
+
+impl Draft {
+    /// Splits the module `id` of `dir` into the modules `<id>-<layer>` of a `node: <id>-*` tag at
+    /// `dir`, when every file is in a layer or is glue that declares nothing; the glue then folds
+    /// like `src/lib.rs` instead of keeping a node of its own. Changes nothing and returns false
+    /// otherwise.
+    fn split_into_modules(
+        &mut self,
+        id: &NodeId,
+        dir: &Path,
+        files: &[PathBuf],
+        layers: &BTreeSet<OsStringKey>,
+    ) -> bool {
+        let peers = peers_in(
+            dir,
+            self.all_files
+                .iter()
+                .filter(|file| !self.trivial.contains(*file))
+                .map(PathBuf::as_path),
+        );
+        let (glue, layered): (Vec<&PathBuf>, Vec<&PathBuf>) =
+            files.iter().partition(|file| child_of(dir, file).is_none());
+        let folded = |file: &&PathBuf| self.trivial.contains(*file) && folds(dir, file, &peers);
+        let all_layered = layered
+            .iter()
+            .all(|file| child_of(dir, file).is_some_and(|child| layers.contains(&child)));
+        if glue.is_empty() || !glue.iter().all(folded) || !all_layered {
+            return false;
+        }
+        let Ok(prefix) = Prefix::new(&format!("{id}-")) else {
+            return false;
+        };
+        let saved = self.modules.remove(id);
+        let was_fixed = self.fixed.remove(id);
+        let below: Vec<&Path> = layered.iter().map(|file| file.as_path()).collect();
+        if self.try_modules(dir, &below, &prefix, Counted::FilesAndDirectories) {
+            for file in glue {
+                self.owners.remove(file);
+            }
+            return true;
+        }
+        // why: a refused split must leave the module as it was.
+        if let Some(label) = saved {
+            self.modules.insert(id.clone(), label);
+        }
+        if was_fixed {
+            self.fixed.insert(id.clone());
+        }
+        false
     }
 }
 

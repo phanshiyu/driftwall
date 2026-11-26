@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use crate::code::{Location, Ownership, PackageKind, PackageUse};
 use crate::contract::{Contract, NodeId, PackagePattern, PackageRule, PackageRuleKind};
-use crate::imports::FileImports;
+use crate::reading::imports::FileImports;
 use crate::results::{PackageSummary, Violation, ViolationKind};
 
 use super::observe::declared_owner;

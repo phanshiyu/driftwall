@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use crate::code::{ImportKind, Ownership, ResolvedImport, SkipReason, Skipped, Symbol, Via};
 use crate::contract::{Contract, Edge, NodeId};
-use crate::imports::FileImports;
+use crate::reading::imports::FileImports;
 use crate::results::Site;
 
 /// Every resolved import that crosses from one declared owner to another, with its edge.

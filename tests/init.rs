@@ -740,6 +740,44 @@ fn where_reports_the_derived_node_and_its_arch_file() {
 }
 
 #[test]
+fn a_split_directory_folds_its_declarations_only_entry_file() {
+    let mut files: Vec<(String, String)> = vec![
+        ("Cargo.toml".into(), "[package]\nname = \"x\"\n".into()),
+        ("src/main.rs".into(), "fn main() {}\n".into()),
+        ("src/util.rs".into(), "pub fn u() {}\n".into()),
+        (
+            "src/engine/mod.rs".into(),
+            "//! Glue.\nmod a;\nmod b;\n".into(),
+        ),
+    ];
+    for layer in ["a", "b"] {
+        for n in 0..18 {
+            files.push((
+                format!("src/engine/{layer}/f{n}.rs"),
+                "pub fn f() {}\n".into(),
+            ));
+        }
+    }
+    let borrowed: Vec<(&str, &str)> = files
+        .iter()
+        .map(|(p, c)| (p.as_str(), c.as_str()))
+        .collect();
+    let dir = repo(&borrowed);
+    let output = init(&dir, &[]);
+    assert_eq!(code(&output), 0, "{}", stderr(&output));
+    // why: `engine` owns only glue that declares nothing, so it has no node and its files are modules.
+    assert_eq!(node_ids(&dir), ["engine-a", "engine-b", "main", "util"]);
+    assert_eq!(read(&dir, "src/engine/.arch"), "node: engine-*\n");
+    let lint = run_on("lint", dir.path(), &["--strict"]);
+    assert_eq!(
+        (code(&lint), findings(&lint)),
+        (0, "driftwall: clean\n".to_owned()),
+        "{}",
+        read(&dir, "architecture.mmd")
+    );
+}
+
+#[test]
 fn this_repository_baselines_clean_without_its_contract() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let dir = TempDir::new().unwrap();
@@ -758,23 +796,27 @@ fn this_repository_baselines_clean_without_its_contract() {
     let declared =
         driftwall::diagram::parse(&fs::read_to_string(root.join("architecture.mmd")).unwrap())
             .unwrap();
-    // why: the language split under `imports` is design; init must find each top-level module.
+    // why: init must rediscover the contract's modules at its split depth, three directories deep at most.
     let mut expected: Vec<String> = declared
         .maps
         .iter()
-        .filter(|rule| {
-            rule.globs
-                .iter()
-                .filter_map(driftwall::contract::MapGlob::directory)
-                .any(|dir| dir.components().count() == 2)
+        .flat_map(|rule| rule.globs.iter())
+        .filter_map(driftwall::contract::MapGlob::directory)
+        .map(|dir| {
+            dir.components()
+                .take(3)
+                .skip(1)
+                .map(|part| part.as_os_str().to_string_lossy().into_owned())
+                .collect::<Vec<_>>()
+                .join("-")
         })
-        .map(|rule| rule.target.to_string())
+        .filter(|id| !id.is_empty())
         .collect();
     expected.sort();
     expected.dedup();
     assert_eq!(
         node_ids(&dir),
         expected,
-        "init must rediscover exactly the top-level modules of the hand-written contract: src/lib.rs only declares modules, so it is folded"
+        "init must rediscover the modules of the hand-written contract: src/lib.rs and src/reading/mod.rs only declare modules, so they are folded"
     );
 }

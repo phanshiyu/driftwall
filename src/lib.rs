@@ -7,11 +7,11 @@
 pub mod code;
 pub mod contract;
 pub mod diagram;
-pub mod imports;
 pub mod init;
 pub mod lint;
 pub mod markup;
 pub mod ownership;
+pub mod reading;
 pub mod report;
 pub mod results;
 pub mod views;

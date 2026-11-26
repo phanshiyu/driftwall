@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use crate::contract::Contract;
-use crate::imports::FileImports;
+use crate::reading::imports::FileImports;
 use crate::results::{Violation, ViolationKind, path_key};
 
 use super::rules::violation;

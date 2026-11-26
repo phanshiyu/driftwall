@@ -20,10 +20,10 @@ mod witness {
     use driftwall::code::{Location, MapSite};
     use driftwall::contract::{Endpoint, GlobError, ModelError, NodeId};
     use driftwall::diagram::{DiagramError, PictureError};
-    use driftwall::imports::ImportsError;
     use driftwall::init::InitError;
     use driftwall::lint::LintError;
     use driftwall::ownership::{ArchProblem, OwnershipError};
+    use driftwall::reading::imports::ImportsError;
     use driftwall::report::ReportError;
     use driftwall::results::BaselineError;
     use driftwall::views::ViewsError;

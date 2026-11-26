@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use crate::code::{Location, Ownership};
 use crate::contract::Contract;
-use crate::imports::{Facades, FileImports};
+use crate::reading::imports::{Facades, FileImports};
 use crate::results::{Violation, ViolationKind};
 
 use super::rules::violation;

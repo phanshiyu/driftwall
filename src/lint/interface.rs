@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use crate::code::{ImportKind, Ownership, ResolvedImport, Symbol};
 use crate::contract::{Contract, NodeId};
-use crate::imports::FileImports;
+use crate::reading::imports::FileImports;
 use crate::results::InterfaceEntry;
 
 use super::observe::crossings;

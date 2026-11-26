@@ -37,8 +37,8 @@ use thiserror::Error;
 use crate::code::{Language, PackageKind, SkipReason};
 use crate::contract::{DEFAULT_CONTRACT, NodeId};
 use crate::diagram::DiagramError;
-use crate::imports::{self, FileImports, ImportsError};
 use crate::ownership::{self, OwnershipError};
+use crate::reading::imports::{self, FileImports, ImportsError};
 use crate::results::{BlindSpots, BlindSummary};
 
 pub use existing::Existing;

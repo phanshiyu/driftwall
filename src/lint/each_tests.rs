@@ -8,8 +8,8 @@ use super::*;
 use crate::code::{ImportKind, ResolvedImport};
 use crate::contract::{Narrowing, NodeId, OpenAccess};
 use crate::diagram;
-use crate::imports::FileImports;
 use crate::lint::fixtures::at;
+use crate::reading::imports::FileImports;
 use crate::results::{Severity, Violation, ViolationKind};
 
 /// Two features, `billing` (controller, service, view) and `search` (controller, service), and
