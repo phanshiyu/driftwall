@@ -62,12 +62,11 @@ mod support {
             command.env(key, value);
         }
         let mut child = command.spawn().unwrap();
-        child
-            .stdin
-            .take()
-            .unwrap()
-            .write_all(stdin.as_bytes())
-            .unwrap();
+        let written = child.stdin.take().unwrap().write_all(stdin.as_bytes());
+        // why: a hook that exits before reading its input closes the pipe; that is not a failure.
+        if let Err(error) = written {
+            assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe, "{error}");
+        }
         child.wait_with_output().unwrap()
     }
 
