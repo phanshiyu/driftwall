@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `bare-comment` also flags a bare `%%` on a CRLF line: Mermaid turns `\r\n` into `\n` before it strips comments, so such a line breaks the diagram too.
 - `init` folds a declarations-only entry file (`mod.rs`, `__init__.py`) in a directory it splits into layers (modules or directory nodes), instead of giving it a node.
 
 ## 0.5.1 - 2026-11-26

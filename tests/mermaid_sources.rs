@@ -11,7 +11,7 @@ fn root() -> &'static Path {
 /// The lines of `src` before its first `flowchart` line that are exactly `%%`.
 fn bare_before_header(src: &str) -> Vec<usize> {
     let mut found = Vec::new();
-    for (index, line) in src.split('\n').enumerate() {
+    for (index, line) in src.lines().enumerate() {
         if line.trim_start().starts_with("flowchart") {
             break;
         }

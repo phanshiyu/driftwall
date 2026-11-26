@@ -12,7 +12,7 @@ hard error with a line number. Silently ignoring syntax would let a typo become 
 Mermaid removes a comment line only when text follows `%%` (its pattern needs one character after
 it), and a stray `%%` before the `flowchart` header then fails to parse, so GitHub and other
 renderers cannot draw the file. A line before the header that is exactly `%%`, with nothing after
-it (not even spaces or a `\r`), still parses but is a `bare-comment` warning, one per line, keyed by
+it (not even spaces; a `\r\n` line end counts as nothing, since Mermaid turns it into `\n` first), still parses but is a `bare-comment` warning, one per line, keyed by
 the line number. Use a blank line or `%% <text>`; after the header a bare `%%` draws fine.
 
 ```

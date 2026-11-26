@@ -38,8 +38,7 @@ pub fn parse(src: &str) -> Result<Contract, DiagramError> {
     let src = src.strip_prefix('\u{feff}').unwrap_or(src);
     let mut parser = Parser::default();
     let mut line: u32 = 0;
-    // why: `split('\n')`, not `lines()`, which drops the `\r` that makes a `%%\r` line non-bare.
-    'lines: for raw in src.split('\n') {
+    'lines: for raw in src.lines() {
         line = line.saturating_add(1);
         if !parser.header_seen && raw.trim_start() == "%%" {
             parser.bare_comments.push(line);

@@ -24,8 +24,8 @@ fn a_comment_with_text_or_spaces_after_it_is_not_bare() {
 }
 
 #[test]
-fn a_crlf_line_is_not_bare_because_mermaid_strips_it() {
-    assert_eq!(bare("%%\r\nflowchart LR\r\n  a\r\n").len(), 0);
+fn a_crlf_line_is_bare_because_mermaid_normalises_line_ends_first() {
+    assert_eq!(bare("%% top\r\n%%\r\nflowchart LR\r\n  a\r\n"), [2]);
 }
 
 #[test]
