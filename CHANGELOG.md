@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.6.0 - 2026-11-26
 
 - Rust: a leading `::` (`use ::a_lib::A;`, `::a_lib::a()`, also in macro arguments) is read as an extern-crate path like `a_lib::A`, and never as `crate::` or a module of the file.
 - Rust: a renamed Cargo dependency (`alpha = { path = "../a-lib", package = "a-lib" }`, also in `[dev-dependencies]`, `[build-dependencies]` and target tables) is the member crate it renames, for the files of that manifest only.
