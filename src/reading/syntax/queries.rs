@@ -60,7 +60,8 @@ macro_rules! ecmascript_imports {
 }
 
 /// Python: `import a.b`, `import a.b as c`, and `from a.b import c, d as e` or `import *`, plus the
-/// first argument of `importlib.import_module(..)` and `__import__(..)`, and the path (second
+/// first argument of every call to a name or a `name.attr` (the resolver keeps `import_module`,
+/// `__import__`, `run_module` and `run_path` under the names the file binds), and the path (second
 /// argument) of `importlib.machinery.SourceFileLoader(..)` and `importlib.util.spec_from_file_location(..)`.
 ///
 /// A `from` statement is a single match carrying every imported name, so the resolver can try
@@ -77,16 +78,13 @@ pub const PYTHON: &str = r#"
     name: (aliased_import name: (dotted_name) @name)
   ]*)
 (call
-  function: (identifier) @callee
-  arguments: (argument_list . (_) @specifier)
-  (#eq? @callee "__import__"))
+  function: (identifier)
+  arguments: (argument_list . (_) @specifier))
 (call
   function: (attribute
-    object: (identifier) @module
-    attribute: (identifier) @method)
-  arguments: (argument_list . (_) @specifier)
-  (#eq? @module "importlib")
-  (#eq? @method "import_module"))
+    object: (identifier)
+    attribute: (identifier))
+  arguments: (argument_list . (_) @specifier))
 (call
   function: (attribute
     object: (attribute

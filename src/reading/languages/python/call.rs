@@ -1,18 +1,69 @@
-//! The module a literal `importlib.import_module(..)` or `__import__(..)` call names.
+//! The dynamic-import calls of Python, and the module a literal one names.
 
 use tree_sitter::Node;
 
+use super::bindings::{Bindings, Bound};
 use crate::reading::syntax::literal::literal_text;
 use crate::reading::syntax::resolution::Reference;
+
+/// What the call around a reference is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Call {
+    /// `importlib.import_module(..)`, `__import__(..)` or `runpy.run_module(..)` under any name
+    /// the file binds them to.
+    Module {
+        /// Whether a dotted prefix may be resolved against a package argument.
+        relative: bool,
+    },
+    /// `runpy.run_path(..)`: a path relative to the working directory at run time.
+    RunPath,
+    /// `importlib.machinery.SourceFileLoader(..)` or `importlib.util.spec_from_file_location(..)`.
+    LoadsFile,
+}
+
+/// The kind of dynamic-import call around `reference` (its first or path argument), `None` when
+/// the call is some other call.
+pub fn classify(reference: &Reference<'_>, bindings: &Bindings) -> Option<Call> {
+    let function = reference
+        .node
+        .parent()?
+        .parent()?
+        .child_by_field_name("function")?;
+    let text = |node: Node<'_>| node.utf8_text(reference.source.as_bytes()).ok();
+    let bound = match function.kind() {
+        "identifier" => bindings.get(text(function)?)?,
+        "attribute" => {
+            let object = function.child_by_field_name("object")?;
+            // why: only the loader query matches a dotted object, and it is exact on its names.
+            if object.kind() == "attribute" {
+                return Some(Call::LoadsFile);
+            }
+            let attribute = text(function.child_by_field_name("attribute")?)?;
+            match (bindings.get(text(object)?)?, attribute) {
+                (Bound::Importlib, "import_module") => Bound::ImportModule,
+                (Bound::Runpy, "run_module") => Bound::RunModule,
+                (Bound::Runpy, "run_path") => Bound::RunPath,
+                _ => return None,
+            }
+        }
+        _ => return None,
+    };
+    match bound {
+        Bound::DunderImport | Bound::ImportModule => Some(Call::Module { relative: true }),
+        Bound::RunModule => Some(Call::Module { relative: false }),
+        Bound::RunPath => Some(Call::RunPath),
+        Bound::Importlib | Bound::Runpy | Bound::Other => None,
+    }
+}
 
 /// The absolute dotted module the call around `reference` imports, or `None` when the call stays
 /// dynamic.
 ///
 /// The first argument must be a plain string literal naming a module. When it starts with dots it
-/// is relative to a package: the second argument, positional or `package=`, which must be a plain
+/// is relative to a package (only when `relative`): the second argument, positional or `package=`, which must be a plain
 /// string literal too. The package loses one trailing segment for every dot after the first, and
 /// the rest of the literal is appended.
-pub fn module_of(reference: &Reference<'_>) -> Option<String> {
+pub fn module_of(reference: &Reference<'_>, relative: bool) -> Option<String> {
     let literal = literal_text(reference.node, reference.source)?;
     let dots = literal.chars().take_while(|&c| c == '.').count();
     let rest = literal.trim_start_matches('.');
@@ -20,6 +71,9 @@ pub fn module_of(reference: &Reference<'_>) -> Option<String> {
         return is_dotted_name(rest).then(|| rest.to_owned());
     }
     if !rest.is_empty() && !is_dotted_name(rest) {
+        return None;
+    }
+    if !relative {
         return None;
     }
     let package = package_argument(reference)?;

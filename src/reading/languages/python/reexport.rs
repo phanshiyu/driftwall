@@ -137,7 +137,7 @@ fn reexport(
         node: module,
         source,
     };
-    let resolutions = resolve(&reference, file, files, layout);
+    let resolutions = resolve(&reference, file, files, layout, &super::Bindings::default());
     if star {
         table
             .stars

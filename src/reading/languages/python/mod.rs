@@ -1,5 +1,6 @@
 //! Python: imports resolved against import roots, with the standard library and re-exports.
 
+mod bindings;
 mod call;
 mod config;
 mod layout;
@@ -9,6 +10,7 @@ mod spec;
 mod statement;
 mod stdlib;
 
+pub use bindings::Bindings;
 pub use config::python_roots;
 pub use layout::PythonLayout;
 pub use reexport::table as reexport_table;

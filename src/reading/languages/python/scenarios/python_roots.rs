@@ -686,3 +686,94 @@ fn a_module_below_directories_without_python_is_unreachable() {
         Some("`c.g.m` matches `a/c/g/m.py`, which no import root of `a/bt/x.py` reaches")
     );
 }
+
+fn dynamic_repo(main: &str) -> Repo {
+    repo(&[("app/__init__.py", ""), ("app/a.py", ""), ("main.py", main)])
+}
+
+fn resolved_lines(imports: &FileImports) -> Vec<(u32, &str)> {
+    imports
+        .resolved
+        .iter()
+        .map(|i| (i.at.line, i.target.to_str().unwrap_or_default()))
+        .collect()
+}
+
+#[test]
+fn import_module_imported_by_name_is_followed() {
+    let repo = dynamic_repo(
+        "from importlib import import_module\nimport_module('app.a')\nimport_module('.a', package='app')\nimport_module(name)\n",
+    );
+    let imports = repo.imports("main.py");
+    assert_eq!(resolved_lines(&imports), [(2, "app/a.py"), (3, "app/a.py")]);
+    assert_eq!(imports.skipped.len(), 1);
+    assert_eq!(imports.skipped[0].at.line, 4);
+    assert_eq!(imports.skipped[0].reason, SkipReason::DynamicSpecifier);
+}
+
+#[test]
+fn import_module_under_an_alias_is_followed() {
+    let repo = dynamic_repo("from importlib import import_module as im\nim('app.a')\n");
+    assert_eq!(resolved_lines(&repo.imports("main.py")), [(2, "app/a.py")]);
+}
+
+#[test]
+fn importlib_under_an_alias_is_followed() {
+    let repo = dynamic_repo("import importlib as il\nil.import_module('app.a')\n");
+    assert_eq!(resolved_lines(&repo.imports("main.py")), [(2, "app/a.py")]);
+}
+
+#[test]
+fn a_function_level_import_binds_too() {
+    let repo = dynamic_repo(
+        "def f():\n    from importlib import import_module\n    import_module('app.a')\n",
+    );
+    assert_eq!(resolved_lines(&repo.imports("main.py")), [(3, "app/a.py")]);
+}
+
+#[test]
+fn run_module_in_each_spelling_is_followed() {
+    let repo = dynamic_repo(
+        "import runpy\nimport runpy as r\nfrom runpy import run_module\nfrom runpy import run_module as rm\nrunpy.run_module('app.a')\nr.run_module('app.a', run_name='__main__')\nrun_module('app.a')\nrm('app.a')\nrun_module(name)\nrun_module('.a')\n",
+    );
+    let imports = repo.imports("main.py");
+    assert_eq!(
+        resolved_lines(&imports),
+        [
+            (5, "app/a.py"),
+            (6, "app/a.py"),
+            (7, "app/a.py"),
+            (8, "app/a.py")
+        ]
+    );
+    let skipped: Vec<u32> = imports.skipped.iter().map(|s| s.at.line).collect();
+    assert_eq!(skipped, [9, 10]);
+}
+
+#[test]
+fn run_path_is_skipped_with_a_message() {
+    let repo = dynamic_repo(
+        "import runpy\nfrom runpy import run_path as rp\nrunpy.run_path('app/a.py')\nrp('app/a.py')\n",
+    );
+    let imports = repo.imports("main.py");
+    assert_eq!(imports.resolved, Vec::new());
+    assert_eq!(imports.skipped.len(), 2);
+    for skip in &imports.skipped {
+        assert_eq!(skip.reason, SkipReason::DynamicSpecifier);
+        assert!(
+            skip.message
+                .as_deref()
+                .is_some_and(|m| m.contains("run_path"))
+        );
+    }
+}
+
+#[test]
+fn a_local_function_named_like_the_importer_is_not_followed() {
+    let repo = dynamic_repo(
+        "def import_module(name):\n    return name\n\nimport_module('app.a')\nrun_module('app.a')\nfoo.import_module('app.a')\nfrom other import import_module as run_module\nrun_module('app.a')\n",
+    );
+    let imports = repo.imports("main.py");
+    assert_eq!(imports.resolved, Vec::new());
+    assert_eq!(imports.skipped, Vec::new());
+}

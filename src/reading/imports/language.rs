@@ -15,6 +15,8 @@ pub enum Scope<'a> {
     Plain,
     /// The names a Rust file brings into scope.
     Rust(rust::Bindings<'a>),
+    /// The names a Python file binds to the dynamic-import functions.
+    Python(python::Bindings),
 }
 
 /// The scope of the tree rooted at `root`, parsed from `source`.
@@ -22,6 +24,7 @@ pub enum Scope<'a> {
 pub fn scope<'a>(language: Language, root: tree_sitter::Node<'a>, source: &'a str) -> Scope<'a> {
     match language {
         Language::Rust => Scope::Rust(rust::Bindings::of_tree(root, source)),
+        Language::Python => Scope::Python(python::Bindings::of_tree(root, source)),
         _ => Scope::Plain,
     }
 }
@@ -40,12 +43,19 @@ pub fn resolve(
             web::resolve(reference, importer, &env.files, &env.web)
         }
         Language::Html => web::resolve_inline(reference, importer, &env.files, &env.web),
-        Language::Python => python::resolve(reference, importer, &env.files, env.python),
+        Language::Python => {
+            let plain = python::Bindings::default();
+            let bindings = match scope {
+                Scope::Python(bindings) => bindings,
+                _ => &plain,
+            };
+            python::resolve(reference, importer, &env.files, env.python, bindings)
+        }
         Language::Rust => match scope {
             Scope::Rust(bindings) => {
                 rust::resolve(reference, bindings, importer, &env.files, &env.rust)
             }
-            Scope::Plain => rust::resolve(
+            Scope::Plain | Scope::Python(_) => rust::resolve(
                 reference,
                 &rust::Bindings::default(),
                 importer,

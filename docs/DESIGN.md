@@ -865,7 +865,7 @@ line per node, which must be declared. Anything else is a contract error.
       `require('x')` bound to a name and of `export *` are not recorded, so each is a whole-module
       entry, and so is a side-effect import (`import './x'`).
     - Python: `import a.b`, `from a import submodule`, `from a import *`,
-      `importlib.import_module("a.b")` are whole-module entries (no member access is recorded).
+      `importlib.import_module("a.b")` and `runpy.run_module("a.b")` are whole-module entries (no member access is recorded).
   - A node that nothing outside imports has interface 0.
 - Exceeding a limit is the warning `over-budget`, one per measure, at the budget line of the
   contract, with a message naming the node, the measure, the limit and the actual value:
@@ -1736,8 +1736,17 @@ An absolute module that no root resolves is decided by its first segment, the to
 
 #### Dynamic imports
 
-`importlib.import_module(x)` and `__import__(x)` (the call spelled exactly so; a bare
-`import_module(x)` is not recognised) resolve like `import x` when `x` is a plain string literal:
+`importlib.import_module(x)`, `__import__(x)` and `runpy.run_module(x)` resolve like `import x` when
+`x` is a plain string literal. The callee is known from the file's own `import` and `from ... import`
+statements, at any depth: `from importlib import import_module [as im]`, `import importlib [as il]`,
+`import runpy [as r]` and `from runpy import run_module [as rm]` make `import_module(x)`,
+`im(x)`, `il.import_module(x)`, `runpy.run_module(x)`, `r.run_module(x)` and `rm(x)` such calls. The
+names `importlib`, `runpy` and `__import__` count unbound too. A name the file also binds another way
+(a `def` or `class` outside a class body, another import) is not trusted, so a user's own
+`def import_module` is no dynamic import, and a call of any other name is not one either.
+`runpy.run_module` takes no package, so a relative literal stays dynamic. `runpy.run_path(..)`
+(any spelling above) is a path relative to the working directory at run time: it is always skipped
+as `dynamic-specifier`, with a message, and never resolved. The literal rules follow:
 no prefix but `r` or `u`, no escapes, no f-string, no implicit concatenation. The import has kind
 `runtime`, is located at the start of the call and uses no symbol (a module import, see "Symbols").
 Its specifier in `unresolved` and `skipped` is the string contents.
@@ -2400,7 +2409,7 @@ a location, the specifier as written and a typed reason (kebab-case in serializa
 | Reason | When |
 | --- | --- |
 | `undeclared-package` | TypeScript or JavaScript specifier that is not relative, matches no `tsconfig` or `jsconfig` `paths` alias, is not a workspace package, is not a Node builtin and is not a declared dependency; a Python absolute import that misses below a namespace directory, a top-level directory with no `__init__.py` (see "Python resolution") |
-| `dynamic-specifier` | a shell `source` or `.` whose path has no value, see "Shell resolution"; `import(expr)` or `require(expr)`, or `new URL(expr, import.meta.url)`, whose argument is not a string literal or a template without substitutions, and the JavaScript forms driftwall does not follow, with a message saying which: `import.meta.glob(..)` and `globEager`, `require.resolve(..)`, `createRequire(..)(..)`, and a variable set to `require` or to `createRequire(..)` (calls through it are not followed; a `const require = createRequire(..)` is followed as `require`); Python `importlib.import_module(..)` and `__import__(..)` whose first argument is not a plain string literal, or whose relative literal has no usable package, and a Python file loader whose path is not a literal naming a known file (see "Python resolution") |
+| `dynamic-specifier` | a shell `source` or `.` whose path has no value, see "Shell resolution"; `import(expr)` or `require(expr)`, or `new URL(expr, import.meta.url)`, whose argument is not a string literal or a template without substitutions, and the JavaScript forms driftwall does not follow, with a message saying which: `import.meta.glob(..)` and `globEager`, `require.resolve(..)`, `createRequire(..)(..)`, and a variable set to `require` or to `createRequire(..)` (calls through it are not followed; a `const require = createRequire(..)` is followed as `require`); Python `importlib.import_module(..)`, `__import__(..)` and `runpy.run_module(..)` whose first argument is not a plain string literal, or whose relative literal has no usable package, every `runpy.run_path(..)`, and a Python file loader whose path is not a literal naming a known file (see "Python resolution") |
 | `embed-non-source` | a Rust embed whose target is neither a known source file nor an asset a tag covers |
 | `unreachable-module` | a Python absolute import that no import root resolves, whose top-level name matches a first-party module or package elsewhere in the repository (see "Python resolution") |
 | `alias-target-missing` | a TypeScript or JavaScript specifier that a Vite `resolve.alias` entry matches whose target path has no file in the repository (see "Vite aliases") |

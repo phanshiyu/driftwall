@@ -3,15 +3,13 @@
 use std::collections::BTreeSet;
 use std::path::{Component, Path, PathBuf};
 
-use super::call::module_of;
+use super::bindings::Bindings;
+use super::call::{Call, classify, module_of};
 use super::layout::PythonLayout;
 use super::stdlib::is_stdlib;
 use crate::code::{PackageKind, SkipReason, Symbol};
 use crate::reading::syntax::literal::literal_text;
 use crate::reading::syntax::resolution::{Files, Reference, Resolution};
-
-/// Callees whose second argument is the path of a Python file to load.
-const FILE_LOADERS: [&str; 2] = ["SourceFileLoader", "spec_from_file_location"];
 
 /// The table entry. `reference.specifier` is the module as written (`a.b`, `.a`, `..`) and
 /// `reference.names` the names a `from` statement imports from it. See "Python resolution" in
@@ -31,13 +29,15 @@ const FILE_LOADERS: [&str; 2] = ["SourceFileLoader", "spec_from_file_location"];
 /// `__init__.py` is a namespace portion an installed package beats: skipped as undeclared. A relative module that matches nothing is
 /// unresolved.
 ///
-/// A call to `importlib.import_module(..)` or `__import__(..)` with a plain string literal
-/// resolves like `import <literal>`, see [`module_of`]; any other call is skipped as dynamic.
+/// A call to `importlib.import_module(..)`, `__import__(..)` or `runpy.run_module(..)`, under any
+/// name `bindings` binds to them, with a plain string literal resolves like `import <literal>`;
+/// any other such call is skipped as dynamic, and a call to anything else is no import.
 pub fn resolve(
     reference: &Reference<'_>,
     importer: &Path,
     files: &Files<'_>,
     layout: &PythonLayout,
+    bindings: &Bindings,
 ) -> Vec<Resolution> {
     let env = Env {
         known: files.known,
@@ -50,7 +50,7 @@ pub fn resolve(
         .parent()
         .is_some_and(|parent| parent.kind() == "argument_list")
     {
-        return call(reference, importer, env);
+        return call(reference, importer, env, bindings);
     }
     let written: String = reference
         .specifier
@@ -99,29 +99,28 @@ struct Env<'a> {
 }
 
 /// Resolves the call around `reference`: like `import <literal>` when the call names its module
-/// with a plain literal, dynamic otherwise.
-fn call(reference: &Reference<'_>, importer: &Path, env: &Env<'_>) -> Vec<Resolution> {
-    if loads_file(reference) {
-        return vec![load_path(reference, importer, env)];
+/// with a plain literal, dynamic otherwise, and nothing when it is not a dynamic-import call.
+fn call(
+    reference: &Reference<'_>,
+    importer: &Path,
+    env: &Env<'_>,
+    bindings: &Bindings,
+) -> Vec<Resolution> {
+    match classify(reference, bindings) {
+        None => Vec::new(),
+        Some(Call::LoadsFile) => vec![load_path(reference, importer, env)],
+        Some(Call::RunPath) => vec![Resolution::SkippedWith {
+            reason: SkipReason::DynamicSpecifier,
+            message: "`runpy.run_path(..)` takes a path relative to the working directory at run time, so it is not followed".to_owned(),
+        }],
+        Some(Call::Module { relative }) => {
+            let Some(module) = module_of(reference, relative) else {
+                return vec![Resolution::Skipped(SkipReason::DynamicSpecifier)];
+            };
+            let segments: Vec<&str> = module.split('.').collect();
+            absolute(&segments, &[Vec::new()], false, importer, env)
+        }
     }
-    let Some(module) = module_of(reference) else {
-        return vec![Resolution::Skipped(SkipReason::DynamicSpecifier)];
-    };
-    let segments: Vec<&str> = module.split('.').collect();
-    absolute(&segments, &[Vec::new()], false, importer, env)
-}
-
-/// Whether the call around `reference` is a file loader (`SourceFileLoader(..)`,
-/// `spec_from_file_location(..)`) and the reference is its path argument.
-fn loads_file(reference: &Reference<'_>) -> bool {
-    reference
-        .node
-        .parent()
-        .and_then(|list| list.parent())
-        .and_then(|call| call.child_by_field_name("function"))
-        .and_then(|function| function.child_by_field_name("attribute"))
-        .and_then(|name| name.utf8_text(reference.source.as_bytes()).ok())
-        .is_some_and(|name| FILE_LOADERS.contains(&name))
 }
 
 /// The file a loader call names with a literal path: the repository file at that path, taken
