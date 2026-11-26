@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- A shell `case` pattern that joins several quoted strings and globs (`*"a"*"b"*)`) is valid shell that tree-sitter-bash reads as an error; it no longer makes the file `unparsed`, since a pattern cannot hide an import. Other errors in the file still do.
+
 ## 0.6.0 - 2026-11-26
 
 - Rust: a leading `::` (`use ::a_lib::A;`, `::a_lib::a()`, also in macro arguments) is read as an extern-crate path like `a_lib::A`, and never as `crate::` or a module of the file.

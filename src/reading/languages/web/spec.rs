@@ -41,6 +41,7 @@ pub static TYPESCRIPT: LanguageSpec = LanguageSpec {
     flags: statement::flags,
     loads: None,
     docs: Some(&DOCS),
+    known_gap: None,
 };
 
 /// How Svelte files are scanned, located and flagged.
@@ -51,6 +52,7 @@ pub static SVELTE: LanguageSpec = LanguageSpec {
     flags: statement::flags,
     loads: None,
     docs: Some(&DOCS),
+    known_gap: None,
 };
 
 /// How HTML files are scanned, located and flagged.
@@ -63,6 +65,7 @@ pub static HTML: LanguageSpec = LanguageSpec {
         flags: statement::load_flags,
     }),
     docs: None,
+    known_gap: None,
 };
 
 /// How JavaScript files are scanned, located and flagged.
@@ -73,6 +76,7 @@ pub static JAVASCRIPT: LanguageSpec = LanguageSpec {
     flags: statement::flags,
     loads: None,
     docs: Some(&DOCS),
+    known_gap: None,
 };
 
 fn typescript_scan(_source: &str, file: &Path) -> Scan {

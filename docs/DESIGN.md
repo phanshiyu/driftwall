@@ -1251,8 +1251,7 @@ see driftwall brief`. With nothing to say there is no note line.
 #### Unparsed files
 
 A file whose syntax tree has an error or a missing node (a conflict marker, an unterminated string
-or template, a half-typed statement, or valid code the grammar does not cover, such as a one-line
-bash `case` with several patterns) may lose imports silently: the grammar recovers around the
+or template, a half-typed statement, or valid code the grammar does not cover) may lose imports silently: the grammar recovers around the
 error, and an import after it can end up inside the error node. Import extraction therefore records
 one skipped reference of reason `unparsed` per such file, in every language, at the line of the
 first error, with the file as the specifier and the message `the parser could not read past line N:
@@ -1263,6 +1262,13 @@ grammar can reject valid code. A script of a
 Svelte or HTML file counts for the file once however many scripts have errors. The `{ .. }`
 expressions that a Svelte file's markup is read for (see "Svelte and HTML") are fragments and never
 count. It is not a lint finding.
+
+A language may name known gaps of its grammar: error nodes that valid code produces and that cannot
+hide an import, which do not make the file unparsed. Shell has one: tree-sitter-bash reads a `case`
+pattern that joins several quoted strings and globs (`*"a"*"b"*)`) as an error node standing in the
+`case` statement or item. Such a node is excused when it holds only pattern parts (words, globs,
+strings, expansions), since a pattern is never a command; the item's body and what follows parse
+as usual. Any other error in the file still counts.
 
 ### Module nodes (`node: *`)
 

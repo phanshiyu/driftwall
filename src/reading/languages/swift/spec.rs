@@ -22,6 +22,7 @@ pub static SPEC: LanguageSpec = LanguageSpec {
     flags: statement::flags,
     loads: None,
     docs: None,
+    known_gap: None,
 };
 
 fn scan(_source: &str, _file: &Path) -> Scan {

@@ -178,7 +178,9 @@ fn found_in(
         return Ok(());
     };
 
-    if let Some(line) = first_error_line(tree.root_node()).filter(|_| !region.fragment) {
+    if let Some(line) =
+        first_error_line(tree.root_node(), spec.known_gap).filter(|_| !region.fragment)
+    {
         found.syntax_error = Some(found.syntax_error.map_or(line, |first| first.min(line)));
     }
     let name_capture = query.capture_index_for_name(NAME_CAPTURE);
@@ -345,15 +347,21 @@ fn specifier_text<'s>(node: Node<'_>, source: &'s str) -> Option<&'s str> {
     literal_text(node, source).or_else(|| node.utf8_text(source.as_bytes()).ok())
 }
 
-/// The line of the first error or missing node under `root`, `None` for a clean tree.
-fn first_error_line(root: Node<'_>) -> Option<u32> {
+/// The line of the first error or missing node under `root` that `known_gap` does not excuse,
+/// `None` for a clean tree or one whose only errors are known gaps.
+fn first_error_line(root: Node<'_>, known_gap: Option<fn(Node<'_>) -> bool>) -> Option<u32> {
     if !root.has_error() {
         return None;
     }
     let mut cursor = root.walk();
     let mut stack = vec![root];
     let mut first: Option<Node<'_>> = None;
+    let mut gaps = false;
     while let Some(node) = stack.pop() {
+        if node.is_error() && known_gap.is_some_and(|gap| gap(node)) {
+            gaps = true;
+            continue;
+        }
         if node.is_error() || node.is_missing() {
             if first.is_none_or(|best| node.start_byte() < best.start_byte()) {
                 first = Some(node);
@@ -364,7 +372,10 @@ fn first_error_line(root: Node<'_>) -> Option<u32> {
             stack.extend(node.children(&mut cursor));
         }
     }
-    first.map(line_of).or_else(|| Some(line_of(root)))
+    // why: a tree that has an error but no error node found is unparsed unless a known gap explains it.
+    first
+        .map(line_of)
+        .or_else(|| (!gaps).then(|| line_of(root)))
 }
 
 fn line_of(node: Node<'_>) -> u32 {

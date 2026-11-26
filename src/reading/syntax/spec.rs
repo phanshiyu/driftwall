@@ -98,6 +98,9 @@ pub struct LanguageSpec {
     pub loads: Option<Loads>,
     /// `JSDoc` type imports, for a language whose scripts are TypeScript or JavaScript.
     pub docs: Option<&'static Docs>,
+    /// Whether an error node is a known gap of the grammar in valid code that cannot hide an
+    /// import, so the file is not reported as unparsed for it; `None` when every error counts.
+    pub known_gap: Option<for<'a> fn(tree_sitter::Node<'a>) -> bool>,
 }
 
 /// The scan of a language whose files are one piece of code in `grammar`.
